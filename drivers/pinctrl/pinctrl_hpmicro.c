@@ -11,7 +11,7 @@
 #include <hpm_soc.h>
 #include <drivers/pinctrl/pinctrl_hpmicro_common.h>
 
-static int hpmicro_pin_configure(IOC_Type *ioc_base, uint32_t pin_mux)
+static int hpmicro_pin_configure(IOC_Type *ioc_base, uint32_t pin_mux, uint32_t pin_cfg)
 {
 	uint32_t ioc_pad = HPMICRO_PAD_NUM(pin_mux);
 	uint32_t is_analog = HPMICRO_FUNC_ANALOG(pin_mux);
@@ -22,14 +22,24 @@ static int hpmicro_pin_configure(IOC_Type *ioc_base, uint32_t pin_mux)
 	}
 
 	ioc_base->PAD[ioc_pad].FUNC_CTL =
+		IOC_PAD_FUNC_CTL_LOOP_BACK_SET(HPMICRO_FUNC_LOOPBACK(pin_cfg)) |
 		IOC_PAD_FUNC_CTL_ANALOG_SET(is_analog) |
 		IOC_PAD_FUNC_CTL_ALT_SELECT_SET(alt_select);
+
+	ioc_base->PAD[ioc_pad].PAD_CTL = IOC_PAD_PAD_CTL_OD_SET(HPMICRO_PAD_CTL_OD(pin_cfg)) |
+					 IOC_PAD_PAD_CTL_PS_SET(HPMICRO_PAD_CTL_PS(pin_cfg)) |
+					 IOC_PAD_PAD_CTL_PE_SET(HPMICRO_PAD_CTL_PE(pin_cfg)) |
+					 IOC_PAD_PAD_CTL_DS_SET(HPMICRO_PAD_CTL_DS(pin_cfg)) |
+					 IOC_PAD_PAD_CTL_HYS_SET(HPMICRO_PAD_CTL_SMT(pin_cfg)) |
+					 IOC_PAD_PAD_CTL_SPD_SET(HPMICRO_PAD_CTL_SPD(pin_cfg)) |
+					 IOC_PAD_PAD_CTL_PRS_SET(HPMICRO_PAD_CTL_PRS(pin_cfg)) |
+					 IOC_PAD_PAD_CTL_SR_SET(HPMICRO_PAD_CTL_SR(pin_cfg)) |
+					 IOC_PAD_PAD_CTL_KE_SET(!HPMICRO_PAD_CTL_KE(pin_cfg));
 
 	return 0;
 }
 
-int pinctrl_configure_pins(const pinctrl_soc_pin_t *pins, uint8_t pin_cnt,
-			   uintptr_t reg)
+int pinctrl_configure_pins(const pinctrl_soc_pin_t *pins, uint8_t pin_cnt, uintptr_t reg)
 {
 	ARG_UNUSED(reg);
 
@@ -51,7 +61,7 @@ int pinctrl_configure_pins(const pinctrl_soc_pin_t *pins, uint8_t pin_cnt,
 			return -EINVAL;
 		}
 
-		ret = hpmicro_pin_configure(base, pins[i].pinmux);
+		ret = hpmicro_pin_configure(base, pins[i].pinmux, pins[i].pincfg);
 		if (ret < 0) {
 			return ret;
 		}

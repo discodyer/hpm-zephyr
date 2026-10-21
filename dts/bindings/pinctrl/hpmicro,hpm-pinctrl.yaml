@@ -18,6 +18,10 @@ include:
           - drive-open-drain
           - input-enable
           - input-schmitt-enable
+          - keeper-capability-disable
+          - pull-resistance-strength
+          - hpmicro-slew-pd
+          - hpmicro-slew-rate
 
 properties:
   reg:
@@ -32,3 +36,31 @@ child-binding:
         required: true
         type: array
         description: HPMicro pin mux encoded with HPMICRO_PINMUX()
+      drive-strength:
+        type: string
+        default: "r000"
+        enum: ["r000", "r001", "r010", "r011", "r100", "r101", "r110", "r111"]
+        description: Pad drive strength.
+      power-source:
+        type: string
+        default: "3v3"
+        enum: ["3v3", "1v8"]
+        description: Pad IO supply voltage.
+      hpmicro-slew-pd:
+        type: string
+        default: "50M"
+        enum: ["50M", "100M", "150M", "200M"]
+        description: Pad slew rate setting.
+      pull-resistance-strength:
+        type: string
+        default: "100KOhm"
+        enum: ["100KOhm", "47KOhm", "22KOhm"]
+        description: Pad pull resistance.
+      hpmicro-slew-rate:
+        type: string
+        default: "slow"
+        enum: ["slow", "fast"]
+        description: Pad output slew rate.
+      keeper-capability-disable:
+        type: boolean
+        description: Disable the pad keeper capability.
