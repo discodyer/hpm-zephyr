@@ -1,13 +1,13 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-DT_COMPAT_HPMICRO_HPM_FLASH := hpmicro,hpmicro-flash
+DT_COMPAT_HPMICRO_XPI := hpmicro,xpi
 
 config FLASH_HPMICRO
 	bool "HPMicro XPI NOR flash driver"
 	default y
 	depends on FLASH
-	depends on DT_HAS_HPMICRO_HPMICRO_FLASH_ENABLED
+	depends on DT_HAS_HPMICRO_XPI_ENABLED
 	select FLASH_HAS_DRIVER_ENABLED
 	select FLASH_HAS_EXPLICIT_ERASE
 	select FLASH_HAS_PAGE_LAYOUT

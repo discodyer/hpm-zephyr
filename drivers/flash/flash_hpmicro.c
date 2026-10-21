@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT hpmicro_hpmicro_flash
+#define DT_DRV_COMPAT hpmicro_xpi
 
 #include <errno.h>
 #include <stdint.h>
@@ -22,6 +22,8 @@
 #include <hpm_romapi.h>
 
 #define HPM_FLASH_WRITE_CHUNK 128U
+
+#define HPM_FLASH_NODE(n) DT_INST_CHILD_BY_UNIT_ADDR_INT(n, 2147483648)
 
 struct hpm_flash_config {
 	XPI_Type *xpi;
@@ -222,7 +224,7 @@ static int hpm_flash_get_size(const struct device *dev, uint64_t *size)
 	return 0;
 }
 
-BUILD_ASSERT(DT_INST_PROP(0, write_block_size) == sizeof(uint32_t),
+BUILD_ASSERT(DT_PROP(HPM_FLASH_NODE(0), write_block_size) == sizeof(uint32_t),
 	     "HPM XPI ROM programming requires a 4-byte write block size");
 
 static const struct flash_parameters *hpm_flash_get_parameters(const struct device *dev)
@@ -314,15 +316,16 @@ static const struct flash_driver_api hpm_flash_api = {
 
 #define HPM_FLASH_INIT(n)                                                                          \
 	static const struct hpm_flash_config hpm_flash_config_##n = {                              \
-		.xpi = (XPI_Type *)DT_REG_ADDR(DT_INST_PARENT(n)),                                 \
-		.mapped_base = DT_INST_REG_ADDR(n),                                                \
-		.nor_cfg_hdr = DT_INST_PROP(n, nor_cfg_opt_hdr),                                   \
-		.nor_cfg_opt0 = DT_INST_PROP(n, nor_cfg_opt_opt0),                                 \
-		.nor_cfg_opt1 = DT_INST_PROP(n, nor_cfg_opt_opt1),                                 \
-		.write_block_size = DT_INST_PROP(n, write_block_size),                             \
+		.xpi = (XPI_Type *)DT_INST_REG_ADDR(n),                                            \
+		.mapped_base = DT_REG_ADDR(HPM_FLASH_NODE(n)),                                     \
+		.mapped_size = DT_REG_SIZE(HPM_FLASH_NODE(n)),                                     \
+		.nor_cfg_hdr = DT_PROP(HPM_FLASH_NODE(n), nor_cfg_opt_hdr),                        \
+		.nor_cfg_opt0 = DT_PROP(HPM_FLASH_NODE(n), nor_cfg_opt_opt0),                      \
+		.nor_cfg_opt1 = DT_PROP(HPM_FLASH_NODE(n), nor_cfg_opt_opt1),                      \
+		.write_block_size = DT_PROP(HPM_FLASH_NODE(n), write_block_size),                  \
 		.parameters =                                                                      \
 			{                                                                          \
-				.write_block_size = DT_INST_PROP(n, write_block_size),             \
+				.write_block_size = DT_PROP(HPM_FLASH_NODE(n), write_block_size),  \
 				.erase_value = 0xff,                                               \
 			},                                                                         \
 	};                                                                                         \
