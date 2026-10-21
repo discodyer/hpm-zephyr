@@ -1,0 +1,12 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_HPM5300EVK
+
+config HEAP_MEM_POOL_SIZE
+	default 16384
+
+config UART_INTERRUPT_DRIVEN
+	default y
+
+endif # BOARD_HPM5300EVK

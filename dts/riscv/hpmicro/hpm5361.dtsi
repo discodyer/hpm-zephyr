@@ -1,0 +1,21 @@
+/*
+ * Copyright (c) 2024-2026 HPMicro
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <hpmicro/hpm53xx.dtsi>
+
+/ {
+	soc {
+		sram: memory@80000 {
+			compatible = "mmio-sram";
+			reg = <0x80000 DT_SIZE_K(128)>;
+		};
+
+		ahb_sram: memory@f0400000 {
+			compatible = "zephyr,memory-region";
+			reg = <0xf0400000 DT_SIZE_K(32)>;
+			zephyr,memory-region = "AHB_SRAM";
+		};
+	};
+};

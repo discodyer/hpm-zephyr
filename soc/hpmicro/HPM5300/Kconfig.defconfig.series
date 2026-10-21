@@ -1,0 +1,27 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+if SOC_SERIES_HPM5300
+
+config SOC_SERIES
+	default "hpm5300"
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default 24000000
+
+config KERNEL_ENTRY
+	default "_start"
+
+config ICACHE
+	default y
+
+config DCACHE
+	default y
+
+config RISCV_SOC_INTERRUPT_INIT
+	default y
+
+config NUM_IRQS
+	default 128
+
+endif # SOC_SERIES_HPM5300

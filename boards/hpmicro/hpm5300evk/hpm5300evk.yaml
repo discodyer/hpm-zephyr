@@ -1,0 +1,20 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+identifier: hpm5300evk
+name: HPMicro HPM5300EVK
+type: mcu
+arch: riscv32
+toolchain:
+  - zephyr
+  - cross-compile
+ram: 256
+flash: 1024
+supported:
+  - gpio
+  - uart
+  - pinctrl
+vendor: hpmicro
+testing:
+  ignore_tags:
+    - bluetooth

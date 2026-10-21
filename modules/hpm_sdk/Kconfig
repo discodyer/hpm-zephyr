@@ -1,0 +1,50 @@
+# Copyright (c) 2024-2026 HPMicro
+# SPDX-License-Identifier: Apache-2.0
+
+config ZEPHYR_HPM_SDK_MODULE
+	bool
+
+config NDEBUG_CONSOLE
+	bool "HPM SDK no console"
+
+config HAS_HPMSDK_UART
+	bool
+config HAS_HPMSDK_I2C
+	bool
+config HAS_HPMSDK_GPIO
+	bool
+config HAS_HPMSDK_SPI
+	bool
+config HAS_HPMSDK_DMA
+	bool
+config HAS_HPMSDK_DMAV2
+	bool
+config HAS_HPMSDK_GPTMR
+	bool
+config HAS_HPMSDK_PWM
+	bool
+config HAS_HPMSDK_PWMV2
+	bool
+config HAS_HPMSDK_PLLCTL
+	bool
+config HAS_HPMSDK_PLLCTLV2
+	bool
+config HAS_HPMSDK_USB
+	bool
+config HAS_HPMSDK_CAN
+	bool
+config HAS_HPMSDK_MCAN
+	bool
+config HAS_HPMSDK_ADC12
+	bool
+config HAS_HPMSDK_ADC16
+	bool
+config HAS_HPMSDK_PCFG
+	bool
+config HAS_HPMSDK_PMP
+	bool
+config HAS_HPMSDK_PINCTRL
+	bool
+config HAS_HPMSDK_MCHTMR
+	bool
+

@@ -1,0 +1,19 @@
+# Copyright (c) 2024-2026 HPMicro
+# SPDX-License-Identifier: Apache-2.0
+
+description: HPMicro PLL version 2 controller
+
+compatible: "hpmicro,hpm-pllv2"
+
+include: [clock-controller.yaml, base.yaml]
+
+properties:
+  reg:
+    required: true
+
+  clock-frequency:
+    type: int
+    description: Nominal PLL reference frequency in Hz.
+
+  "#clock-cells":
+    const: 0

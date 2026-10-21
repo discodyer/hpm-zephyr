@@ -1,0 +1,10 @@
+/*
+ * Copyright (c) 2026 The HPM Zephyr Module Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
+ * The board-specific DTSI deliberately does not include the board file from
+ * boards/. Board files belong to the board root; this top-level file is kept
+ * only as a stable include hook for downstream overlays.
+ */

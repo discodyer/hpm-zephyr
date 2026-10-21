@@ -1,0 +1,13 @@
+# Copyright (c) 2022-2026 HPMicro
+# SPDX-License-Identifier: Apache-2.0
+
+description: HPMicro IOC pin controller
+
+compatible: "hpmicro,hpm-pinctrl"
+
+include: [pinctrl-device.yaml, base.yaml]
+
+properties:
+  reg:
+    required: true
+

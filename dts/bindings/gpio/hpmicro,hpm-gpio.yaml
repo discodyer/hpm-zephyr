@@ -1,0 +1,27 @@
+# Copyright (c) 2022-2026 HPMicro
+# SPDX-License-Identifier: Apache-2.0
+
+description: HPMicro GPIO controller
+
+compatible: "hpmicro,hpm-gpio"
+
+include: [gpio-controller.yaml, base.yaml]
+
+properties:
+  reg:
+    required: true
+
+  hpmicro-gpio-port:
+    type: int
+    required: true
+    description: HPM SDK GPIO port index.
+
+  interrupts:
+    required: true
+
+  "#gpio-cells":
+    const: 2
+
+gpio-cells:
+  - pin
+  - flags

@@ -1,0 +1,29 @@
+# Copyright (c) 2022-2026 HPMicro
+# SPDX-License-Identifier: Apache-2.0
+
+description: HPMicro UART
+
+compatible: "hpmicro,hpm-uart"
+
+include: [uart-controller.yaml, pinctrl-device.yaml]
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  clock-name:
+    type: int
+    description: HPM SDK clock resource identifier
+
+  clock-src:
+    type: int
+    description: UART clock source selector
+
+  dmas:
+    description: Optional TX and RX DMA specifiers.
+
+  dma-names:
+    description: Required when dmas is present; use rx and tx.
