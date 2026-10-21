@@ -8,3 +8,6 @@ build:
     dts_root: .
     soc_root: .
     module_ext_root: .
+
+tests:
+  - tests

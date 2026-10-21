@@ -6,6 +6,10 @@ get_filename_component(_hpm_sdk_default
   ${CMAKE_CURRENT_LIST_DIR}/../hal/hpm_sdk ABSOLUTE)
 set(HPM_SDK_DIR ${HPM_SDK_DIR} CACHE PATH "HPM SDK root directory")
 
+if(NOT HPM_SDK_DIR AND DEFINED ENV{HPM_SDK_BASE})
+  set(HPM_SDK_DIR $ENV{HPM_SDK_BASE})
+endif()
+
 if(NOT HPM_SDK_DIR)
   set(HPM_SDK_DIR ${_hpm_sdk_default})
 endif()

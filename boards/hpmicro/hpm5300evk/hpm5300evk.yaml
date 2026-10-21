@@ -4,7 +4,7 @@
 identifier: hpm5300evk
 name: HPMicro HPM5300EVK
 type: mcu
-arch: riscv32
+arch: riscv
 toolchain:
   - zephyr
   - cross-compile
