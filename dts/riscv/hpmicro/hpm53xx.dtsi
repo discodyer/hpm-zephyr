@@ -160,6 +160,7 @@
 	gpioa: gpio@0 {
 		compatible = "hpmicro,hpm-gpio";
 		reg = <0x0 0x4000>;
+		ngpios = <32>;
 		gpio-controller;
 		#gpio-cells = <2>;
 		hpmicro-gpio-port = <0>;
@@ -170,6 +171,7 @@
 	gpiob: gpio@1 {
 		compatible = "hpmicro,hpm-gpio";
 		reg = <0x0 0x4000>;
+		ngpios = <32>;
 		gpio-controller;
 		#gpio-cells = <2>;
 		hpmicro-gpio-port = <1>;
