@@ -21,7 +21,26 @@ config DCACHE
 config RISCV_SOC_INTERRUPT_INIT
 	default y
 
-config NUM_IRQS
+config 2ND_LVL_ISR_TBL_OFFSET
+	default 12
+
+config 2ND_LVL_INTR_00_OFFSET
+	default 11
+
+config MAX_IRQ_PER_AGGREGATOR
 	default 128
+
+config NUM_IRQS
+	default 140
+
+config CACHE_MANAGEMENT
+	default y
+
+config CACHE_ANDES_INIT_PRIORITY
+	default 60
+
+choice CACHE_TYPE
+	default EXTERNAL_CACHE
+endchoice
 
 endif # SOC_SERIES_HPM5300
