@@ -21,8 +21,8 @@ typedef struct {
 	},
 
 #define Z_PINCTRL_STATE_PINS_INIT(node_id, prop)			\
-	{								\
-		DT_FOREACH_PROP_ELEM(node_id, prop, Z_PINCTRL_STATE_PIN_INIT) \
-	}
+	{ DT_FOREACH_CHILD_VARGS(DT_PHANDLE(node_id, prop),		\
+				 DT_FOREACH_PROP_ELEM, pinmux,		\
+				 Z_PINCTRL_STATE_PIN_INIT) }
 
 #endif /* HPM_ZEPHYR_SOC_HPM5300_PINCTRL_SOC_H_ */

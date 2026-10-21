@@ -5,9 +5,30 @@ description: HPMicro IOC pin controller
 
 compatible: "hpmicro,hpm-pinctrl"
 
-include: [pinctrl-device.yaml, base.yaml]
+include:
+  - name: pinctrl-device.yaml
+  - name: base.yaml
+  - name: pincfg-node-group.yaml
+    child-binding:
+      child-binding:
+        property-allowlist:
+          - bias-disable
+          - bias-pull-down
+          - bias-pull-up
+          - drive-open-drain
+          - input-enable
+          - input-schmitt-enable
 
 properties:
   reg:
     required: true
 
+child-binding:
+  description: HPMicro pin controller pin group
+  child-binding:
+    description: HPMicro pin controller pin configuration
+    properties:
+      pinmux:
+        required: true
+        type: array
+        description: HPMicro pin mux encoded with HPMICRO_PINMUX()
