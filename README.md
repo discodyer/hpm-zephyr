@@ -6,7 +6,7 @@ Out-of-tree Zephyr module for HPMicro HPM5361 and HPM5300EVK support.
 
 ```text
 boards/hpmicro/hpm5300evk/   HPM5300EVK board definitions
-soc/hpmicro/HPM5300/         HPM5300 SoC family integration
+soc/hpmicro/hpm5300/         HPM5300 SoC family integration
 dts/riscv/hpmicro/           HPM5300 devicetree sources
 dts/bindings/                Devicetree bindings
 drivers/                     Zephyr drivers backed by HPM SDK

@@ -3,6 +3,6 @@
 
 if SOC_FAMILY_HPM
 
-rsource "HPM5300/Kconfig"
+rsource "hpm5300/Kconfig"
 
 endif # SOC_FAMILY_HPM

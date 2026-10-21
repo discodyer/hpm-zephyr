@@ -7,4 +7,4 @@ config SOC_FAMILY_HPM
 config SOC_FAMILY
 	default "hpmicro" if SOC_FAMILY_HPM
 
-rsource "HPM5300/Kconfig.soc"
+rsource "hpm5300/Kconfig.soc"

@@ -13,7 +13,7 @@ REQUIRED = (
     "zephyr/module.yml",
     "Kconfig.hpm",
     "soc/hpmicro/soc.yml",
-    "soc/hpmicro/HPM5300/Kconfig.soc",
+    "soc/hpmicro/hpm5300/Kconfig.soc",
     "boards/hpmicro/hpm5300evk/board.yml",
     "boards/hpmicro/hpm5300evk/hpm5300evk.dts",
     "dts/riscv/hpmicro/hpm5361.dtsi",
@@ -25,6 +25,11 @@ def main() -> int:
     if missing:
         for item in missing:
             print(f"missing: {item}", file=sys.stderr)
+        return 1
+
+    if (ROOT / "soc" / "hpmicro" / "hpm5300" / "soc.yml").exists():
+        print("duplicate SoC discovery file: soc/hpmicro/hpm5300/soc.yml",
+              file=sys.stderr)
         return 1
 
     module_yml = (ROOT / "zephyr/module.yml").read_text(encoding="utf-8")
