@@ -2,39 +2,33 @@
 
 ## Commit messages
 
-Use Conventional Commits:
+Use Zephyr's upstream commit format for both local and upstream development:
 
 ```text
-<type>(<scope>): <description>
+<subsystem>: <summary>
 
-[optional body]
-
-Signed-off-by: Name <email>
+[non-empty body]
 ```
 
-Common types are `feat`, `fix`, `docs`, `build`, `test`, `refactor`, and `chore`.
+Examples:
 
-## Developer Certificate of Origin
-
-All commits must be signed off under the Developer Certificate of Origin 1.1:
-
-<https://developercertificate.org/>
-
-Use:
-
-```sh
-git commit -s
+```text
+soc: hpmicro: add HPM5361 initial support
+boards: hpmicro: add HPM5300EVK support
+drivers: serial: hpmicro: initialize UART baud rate
 ```
 
-The sign-off must match the commit author identity.
+This is a development convention only during the initial port. No local
+commit-message hook or commit-lint workflow is required at this stage.
 
-## Local commit-message hook
+## Initial-development policy
 
-Enable the repository hook once per clone:
+During initial development, the Agent commits changes directly to this
+repository. Local commits use the Zephyr subject format but do not require
+Developer Certificate of Origin (DCO) sign-off. Do not add `Signed-off-by`
+unless the human maintainer explicitly requests it.
 
-```sh
-git config core.hooksPath .githooks
-```
-
-The hook rejects commits without a valid Conventional Commits subject or DCO
-sign-off.
+Before upstream submission, squash intermediary development commits, confirm
+subsystem names against current Zephyr, and have the human contributor complete
+review and DCO sign-off. Run Zephyr's official gitlint, checkpatch, compliance
+and Twister checks at that point.

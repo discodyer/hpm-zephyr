@@ -4,5 +4,5 @@
 
 - [ ] Build tested
 - [ ] Hardware tested (if applicable)
-- [ ] Commits follow Conventional Commits
-- [ ] Commits include DCO sign-off
+- [ ] Commits follow Zephyr `<subsystem>: <summary>` format
+- [ ] Upstream submissions follow Zephyr commit rules and human DCO sign-off

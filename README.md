@@ -23,17 +23,16 @@ validation and XIP/flash bring-up are still required before declaring support.
 
 ## Development
 
-Use Conventional Commits and sign off every commit:
+Use Zephyr's upstream `<subsystem>: <summary>` format for local development:
 
 ```sh
-git commit -s
+git commit -m "soc: hpmicro: add HPM5361 initial support"
 ```
 
-Example:
-
-```sh
-git commit -s -m "feat(soc): add HPM5361 initial support"
-```
+During initial development, Agent-authored commits do not require DCO sign-off
+and no local commit-message checker is enforced. Before upstream submission,
+squash intermediary commits, run Zephyr's official checks, and have the human
+contributor complete review and DCO sign-off.
 
 ## License
 
