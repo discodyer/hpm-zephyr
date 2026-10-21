@@ -1,0 +1,21 @@
+# Copyright (c) 2022-2026 HPMicro
+# SPDX-License-Identifier: Apache-2.0
+
+description: HPMicro XPI NOR flash
+
+compatible: "hpmicro,hpmicro-flash"
+
+include: [soc-nv-flash.yaml]
+
+properties:
+  nor-cfg-opt-hdr:
+    type: int
+    required: true
+
+  nor-cfg-opt-opt0:
+    type: int
+    required: true
+
+  nor-cfg-opt-opt1:
+    type: int
+    required: true
