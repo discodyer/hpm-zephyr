@@ -1,0 +1,12 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: HPMicro HPM5361 ICB board
+
+compatible: "hpmicro,hpm5361icb"
+
+include: base.yaml
+
+properties:
+  model:
+    type: string

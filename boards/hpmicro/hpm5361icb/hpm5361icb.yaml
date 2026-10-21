@@ -1,0 +1,20 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+identifier: hpm5361icb
+name: HPMicro HPM5361 ICB
+type: mcu
+arch: riscv
+toolchain:
+  - zephyr
+  - cross-compile
+ram: 128
+flash: 1024
+supported:
+  - gpio
+  - uart
+  - pinctrl
+vendor: hpmicro
+testing:
+  ignore_tags:
+    - bluetooth

@@ -16,6 +16,9 @@ REQUIRED = (
     "soc/hpmicro/hpm5300/Kconfig.soc",
     "boards/hpmicro/hpm5300evk/board.yml",
     "boards/hpmicro/hpm5300evk/hpm5300evk.dts",
+    "boards/hpmicro/hpm5361icb/board.yml",
+    "boards/hpmicro/hpm5361icb/hpm5361icb.dts",
+    "dts/bindings/hpmicro,hpm5361icb.yaml",
     "dts/riscv/hpmicro/hpm5361.dtsi",
 )
 

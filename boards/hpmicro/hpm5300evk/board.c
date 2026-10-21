@@ -12,7 +12,7 @@
  * BootROM reads this NOR configuration block from flash offset 0x400.
  * Values match the HPM5300EVK QSPI NOR configuration.
  */
-__section(".nor_cfg_option") static const uint32_t hpm_nor_cfg_option[4] = {
+__section(".nor_cfg_option") static const uint32_t hpm_nor_cfg_option[4] __unused = {
 	0xfcf90002U,
 	0x00000005U,
 	0x00001000U,

@@ -1,0 +1,17 @@
+/*
+ * Copyright (c) 2026 The HPM Zephyr Module Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <dt-bindings/pinctrl/hpmicro-pinctrl-common.h>
+
+&pinctrl {
+	pinmux_uart0: pinmux_uart0 {
+		group0 {
+			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTA, 0),
+						 IOC_TYPE_IOC, 0, 2)>,
+				 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTA, 1),
+						 IOC_TYPE_IOC, 0, 2)>;
+		};
+	};
+};
