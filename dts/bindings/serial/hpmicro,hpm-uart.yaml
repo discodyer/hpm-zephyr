@@ -14,6 +14,15 @@ properties:
   interrupts:
     required: true
 
+  clocks:
+    required: true
+    description: |
+      Clock specifier with the HPM clock resource, source selector and
+      divider, respectively.
+
+  clock-names:
+    required: true
+
   clock-name:
     type: int
     description: HPM SDK clock resource identifier

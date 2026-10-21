@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <dt-bindings/clock/hpm5361-clocks.h>
 #include <hpmicro/hpm53xx.dtsi>
 
 / {

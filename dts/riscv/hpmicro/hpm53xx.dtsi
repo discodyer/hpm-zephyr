@@ -5,7 +5,6 @@
 
 /dts-v1/;
 #include <zephyr/dt-bindings/gpio/gpio.h>
-#include <dt-bindings/clock/hpm5361-clocks.h>
 #include <mem.h>
 #include <freq.h>
 
@@ -46,7 +45,7 @@
 			reg = <0xf40c0000 0x4000>;
 			clock-frequency = <DT_FREQ_M(960)>;
 			reg-names = "clk";
-			#clock-cells = <0>;
+			#clock-cells = <3>;
 			status = "okay";
 		};
 
@@ -114,8 +113,10 @@
 			reg = <0xf0040000 0x1000>;
 			interrupts = <13 1>, <5 1>;
 			interrupt-names = "uart", "idletimer";
-			clock-name = <19005459>;
-			clock-src = <0>;
+			clocks = <&clk CLOCK_UART0 CLK_SRC_OSC24M 1>;
+			clock-names = "uart";
+			clock-name = <CLOCK_UART0>;
+			clock-src = <CLK_SRC_OSC24M>;
 			interrupt-parent = <&plic>;
 			status = "disabled";
 		};
