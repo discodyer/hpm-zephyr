@@ -45,7 +45,7 @@
 		#size-cells = <1>;
 		status = "okay";
 		erase-block-size = <4096>;
-		write-block-size = <1>;
+		write-block-size = <4>;
 		nor-cfg-opt-hdr = <0xfcf90002>;
 		nor-cfg-opt-opt0 = <0x00000002>;
 		nor-cfg-opt-opt1 = <0x00001000>;

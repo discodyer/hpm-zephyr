@@ -7,4 +7,6 @@ zephyr_sources(
   soc.c
 )
 
+zephyr_linker_sources_ifdef(CONFIG_XIP RAMFUNC_SECTION hpm_ramfunc.ld)
+
 set(SOC_LINKER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/linker.ld CACHE INTERNAL "")

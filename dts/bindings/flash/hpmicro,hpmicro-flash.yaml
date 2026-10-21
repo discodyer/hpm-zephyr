@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2026 HPMicro
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
 description: HPMicro XPI NOR flash
@@ -6,6 +6,8 @@ description: HPMicro XPI NOR flash
 compatible: "hpmicro,hpmicro-flash"
 
 include: [soc-nv-flash.yaml]
+
+on-bus: xpi
 
 properties:
   nor-cfg-opt-hdr:

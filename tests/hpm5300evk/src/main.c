@@ -5,6 +5,7 @@
 
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/ztest.h>
@@ -13,10 +14,14 @@
 #define UART_NODE  DT_NODELABEL(uart0)
 #define CLOCK_NODE DT_NODELABEL(clk)
 #define GPIO_NODE  DT_NODELABEL(gpioa)
+#define FLASH_NODE DT_NODELABEL(flash0)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(CLOCK_NODE, okay));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(GPIO_NODE, okay));
+BUILD_ASSERT(DT_NODE_HAS_STATUS(FLASH_NODE, okay));
+BUILD_ASSERT(DT_PROP(FLASH_NODE, write_block_size) == 4);
+BUILD_ASSERT(DT_PROP(FLASH_NODE, erase_block_size) == 4096);
 BUILD_ASSERT(DT_CLOCKS_CELL_BY_IDX(UART_NODE, 0, name) == CLOCK_UART0);
 BUILD_ASSERT(DT_PROP(GPIO_NODE, ngpios) == 32);
 
@@ -25,6 +30,19 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_true(device_is_ready(DEVICE_DT_GET(DT_NODELABEL(clk))));
 	zassert_true(device_is_ready(DEVICE_DT_GET(DT_NODELABEL(uart0))));
 	zassert_true(device_is_ready(DEVICE_DT_GET(DT_NODELABEL(gpioa))));
+	zassert_true(device_is_ready(DEVICE_DT_GET(FLASH_NODE)));
+}
+
+ZTEST(hpm5300evk, test_flash_geometry)
+{
+	const struct device *flash = DEVICE_DT_GET(FLASH_NODE);
+	const struct flash_parameters *parameters = flash_get_parameters(flash);
+	uint64_t size = 0U;
+
+	zassert_ok(flash_get_size(flash, &size));
+	zassert_equal(size, DT_REG_SIZE(FLASH_NODE));
+	zassert_equal(parameters->write_block_size, 4U);
+	zassert_equal(parameters->erase_value, 0xffU);
 }
 
 ZTEST(hpm5300evk, test_clock_rate)
