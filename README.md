@@ -17,9 +17,11 @@ modules/hpm_sdk/             HPM SDK integration glue
 ## Status
 
 The module configures and builds a minimal HPM5361 application against Zephyr
-4.5.0-rc2 in RAM mode. The current smoke test exercises Devicetree, Kconfig,
-SoC startup, machine timer, UART, pinctrl, and GPIO build integration. Hardware
-validation and XIP/flash bring-up are still required before declaring support.
+4.5.0-rc2 in RAM mode. The current integration covers Devicetree, Kconfig,
+SoC clock/PLL and cache startup, PLIC interrupt routing, machine timer, UART
+clock and baud-rate setup, pinctrl, and GPIO build integration. RAM-mode
+console/timer validation on hardware and XIP/flash bring-up remain required
+before declaring support.
 
 ## Development
 
