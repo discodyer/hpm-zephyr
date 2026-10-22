@@ -58,9 +58,11 @@ ZEPHYR_BASE="$PWD/zephyr" HPM_SDK_DIR="$PWD/hpm_sdk" \
 
 The complete, unmodified upstream `hpm_sdk` is kept as a separate west project
 and pinned by full commit SHA. Zephyr-specific integration lives in
-`modules/hpm_sdk/` and in the Zephyr drivers under `drivers/`, following the
-`hal_stm32` model. Only HAL sources selected by Zephyr configuration are
-compiled; SDK middleware, components and samples stay out of the default build.
+`modules/hpm_sdk/` and in the Zephyr drivers under `drivers/`. This keeps the
+same clean upstream-HAL boundary used by `hal_stm32`, but uses HPM-specific
+per-IP selection rather than STM32's SoC-family source lists. Only HAL sources
+selected by Zephyr configuration are compiled; SDK middleware, components and
+samples stay out of the default build.
 
 `HAS_HPMSDK_*` is selected only by the SoC definition and describes silicon
 capabilities. `USE_HPMSDK_*` is selected by the Zephyr integration that needs a
