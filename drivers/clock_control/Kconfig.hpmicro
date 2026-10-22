@@ -5,7 +5,8 @@ config CLOCK_CONTROL_HPMICRO
 	bool "HPMicro clock control driver"
 	default y
 	depends on DT_HAS_HPMICRO_HPM_PLLV2_ENABLED
+	depends on HAS_HPMSDK_PLLCTLV2
 	select CLOCK_CONTROL
-	select HAS_HPMSDK_PLLCTLV2
+	select USE_HPMSDK_PLLCTLV2
 	help
 	  Enable the HPMicro clock controller driver.

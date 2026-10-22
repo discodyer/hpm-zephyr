@@ -8,6 +8,7 @@ config FLASH_HPMICRO
 	default y
 	depends on FLASH
 	depends on DT_HAS_HPMICRO_XPI_ENABLED
+	depends on HAS_HPMSDK_XPI
 	select FLASH_HAS_DRIVER_ENABLED
 	select FLASH_HAS_EXPLICIT_ERASE
 	select FLASH_HAS_PAGE_LAYOUT

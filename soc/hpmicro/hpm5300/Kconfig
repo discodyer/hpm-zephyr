@@ -19,6 +19,8 @@ config SOC_HPM5361
 	select CPU_HAS_DCACHE
 	select CPU_HAS_ICACHE
 	select RISCV_PMP if !MCUBOOT
+	select USE_HPMSDK_PCFG
+	select USE_HPMSDK_PLLCTLV2
 	help
 	  HPM5361 single-core RISC-V MCU.
 
@@ -28,7 +30,6 @@ config SOC_ANDES_V5_PMA
 	bool "Andes V5 Physical Memory Attribute support"
 	default y
 	select ARCH_HAS_NOCACHE_MEMORY_SUPPORT
-	select HAS_HPMSDK_PMP
 	help
 	  Configure physical memory attributes through Andes PMA CSRs.
 

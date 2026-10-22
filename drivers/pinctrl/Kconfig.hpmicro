@@ -7,6 +7,6 @@ config PINCTRL_HPMICRO
 	bool "Pin controller driver for HPMicro MCUs"
 	default y
 	depends on DT_HAS_HPMICRO_HPM_PINCTRL_ENABLED
-	select HAS_HPMSDK_PINCTRL
+	depends on HAS_HPMSDK_IOC
 	help
 	  Enable the pin controller driver for HPMicro MCUs.

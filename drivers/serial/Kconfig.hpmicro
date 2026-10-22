@@ -7,7 +7,8 @@ config UART_HPMICRO
 	bool "HPMicro UART driver"
 	default y
 	depends on DT_HAS_HPMICRO_HPM_UART_ENABLED
-	select HAS_HPMSDK_UART
+	depends on HAS_HPMSDK_UART
+	select USE_HPMSDK_UART
 	select SERIAL_HAS_DRIVER
 	select SERIAL_SUPPORT_INTERRUPT
 	help
