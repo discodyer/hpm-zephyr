@@ -41,6 +41,17 @@ Build-only validation is complete for both boards, including the Twister
 smoke test. No console, timer, GPIO, flash erase/program, boot, or runner
 behavior has been validated on real hardware.
 
+## HPM SDK integration
+
+The complete, unmodified upstream `hpm_sdk` is kept as a separate west project
+and pinned by full commit SHA. Zephyr-specific integration lives in
+`modules/hpm_sdk/` and in the Zephyr drivers under `drivers/`, following the
+`hal_stm32` model. Only HAL sources selected by Zephyr configuration are
+compiled; SDK middleware, components and samples stay out of the default build.
+
+The workspace-level agent notes record the maintenance assessment, required
+capability/use Kconfig split, all-HAL build-only coverage and upgrade process.
+
 ## Development
 
 Use Zephyr's upstream `<subsystem>: <summary>` format for local development:
