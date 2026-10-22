@@ -34,6 +34,7 @@
 	aliases {
 		led0 = &led0;
 		i2c-0 = &i2c0;
+		spi-0 = &spi1;
 	};
 };
 
@@ -48,6 +49,12 @@
 	status = "okay";
 	clock-frequency = <100000>;
 	pinctrl-0 = <&pinmux_i2c0>;
+	pinctrl-names = "default";
+};
+
+&spi1 {
+	status = "okay";
+	pinctrl-0 = <&pinmux_spi1>;
 	pinctrl-names = "default";
 };
 

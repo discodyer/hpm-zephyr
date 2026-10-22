@@ -121,15 +121,71 @@
 			status = "disabled";
 		};
 
+		spi0: spi@f0070000 {
+			compatible = "hpmicro,hpm-spi";
+			reg = <0xf0070000 0x4000>;
+			interrupts = <25 1>;
+			interrupt-parent = <&plic>;
+			clocks = <&clk CLOCK_SPI0 CLK_SRC_PLL1_CLK0 10>;
+			clock-names = "spi";
+			clock-name = <CLOCK_SPI0>;
+			clock-src = <CLK_SRC_PLL1_CLK0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		spi1: spi@f0074000 {
+			compatible = "hpmicro,hpm-spi";
+			reg = <0xf0074000 0x4000>;
+			interrupts = <26 1>;
+			interrupt-parent = <&plic>;
+			clocks = <&clk CLOCK_SPI1 CLK_SRC_PLL1_CLK0 10>;
+			clock-names = "spi";
+			clock-name = <CLOCK_SPI1>;
+			clock-src = <CLK_SRC_PLL1_CLK0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		spi2: spi@f0078000 {
+			compatible = "hpmicro,hpm-spi";
+			reg = <0xf0078000 0x4000>;
+			interrupts = <27 1>;
+			interrupt-parent = <&plic>;
+			clocks = <&clk CLOCK_SPI2 CLK_SRC_PLL1_CLK0 10>;
+			clock-names = "spi";
+			clock-name = <CLOCK_SPI2>;
+			clock-src = <CLK_SRC_PLL1_CLK0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
+		spi3: spi@f007c000 {
+			compatible = "hpmicro,hpm-spi";
+			reg = <0xf007c000 0x4000>;
+			interrupts = <28 1>;
+			interrupt-parent = <&plic>;
+			clocks = <&clk CLOCK_SPI3 CLK_SRC_PLL1_CLK0 10>;
+			clock-names = "spi";
+			clock-name = <CLOCK_SPI3>;
+			clock-src = <CLK_SRC_PLL1_CLK0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
 		i2c0: i2c@f0060000 {
 			compatible = "hpmicro,hpm-i2c";
 			reg = <0xf0060000 0x4000>;
 			interrupts = <21 1>;
 			interrupt-parent = <&plic>;
-			clocks = <&clk CLOCK_I2C0 CLK_SRC_OSC24M 1>;
+			clocks = <&clk CLOCK_I2C0 CLK_SRC_PLL1_CLK0 10>;
 			clock-names = "i2c";
 			clock-name = <CLOCK_I2C0>;
-			clock-src = <CLK_SRC_OSC24M>;
+			clock-src = <CLK_SRC_PLL1_CLK0>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 			status = "disabled";
@@ -140,10 +196,10 @@
 			reg = <0xf0064000 0x4000>;
 			interrupts = <22 1>;
 			interrupt-parent = <&plic>;
-			clocks = <&clk CLOCK_I2C1 CLK_SRC_OSC24M 1>;
+			clocks = <&clk CLOCK_I2C1 CLK_SRC_PLL1_CLK0 10>;
 			clock-names = "i2c";
 			clock-name = <CLOCK_I2C1>;
-			clock-src = <CLK_SRC_OSC24M>;
+			clock-src = <CLK_SRC_PLL1_CLK0>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 			status = "disabled";
@@ -154,10 +210,10 @@
 			reg = <0xf0068000 0x4000>;
 			interrupts = <23 1>;
 			interrupt-parent = <&plic>;
-			clocks = <&clk CLOCK_I2C2 CLK_SRC_OSC24M 1>;
+			clocks = <&clk CLOCK_I2C2 CLK_SRC_PLL1_CLK0 10>;
 			clock-names = "i2c";
 			clock-name = <CLOCK_I2C2>;
-			clock-src = <CLK_SRC_OSC24M>;
+			clock-src = <CLK_SRC_PLL1_CLK0>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 			status = "disabled";
@@ -168,10 +224,10 @@
 			reg = <0xf006c000 0x4000>;
 			interrupts = <24 1>;
 			interrupt-parent = <&plic>;
-			clocks = <&clk CLOCK_I2C3 CLK_SRC_OSC24M 1>;
+			clocks = <&clk CLOCK_I2C3 CLK_SRC_PLL1_CLK0 10>;
 			clock-names = "i2c";
 			clock-name = <CLOCK_I2C3>;
-			clock-src = <CLK_SRC_OSC24M>;
+			clock-src = <CLK_SRC_PLL1_CLK0>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 			status = "disabled";

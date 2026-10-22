@@ -21,8 +21,10 @@ REQUIRED = (
     "boards/hpmicro/hpm5361icb/board.yml",
     "boards/hpmicro/hpm5361icb/hpm5361icb.dts",
     "drivers/i2c/i2c_hpmicro.c",
+    "drivers/spi/spi_hpmicro.c",
     "dts/bindings/hpmicro,hpm5361icb.yaml",
     "dts/bindings/i2c/hpmicro,hpm-i2c.yaml",
+    "dts/bindings/spi/hpmicro,hpm-spi.yaml",
     "dts/riscv/hpmicro/hpm5361.dtsi",
 )
 

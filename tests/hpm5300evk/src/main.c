@@ -8,6 +8,7 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/ztest.h>
@@ -19,6 +20,7 @@
 #define FLASH_NODE     DT_NODELABEL(xpi0)
 #define FLASH_MEM_NODE DT_NODELABEL(flash0)
 #define I2C_NODE       DT_NODELABEL(i2c0)
+#define SPI_NODE       DT_NODELABEL(spi1)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(CLOCK_NODE, okay));
@@ -39,6 +41,9 @@ ZTEST(hpm5300evk, test_devices_ready)
 
 #if DT_NODE_HAS_STATUS(I2C_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(I2C_NODE)));
+#endif
+#if DT_NODE_HAS_STATUS(SPI_NODE, okay)
+	zassert_true(device_is_ready(DEVICE_DT_GET(SPI_NODE)));
 #endif
 }
 
