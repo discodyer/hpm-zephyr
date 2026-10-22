@@ -1,0 +1,37 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: HPMicro I2C controller
+
+compatible: "hpmicro,hpm-i2c"
+
+include: [i2c-controller.yaml, pinctrl-device.yaml]
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  clocks:
+    required: true
+    description: |
+      Clock specifier with the HPM clock resource, source selector and
+      divider, respectively.
+
+  clock-names:
+    required: true
+
+  clock-name:
+    type: int
+    required: true
+    description: HPM SDK clock resource identifier
+
+  clock-src:
+    type: int
+    required: true
+    description: I2C clock source selector
+
+  clock-frequency:
+    required: true

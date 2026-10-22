@@ -14,4 +14,16 @@
 						 IOC_TYPE_IOC, 0, 2)>;
 		};
 	};
+
+	pinmux_i2c0: pinmux_i2c0 {
+		group0 {
+			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTB, 2),
+						 IOC_TYPE_IOC, 0, 4)>,
+				 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTB, 3),
+						 IOC_TYPE_IOC, 0, 4)>;
+			drive-open-drain;
+			bias-pull-up;
+			input-enable;
+		};
+	};
 };
