@@ -30,22 +30,63 @@ set(HPM_SDK_LIB hpm_sdk)
 set(HPM_SDK_GCC_LIB hpm_sdk)
 set(HPM_SDK_GCC_STARTUP_LIB hpm_sdk)
 
-file(STRINGS "${CMAKE_BINARY_DIR}/zephyr/.config" CONFIG_LINES
-     REGEX "^CONFIG_HAS_HPMSDK_[A-Za-z0-9_]+=")
-foreach(line IN LISTS CONFIG_LINES)
-  string(REGEX REPLACE "(CONFIG_HAS_HPMSDK_[A-Za-z0-9_]+)=y" "\\1" config ${line})
-  string(REGEX REPLACE "CONFIG_" "HPMSOC_" HPMSOC_ENABLE ${config})
-  set(${HPMSOC_ENABLE} y)
+set(HPM_SOC_DIR "${HPM_SDK_DIR}/soc/${HPM_SOC_SERIES}/${HPM_SOC}")
+set(HPM_SOC_MODULE_LIST "${HPM_SOC_DIR}/soc_modules.list")
+
+if(NOT EXISTS "${HPM_SOC_MODULE_LIST}")
+  message(FATAL_ERROR "HPM SDK does not support ${HPM_SOC_SERIES}/${HPM_SOC}")
+endif()
+
+# HPMSOC_HAS_HPMSDK_* is both a compile-time capability macro consumed by SDK
+# headers and the CMake switch used by sdk_src_ifdef() to select HAL sources.
+# Keep the capability definitions for the whole SoC, but only define the CMake
+# variables for source selection when a Zephyr consumer selected that HAL.
+file(STRINGS "${HPM_SOC_MODULE_LIST}" HPM_SDK_MODULES REGEX "^HPMSOC_")
+set(HPM_SDK_CAPABILITIES)
+foreach(module IN LISTS HPM_SDK_MODULES)
+  string(REGEX REPLACE "=.*$" "" module_name "${module}")
+  string(REGEX REPLACE "^[^=]*=" "" module_value "${module}")
+  list(APPEND HPM_SDK_CAPABILITIES "${module_name}")
+  if(module_value STREQUAL "y")
+    sdk_compile_definitions("-D${module_name}=y")
+  endif()
 endforeach()
+
+if(CONFIG_HPM_SDK_BUILD_ALL_DRIVERS)
+  foreach(module_name IN LISTS HPM_SDK_CAPABILITIES)
+    set(${module_name} y)
+  endforeach()
+else()
+  file(STRINGS "${CMAKE_BINARY_DIR}/zephyr/.config" CONFIG_LINES
+       REGEX "^CONFIG_USE_HPMSDK_[A-Za-z0-9_]+=y$")
+  foreach(line IN LISTS CONFIG_LINES)
+    string(REGEX REPLACE "CONFIG_USE_HPMSDK_([A-Za-z0-9_]+)=y" "\\1" use_name "${line}")
+    set(module_name "HPMSOC_HAS_HPMSDK_${use_name}")
+    list(FIND HPM_SDK_CAPABILITIES "${module_name}" module_index)
+    if(module_index EQUAL -1)
+      message(FATAL_ERROR
+              "CONFIG_USE_HPMSDK_${use_name} has no matching SDK module for ${HPM_SOC}")
+    endif()
+    set(${module_name} y)
+  endforeach()
+endif()
 
 zephyr_include_directories(${HPM_SDK_DIR}/drivers/inc)
 zephyr_include_directories(${HPM_SDK_DIR}/arch)
-zephyr_include_directories(${HPM_SDK_DIR}/soc/HPM5300/HPM5361)
-zephyr_include_directories(${HPM_SDK_DIR}/soc/HPM5300/ip)
+zephyr_include_directories(${HPM_SOC_DIR})
+zephyr_include_directories(${HPM_SDK_DIR}/soc/${HPM_SOC_SERIES}/ip)
 
 add_subdirectory(${HPM_SDK_DIR}/arch ${HPM_SDK_BINARY_DIR}/arch)
 add_subdirectory(${HPM_SDK_DIR}/soc ${HPM_SDK_BINARY_DIR}/soc)
 add_subdirectory(${HPM_SDK_DIR}/drivers ${HPM_SDK_BINARY_DIR}/drivers)
+
+if(CONFIG_HPM_SDK_BUILD_ALL_DRIVERS)
+  # The pinned vendor QEIV2 driver promotes float to double in two places.
+  # Suppress only that warning class for this source so the all-HAL regression
+  # can retain Zephyr's warnings-as-errors policy everywhere else.
+  set_source_files_properties("${HPM_SDK_DIR}/drivers/src/hpm_qeiv2_drv.c"
+                              PROPERTIES COMPILE_OPTIONS "-Wno-double-promotion")
+endif()
 
 sdk_inc(.)
 endif()

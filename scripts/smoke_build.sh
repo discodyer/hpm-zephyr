@@ -37,3 +37,5 @@ cmake -S "$APP_DIR" -B "$APP_DIR/build" -GNinja \
 	-DZEPHYR_MODULES="$MODULE_DIR" \
 	-DHPM_SDK_DIR="$HPM_SDK_DIR"
 cmake --build "$APP_DIR/build"
+
+printf 'HPM5300EVK RAM smoke build passed\n'

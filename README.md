@@ -41,6 +41,19 @@ Build-only validation is complete for both boards, including the Twister
 smoke test. No console, timer, GPIO, flash erase/program, boot, or runner
 behavior has been validated on real hardware.
 
+The module can be validated without adding it to the west manifest:
+
+```sh
+ZEPHYR_BASE="$PWD/zephyr" HPM_SDK_DIR="$PWD/hpm_sdk" \
+  ./hpm-zephyr/scripts/smoke_build.sh
+ZEPHYR_BASE="$PWD/zephyr" HPM_SDK_DIR="$PWD/hpm_sdk" \
+  ./hpm-zephyr/scripts/xip_smoke_build.sh
+HPM_SDK_ALL_DRIVERS=y ZEPHYR_BASE="$PWD/zephyr" \
+  HPM_SDK_DIR="$PWD/hpm_sdk" ./hpm-zephyr/scripts/xip_smoke_build.sh
+ZEPHYR_BASE="$PWD/zephyr" HPM_SDK_DIR="$PWD/hpm_sdk" \
+  ./hpm-zephyr/scripts/twister_smoke.sh
+```
+
 ## HPM SDK integration
 
 The complete, unmodified upstream `hpm_sdk` is kept as a separate west project
@@ -49,8 +62,15 @@ and pinned by full commit SHA. Zephyr-specific integration lives in
 `hal_stm32` model. Only HAL sources selected by Zephyr configuration are
 compiled; SDK middleware, components and samples stay out of the default build.
 
-The workspace-level agent notes record the maintenance assessment, required
-capability/use Kconfig split, all-HAL build-only coverage and upgrade process.
+`HAS_HPMSDK_*` is selected only by the SoC definition and describes silicon
+capabilities. `USE_HPMSDK_*` is selected by the Zephyr integration that needs a
+vendor HAL source. Devicetree still controls which instances a board enables.
+The optional `CONFIG_HPM_SDK_BUILD_ALL_DRIVERS=y` compiles every HAL source
+listed for the selected SoC for build-only regression testing.
+
+The workspace-level agent notes record the maintenance assessment, the per-SoC
+capability matrix, board interfaces, all-HAL build-only coverage and upgrade
+process.
 
 ## Development
 

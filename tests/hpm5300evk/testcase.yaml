@@ -11,5 +11,17 @@ tests:
       - hpm5361icb/hpm5361
     build_only: true
     integration_platforms:
-      - hpm5300evk/hpm5361
+      - hpm5300evk
+      - hpm5361icb
+
+  boards.hpmicro.hpm5361icb.all_hal:
+    tags:
+      - hpmicro
+      - smoke
+      - hal
+    platform_allow:
       - hpm5361icb/hpm5361
+    build_only: true
+    integration_platforms:
+      - hpm5361icb
+    extra_args: CONFIG_HPM_SDK_BUILD_ALL_DRIVERS=y
