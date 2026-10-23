@@ -21,3 +21,5 @@ config TSNS_HPMICRO_TIMEOUT_MS
 	depends on TSNS_HPMICRO
 	help
 	  Maximum time to wait for a valid die-temperature sample.
+
+rsource "Kconfig.qeiv2"

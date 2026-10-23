@@ -1,0 +1,15 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_QEIV2 := hpmicro,hpm-qeiv2
+
+config QEIV2_HPMICRO
+	bool "HPMicro QEIV2 quadrature encoder driver"
+	default y
+	depends on SENSOR
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_QEIV2_ENABLED
+	depends on HAS_HPMSDK_QEIV2
+	select USE_HPMSDK_QEIV2
+	help
+	  Enable the HPMicro QEIV2 ABZ quadrature encoder driver.

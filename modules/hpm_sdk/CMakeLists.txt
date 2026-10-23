@@ -80,13 +80,12 @@ add_subdirectory(${HPM_SDK_DIR}/arch ${HPM_SDK_BINARY_DIR}/arch)
 add_subdirectory(${HPM_SDK_DIR}/soc ${HPM_SDK_BINARY_DIR}/soc)
 add_subdirectory(${HPM_SDK_DIR}/drivers ${HPM_SDK_BINARY_DIR}/drivers)
 
-if(CONFIG_HPM_SDK_BUILD_ALL_DRIVERS)
-  # The pinned vendor QEIV2 driver promotes float to double in two places.
-  # Suppress only that warning class for this source so the all-HAL regression
-  # can retain Zephyr's warnings-as-errors policy everywhere else.
-  set_source_files_properties("${HPM_SDK_DIR}/drivers/src/hpm_qeiv2_drv.c"
-                              PROPERTIES COMPILE_OPTIONS "-Wno-double-promotion")
-endif()
+# The pinned vendor QEIV2 driver promotes float to double in two places.
+# Suppress only that warning class for this source, whether it is selected by
+# the QEIV2 driver or by the all-HAL regression; all other SDK sources retain
+# Zephyr's warnings-as-errors policy.
+set_source_files_properties("${HPM_SDK_DIR}/drivers/src/hpm_qeiv2_drv.c"
+                            PROPERTIES COMPILE_OPTIONS "-Wno-double-promotion")
 
 sdk_inc(.)
 endif()

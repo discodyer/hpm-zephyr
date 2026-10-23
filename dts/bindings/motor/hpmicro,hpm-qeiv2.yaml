@@ -1,11 +1,16 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-description: HPMicro QEIV2 quadrature encoder interface
+description: |
+  HPMicro QEIV2 quadrature encoder interface.
+
+  The initial driver binding covers ABZ quadrature decoding. The phase
+  counter wraps at counts-per-revolution and the controller's angle output is
+  exposed through the generic sensor rotation channel.
 
 compatible: "hpmicro,hpm-qeiv2"
 
-include: [base.yaml, pinctrl-device.yaml]
+include: [sensor-device.yaml, pinctrl-device.yaml]
 
 properties:
   reg:
@@ -19,3 +24,39 @@ properties:
 
   clock-names:
     required: true
+
+  clock-name:
+    type: int
+    required: true
+
+  clock-src:
+    type: int
+    required: true
+
+  counts-per-revolution:
+    type: int
+    min: 2
+    required: true
+    description: Number of quadrature counts in one mechanical revolution.
+
+  z-calibration:
+    type: boolean
+    description: |
+      Calibrate the phase counter from the Z/index input. When disabled, the
+      Z input is neither required nor used for phase calibration.
+
+  phase-index:
+    type: int
+    min: 0
+    default: 0
+    description: |
+      Phase counter value loaded when z-calibration detects the Z input.
+
+  filter-length:
+    type: int
+    default: 0
+    min: 0
+    max: 511
+    description: |
+      Digital delay-filter length applied to the A and B inputs. Zero disables
+      the filter.

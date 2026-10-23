@@ -628,6 +628,8 @@
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_MOT0 CLK_SRC_OSC24M 1>;
 			clock-names = "qei";
+			clock-name = <CLOCK_MOT0>;
+			clock-src = <CLK_SRC_OSC24M>;
 			status = "disabled";
 		};
 
@@ -638,6 +640,8 @@
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_MOT0 CLK_SRC_OSC24M 1>;
 			clock-names = "qei";
+			clock-name = <CLOCK_MOT0>;
+			clock-src = <CLK_SRC_OSC24M>;
 			status = "disabled";
 		};
 

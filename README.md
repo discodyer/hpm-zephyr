@@ -84,7 +84,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | MBX | MBX0A/B | `mbox` | Implemented (build-only) | One 32-bit word-message channel per endpoint, interrupt-driven receive callbacks and clock gating; separate 4-word FIFO, signalling-only mode and shared-memory IPC protocol not exposed |
 | GPIOM | 1 | Custom | Missing | No Zephyr generic API; ownership policy needs design |
 | TRGM | 1 | Custom | Missing | No driver |
-| QEIV2 | 2 | `sensor` QDEC or custom | Missing | No driver |
+| QEIV2 | 2 | `sensor` | Implemented core (build-only) | ABZ quadrature mode, configurable counts and Z calibration, A/B delay filter, angle, raw position and revolution count; PD/UD/UVW/sincos, speed measurement, compare and interrupts not exposed |
 | QEO | 2 | Custom | Missing | No driver |
 | SEI | 2 channels | Custom | Missing | No driver |
 | MMC | 2 | Custom | Missing | No driver |
