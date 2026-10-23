@@ -19,6 +19,7 @@
 #include <hpm_spi_drv.h>
 
 #define HPM_SPI_MAX_WORD_SIZE 32U
+#define HPM_SPI_FIFO_DEPTH    8U
 
 struct hpm_spi_config {
 	SPI_Type *base;
@@ -33,22 +34,6 @@ struct hpm_spi_config {
 struct hpm_spi_data {
 	struct k_mutex lock;
 };
-
-static int hpm_spi_status_to_errno(hpm_stat_t status)
-{
-	switch (status) {
-	case status_success:
-		return 0;
-	case status_invalid_argument:
-		return -EINVAL;
-	case status_timeout:
-		return -ETIMEDOUT;
-	case status_spi_master_busy:
-		return -EBUSY;
-	default:
-		return -EIO;
-	}
-}
 
 static int hpm_spi_configure(const struct device *dev, const struct spi_config *spi_cfg)
 {
@@ -132,82 +117,214 @@ static int hpm_spi_configure(const struct device *dev, const struct spi_config *
 	return 0;
 }
 
+static int hpm_spi_buffer_total(const struct spi_buf_set *bufs, size_t *total)
+{
+	if (bufs == NULL) {
+		*total = 0U;
+		return 0;
+	}
+
+	if ((bufs->count != 0U) && (bufs->buffers == NULL)) {
+		return -EINVAL;
+	}
+
+	*total = 0U;
+	for (size_t i = 0U; i < bufs->count; i++) {
+		*total += bufs->buffers[i].len;
+	}
+
+	return 0;
+}
+
+static void hpm_spi_fill_next(const struct spi_buf_set *bufs, size_t *index, size_t *offset,
+			      uint32_t frame_size, uint32_t *word)
+{
+	uint8_t *bytes = (uint8_t *)&word;
+
+	*word = 0U;
+	if ((bufs == NULL) || (*index >= bufs->count)) {
+		return;
+	}
+
+	for (uint32_t i = 0U; i < frame_size; i++) {
+		while ((*index < bufs->count) && (*offset >= bufs->buffers[*index].len)) {
+			(*index)++;
+			*offset = 0U;
+		}
+
+		if (*index >= bufs->count) {
+			return;
+		}
+
+		if (bufs->buffers[*index].buf != NULL) {
+			bytes[i] = ((const uint8_t *)bufs->buffers[*index].buf)[*offset];
+		}
+		(*offset)++;
+	}
+}
+
+static void hpm_spi_store_next(const struct spi_buf_set *bufs, size_t *index, size_t *offset,
+			       uint32_t frame_size, uint32_t word)
+{
+	const uint8_t *bytes = (const uint8_t *)&word;
+
+	if ((bufs == NULL) || (*index >= bufs->count)) {
+		return;
+	}
+
+	for (uint32_t i = 0U; i < frame_size; i++) {
+		while ((*index < bufs->count) && (*offset >= bufs->buffers[*index].len)) {
+			(*index)++;
+			*offset = 0U;
+		}
+
+		if (*index >= bufs->count) {
+			return;
+		}
+
+		if (bufs->buffers[*index].buf != NULL) {
+			((uint8_t *)bufs->buffers[*index].buf)[*offset] = bytes[i];
+		}
+		(*offset)++;
+	}
+}
+
+static int hpm_spi_transfer_stream(const struct hpm_spi_config *config,
+				   spi_control_config_t *control_config, uint32_t frame_size,
+				   uint32_t frames, uint32_t tx_frames,
+				   const struct spi_buf_set *tx_bufs,
+				   const struct spi_buf_set *rx_bufs)
+{
+	size_t tx_index = 0U;
+	size_t rx_index = 0U;
+	size_t tx_offset = 0U;
+	size_t rx_offset = 0U;
+	uint32_t tx_word = 0U;
+	uint32_t rx_word = 0U;
+	uint32_t written = 0U;
+	uint32_t read = 0U;
+	uint32_t retry = 0U;
+
+	if ((tx_bufs == NULL) && (rx_bufs == NULL)) {
+		return -EINVAL;
+	}
+
+	if (spi_control_init(config->base, control_config, frames, frames) != status_success) {
+		return -EIO;
+	}
+
+	if (spi_write_address(config->base, spi_master_mode, control_config, NULL) !=
+	    status_success) {
+		return -EIO;
+	}
+
+	if (spi_write_command(config->base, spi_master_mode, control_config, NULL) !=
+	    status_success) {
+		return -EIO;
+	}
+
+	while ((read < frames) || (written < frames)) {
+		uint32_t status = config->base->STATUS;
+
+		if ((written < frames) && !(status & SPI_STATUS_TXFULL_MASK)) {
+			if (written < tx_frames) {
+				hpm_spi_fill_next(tx_bufs, &tx_index, &tx_offset, frame_size,
+						  &tx_word);
+			} else {
+				tx_word = 0U;
+			}
+			config->base->DATA = tx_word;
+			written++;
+		}
+
+		if ((read < frames) && !(status & SPI_STATUS_RXEMPTY_MASK)) {
+			rx_word = config->base->DATA;
+			hpm_spi_store_next(rx_bufs, &rx_index, &rx_offset, frame_size, rx_word);
+			read++;
+			retry = 0U;
+		} else if ((written < frames) || (read < frames)) {
+			if (retry++ > HPM_SPI_FIFO_DEPTH * 1024U) {
+				return -ETIMEDOUT;
+			}
+		}
+	}
+
+	if (spi_wait_for_idle_status(config->base) != status_success) {
+		return -ETIMEDOUT;
+	}
+
+	if (read != frames) {
+		return -EIO;
+	}
+
+	return 0;
+}
+
 static int hpm_spi_transceive(const struct device *dev, const struct spi_config *spi_cfg,
 			      const struct spi_buf_set *tx_bufs, const struct spi_buf_set *rx_bufs)
 {
 	const struct hpm_spi_config *config = dev->config;
 	struct hpm_spi_data *data = dev->data;
 	spi_control_config_t control_config = {0};
-	const struct spi_buf *tx = NULL;
-	const struct spi_buf *rx = NULL;
-	hpm_stat_t status;
-	uint32_t tx_len = 0U;
-	uint32_t rx_len = 0U;
+	size_t tx_len;
+	size_t rx_len;
+	uint32_t word_size;
+	uint32_t frame_size;
+	uint32_t frames;
+	uint32_t tx_frames;
+	uint32_t rx_frames;
 	int ret;
 
-	if ((tx_bufs == NULL || tx_bufs->count == 0U) &&
-	    (rx_bufs == NULL || rx_bufs->count == 0U)) {
-		return -EINVAL;
+	ret = hpm_spi_configure(dev, spi_cfg);
+	if (ret < 0) {
+		return ret;
 	}
 
-	if ((tx_bufs != NULL) && (tx_bufs->count > 1U)) {
-		return -ENOTSUP;
+	ret = hpm_spi_buffer_total(tx_bufs, &tx_len);
+	if (ret < 0) {
+		return ret;
 	}
 
-	if ((rx_bufs != NULL) && (rx_bufs->count > 1U)) {
-		return -ENOTSUP;
-	}
-
-	if (tx_bufs != NULL) {
-		tx = &tx_bufs->buffers[0];
-		tx_len = tx->len;
-	}
-
-	if (rx_bufs != NULL) {
-		rx = &rx_bufs->buffers[0];
-		rx_len = rx->len;
-	}
-
-	if ((tx != NULL) && (tx_len > 0U) && (tx->buf == NULL)) {
-		return -EINVAL;
-	}
-
-	if ((rx != NULL) && (rx_len > 0U) && (rx->buf == NULL)) {
-		return -EINVAL;
+	ret = hpm_spi_buffer_total(rx_bufs, &rx_len);
+	if (ret < 0) {
+		return ret;
 	}
 
 	if ((tx_len == 0U) && (rx_len == 0U)) {
 		return 0;
 	}
 
-	if ((tx_len > 0U) && (rx_len > 0U) && (tx_len != rx_len)) {
+	word_size = SPI_WORD_SIZE_GET(spi_cfg->operation);
+	if ((word_size != 8U) && (word_size != 16U) && (word_size != 24U) && (word_size != 32U)) {
 		return -ENOTSUP;
 	}
+	frame_size = word_size / 8U;
+
+	if (((tx_len != 0U) && !IS_ALIGNED(tx_len, frame_size)) ||
+	    ((rx_len != 0U) && !IS_ALIGNED(rx_len, frame_size))) {
+		return -EINVAL;
+	}
+
+	tx_frames = (uint32_t)(tx_len / frame_size);
+	rx_frames = (uint32_t)(rx_len / frame_size);
+	frames = MAX(tx_frames, rx_frames);
 
 	k_mutex_lock(&data->lock, K_FOREVER);
-
-	ret = hpm_spi_configure(dev, spi_cfg);
-	if (ret < 0) {
-		goto unlock;
-	}
 
 	spi_master_get_default_control_config(&control_config);
 	control_config.common_config.cs_index = (spi_cs_index_t)BIT(spi_cfg->peripheral);
 
-	if ((tx_len > 0U) && (rx_len > 0U)) {
+	if ((tx_frames > 0U) && (rx_frames > 0U)) {
 		control_config.common_config.trans_mode = spi_trans_write_read_together;
-	} else if (tx_len > 0U) {
+	} else if (tx_frames > 0U) {
 		control_config.common_config.trans_mode = spi_trans_write_only;
 	} else {
 		control_config.common_config.trans_mode = spi_trans_read_only;
 	}
 
-	status =
-		spi_transfer(config->base, &control_config, NULL, NULL, tx != NULL ? tx->buf : NULL,
-			     tx_len, rx != NULL ? rx->buf : NULL, rx_len);
-	ret = hpm_spi_status_to_errno(status);
+	ret = hpm_spi_transfer_stream(config, &control_config, frame_size, frames, tx_frames,
+				      tx_bufs, rx_bufs);
 
-unlock:
 	k_mutex_unlock(&data->lock);
 
 	return ret;

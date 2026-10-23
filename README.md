@@ -68,7 +68,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | UART | UART0-7, PUART | `serial` | Implemented core (build-only) | Polling and interrupt-driven APIs, FIFO fill/read, runtime IRQ control, callbacks, line-status errors; async/DMA, wide data, flow control and RS-485 not exposed |
 | GPIO | GPIOA/B enabled by default; GPIOX/Y, PGPIO disabled | `gpio` | Implemented core (build-only) | Basic I/O, port operations, interrupts and callbacks; current tests exercise GPIOA |
 | I2C | 4 | `i2c` | Partial | Controller, 7-bit, standard/fast/fast-plus, arbitrary multi-message transactions and bus recovery; no target, 10-bit, SMBus helpers or DMA |
-| SPI | 4 | `spi` | Partial | Controller, Motorola, single-line, native CS, one TX and one RX buffer; no GPIO CS, multi-buffer, half-duplex, TI frame, multi-line, hold/lock |
+| SPI | 4 | `spi` | Partial | Controller, Motorola, single-line, native CS, scatter/gather TX/RX buffers with 8/16/24/32-bit frames and unequal TX/RX lengths; no GPIO CS, half-duplex, TI frame, multi-line, hold/lock or asynchronous API |
 | XPI NOR / XIP | 1 | `flash` | Implemented (build-only) | Read, write, erase and page layout through vendor ROM API; no EXIP integration |
 | MCAN / CAN-FD | 4 | `can` | Implemented (build-only) | Zephyr `can_mcan` backend, classic CAN and CAN-FD timing, shared 32 KiB AHB message RAM split into 8 KiB windows; timestamp/TSU integration pending |
 | PWM | 2 x 8 channels | `pwm` | Implemented (build-only) | Edge-aligned `set_cycles`, polarity, 0-100% duty; complementary/dead-zone/fault/capture modes not exposed yet |
