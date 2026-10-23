@@ -14,3 +14,17 @@ config QEO_HPMICRO
 	  Enable the HPMicro quadrature encoder output driver. The initial
 	  adaptation supports ABZ output, software position injection and
 	  internal position readback.
+
+DT_COMPAT_HPM_SEI := hpmicro,hpm-sei
+
+config SEI_HPMICRO
+	bool "HPMicro serial encoder interface driver"
+	default y
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_SEI_ENABLED
+	depends on HAS_HPMSDK_SEI
+	select USE_HPMSDK_SEI
+	help
+	  Enable the HPMicro serial encoder interface. This is a protocol-neutral
+	  execution layer for transceiver, instruction, latch, SAMPLE/UPDATE and
+	  engine configuration. Encoder protocols are implemented by consumers.

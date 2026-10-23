@@ -3,3 +3,4 @@
 
 zephyr_library()
 zephyr_library_sources_ifdef(CONFIG_QEO_HPMICRO qeo_hpmicro.c)
+zephyr_library_sources_ifdef(CONFIG_SEI_HPMICRO sei_hpmicro.c)

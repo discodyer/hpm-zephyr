@@ -192,3 +192,7 @@
 	output-type = "abz";
 	z-pulse-width = "75-percent";
 };
+
+&sei {
+	status = "okay";
+};

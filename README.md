@@ -86,7 +86,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | TRGM | 1 | `mux` | Implemented core (build-only) | One mux control per TRGM output; runtime source selection and readback through the generic mux API. Output inversion/edge-pulse configuration, input filters, DMA/IRQ routing and the ADC/DAC/position matrices are not exposed |
 | QEIV2 | 2 | `sensor` | Implemented core (build-only) | ABZ quadrature mode, configurable counts and Z calibration, A/B delay filter, angle, raw position and revolution count; PD/UD/UVW/sincos, speed measurement, compare and interrupts not exposed |
 | QEO | 2 | Custom `hpm_qeo` | Implemented core (build-only) | ABZ, pulse/direction, up/down and three-phase output modes; resolution, maximum frequency, watchdog, polarity, Z pulse width, hardware/software position source, position injection and status readback. WAVE output, PWM FORCE tables, safety mode and TRGM/MMC integration are not exposed |
-| SEI | 2 channels | Custom | Missing | No driver |
+| SEI | 2 channels | Custom `hpm_sei` | Implemented core (build-only) | Protocol-neutral transceiver, instruction, latch, SAMPLE/UPDATE, engine and data-register access; encoder protocols (SSI, Tamagawa, BiSS, EnDat, etc.), periodic/external trigger routing and interrupt callbacks are not built in |
 | MMC | 2 | Custom | Missing | No driver |
 | RDC | 1 | `sensor` or custom | Missing | No driver |
 | PLB | 1 | Custom | Missing | No driver |

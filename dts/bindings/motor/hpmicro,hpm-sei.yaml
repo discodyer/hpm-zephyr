@@ -1,7 +1,12 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-description: HPMicro serial encoder interface
+description: |
+  HPMicro serial encoder interface.
+
+  The controller exposes two protocol-neutral SEI channels. Software supplies
+  the transceiver mode, instruction program and SAMPLE/UPDATE mapping for the
+  selected encoder protocol.
 
 compatible: "hpmicro,hpm-sei"
 

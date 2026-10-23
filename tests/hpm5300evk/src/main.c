@@ -16,6 +16,7 @@
 #include <drivers/gpiom/hpmicro_gpiom.h>
 #include <zephyr/drivers/mbox.h>
 #include <drivers/motor/hpmicro_qeo.h>
+#include <drivers/motor/hpmicro_sei.h>
 #include <zephyr/drivers/mux.h>
 #include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/otp.h>
@@ -54,6 +55,7 @@
 #define FGPIO_NODE        DT_NODELABEL(fgpioa)
 #define GPIOM_NODE        DT_NODELABEL(gpiom0)
 #define QEO0_NODE         DT_NODELABEL(qeo0)
+#define SEI_NODE          DT_NODELABEL(sei)
 #define MUX_CONSUMER_NODE DT_NODELABEL(mux_consumer)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
@@ -141,6 +143,9 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(GPIOM_NODE, disabled));
 #endif
 #if !DT_NODE_HAS_STATUS(QEO0_NODE, okay)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(QEO0_NODE, disabled));
+#endif
+#if !DT_NODE_HAS_STATUS(SEI_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(SEI_NODE, disabled));
 #endif
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
@@ -268,6 +273,70 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_qeo_calculation_finished(qeo, &qeo_finished));
 	zassert_ok(hpm_qeo_set_position_source(qeo, HPM_QEO_POSITION_HARDWARE));
 	zassert_equal(hpm_qeo_inject_position(qeo, 0U), -EACCES);
+#endif
+#if DT_NODE_HAS_STATUS(SEI_NODE, okay)
+	const struct device *sei = DEVICE_DT_GET(SEI_NODE);
+	const struct hpm_sei_transceiver_config sei_transceiver = {
+		.mode = HPM_SEI_MODE_SYNC_MASTER,
+		.baudrate = 1000000U,
+		.data = {.idle_state = HPM_SEI_IDLE_HIGH},
+		.clock = {.idle_state = HPM_SEI_IDLE_HIGH},
+	};
+	const struct hpm_sei_data_format sei_format = {
+		.mode = HPM_SEI_DATA_MODE_DATA,
+		.word_length = 12U,
+		.first_bit = 0U,
+		.last_bit = 11U,
+		.min_bit = 0U,
+		.max_bit = 11U,
+	};
+	const struct hpm_sei_instruction sei_instr = {
+		.operation = HPM_SEI_INSTRUCTION_RECEIVE,
+		.clock = HPM_SEI_MASTER_CLOCK_FALL_RISE,
+		.crc_register = HPM_SEI_DATA_REGISTER_0,
+		.data_register = HPM_SEI_DATA_REGISTER_2,
+		.operand = 12U,
+	};
+	const struct hpm_sei_latch_transition sei_latch = {
+		.disable_instr_ptr_check = true,
+		.disable_clock_check = true,
+		.disable_tx_check = true,
+		.disable_rx_check = true,
+		.disable_timeout_check = true,
+	};
+	const struct hpm_sei_sample_config sei_sample = {
+		.latch = 0U,
+		.position_data_register = HPM_SEI_DATA_REGISTER_2,
+		.use_position_rx = true,
+	};
+	const struct hpm_sei_update_config sei_update = {
+		.latch = 1U,
+		.position_data_register = HPM_SEI_DATA_REGISTER_2,
+		.use_position_rx = true,
+	};
+	const struct hpm_sei_engine_config sei_engine = {
+		.initial_instruction = 0U,
+		.watchdog_instruction = 0U,
+		.data_base_register = HPM_SEI_DATA_REGISTER_0,
+		.command_data_register = HPM_SEI_DATA_REGISTER_1,
+	};
+	uint32_t sei_value;
+	struct hpm_sei_status sei_status;
+
+	zassert_true(device_is_ready(sei));
+	zassert_ok(hpm_sei_configure_transceiver(sei, HPM_SEI_CHANNEL_0, &sei_transceiver));
+	zassert_ok(hpm_sei_configure_data(sei, HPM_SEI_DATA_REGISTER_2, &sei_format));
+	zassert_ok(hpm_sei_set_instruction(sei, 0U, &sei_instr));
+	zassert_ok(hpm_sei_configure_latch(sei, HPM_SEI_CHANNEL_0, 0U, 0U, &sei_latch));
+	zassert_ok(hpm_sei_configure_sample(sei, HPM_SEI_CHANNEL_0, &sei_sample));
+	zassert_ok(hpm_sei_configure_update(sei, HPM_SEI_CHANNEL_0, &sei_update));
+	zassert_ok(hpm_sei_configure_engine(sei, HPM_SEI_CHANNEL_0, &sei_engine));
+	zassert_ok(hpm_sei_set_data(sei, HPM_SEI_DATA_REGISTER_2, 0x123U));
+	zassert_ok(hpm_sei_get_data(sei, HPM_SEI_DATA_REGISTER_2, &sei_value));
+	zassert_equal(sei_value, 0x123U);
+	zassert_ok(hpm_sei_get_status(sei, HPM_SEI_CHANNEL_0, &sei_status));
+	zassert_ok(hpm_sei_enable(sei, HPM_SEI_CHANNEL_0, true));
+	zassert_ok(hpm_sei_enable(sei, HPM_SEI_CHANNEL_0, false));
 #endif
 #if DT_NODE_HAS_STATUS(TRGM_NODE, okay)
 	const struct device *mux_dev = MUX_CONTROL_DT_DEV_GET(MUX_CONSUMER_NODE);
