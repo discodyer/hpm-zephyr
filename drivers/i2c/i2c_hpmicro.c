@@ -153,12 +153,31 @@ static int hpm_i2c_get_config(const struct device *dev, uint32_t *dev_config)
 	return 0;
 }
 
+static int hpm_i2c_transfer_frame(const struct hpm_i2c_config *config, uint16_t addr,
+				  const struct i2c_msg *msg)
+{
+	uint16_t flags = I2C_WRITE_CHECK_ACK;
+
+	if ((msg->len == 0U) || (msg->len > I2C_SOC_TRANSFER_COUNT_MAX)) {
+		return -EINVAL;
+	}
+
+	if (i2c_is_read_op(msg)) {
+		flags = I2C_RD;
+	}
+	if (!i2c_is_stop_op(msg)) {
+		flags |= I2C_NO_STOP;
+	}
+
+	return hpm_i2c_status_to_errno(
+		i2c_master_transfer(config->base, addr, msg->buf, msg->len, flags));
+}
+
 static int hpm_i2c_transfer(const struct device *dev, struct i2c_msg *msgs, uint8_t num_msgs,
 			    uint16_t addr)
 {
 	const struct hpm_i2c_config *config = dev->config;
 	struct hpm_i2c_data *data = dev->data;
-	hpm_stat_t status;
 	int ret;
 
 	if ((msgs == NULL) || (num_msgs == 0U)) {
@@ -167,51 +186,79 @@ static int hpm_i2c_transfer(const struct device *dev, struct i2c_msg *msgs, uint
 
 	k_mutex_lock(&data->lock, K_FOREVER);
 
-	if ((msgs[0].flags & I2C_MSG_ADDR_10_BITS) != 0U) {
-		ret = -ENOTSUP;
-		goto unlock;
-	}
-
-	if ((msgs[0].len > I2C_SOC_TRANSFER_COUNT_MAX) ||
-	    ((num_msgs > 1U) && (msgs[1].len > I2C_SOC_TRANSFER_COUNT_MAX))) {
-		ret = -EINVAL;
-		goto unlock;
+	for (uint8_t i = 0U; i < num_msgs; i++) {
+		if ((msgs[i].flags & I2C_MSG_ADDR_10_BITS) != 0U) {
+			ret = -ENOTSUP;
+			goto unlock;
+		}
+		if ((msgs[i].len > I2C_SOC_TRANSFER_COUNT_MAX) ||
+		    ((msgs[i].buf == NULL) && (msgs[i].len != 0U))) {
+			ret = -EINVAL;
+			goto unlock;
+		}
+		if ((msgs[i].len == 0U) && (i != (uint8_t)(num_msgs - 1U))) {
+			ret = -ENOTSUP;
+			goto unlock;
+		}
 	}
 
 	if (num_msgs == 1U) {
-		uint16_t hal_flags;
+		uint16_t hal_flags = i2c_is_read_op(&msgs[0]) ? I2C_RD : I2C_WRITE_CHECK_ACK;
 
 		if (msgs[0].len == 0U) {
-			status = i2c_is_read_op(&msgs[0])
-					 ? i2c_master_read(config->base, addr, msgs[0].buf, 0U)
-					 : i2c_master_write(config->base, addr, msgs[0].buf, 0U);
-		} else {
-			hal_flags = i2c_is_read_op(&msgs[0]) ? I2C_RD : I2C_WRITE_CHECK_ACK;
-			if (!i2c_is_stop_op(&msgs[0])) {
-				hal_flags |= I2C_NO_STOP;
-			}
-			status = i2c_master_transfer(config->base, addr, msgs[0].buf, msgs[0].len,
-						     hal_flags);
+			ret = 0;
+			goto unlock;
 		}
-	} else if ((num_msgs == 2U) && !i2c_is_read_op(&msgs[0]) && (msgs[0].len > 0U) &&
-		   i2c_is_read_op(&msgs[1]) && (msgs[1].len > 0U)) {
-		status = i2c_master_transfer(config->base, addr, msgs[0].buf, msgs[0].len,
-					     I2C_WRITE_CHECK_ACK | I2C_NO_STOP);
-		if (status == status_success) {
-			status = i2c_master_transfer(config->base, addr, msgs[1].buf, msgs[1].len,
-						     I2C_RD);
+		if (!i2c_is_stop_op(&msgs[0])) {
+			hal_flags |= I2C_NO_STOP;
 		}
-	} else {
-		ret = -ENOTSUP;
+		ret = hpm_i2c_status_to_errno(i2c_master_transfer(config->base, addr, msgs[0].buf,
+								  msgs[0].len, hal_flags));
 		goto unlock;
 	}
 
-	ret = hpm_i2c_status_to_errno(status);
+	for (uint8_t i = 0U; i < num_msgs; i++) {
+		ret = hpm_i2c_transfer_frame(config, addr, &msgs[i]);
+		if (ret < 0) {
+			goto unlock;
+		}
+	}
 
 unlock:
 	k_mutex_unlock(&data->lock);
 
 	return ret;
+}
+
+static int hpm_i2c_recover_bus(const struct device *dev)
+{
+	const struct hpm_i2c_config *config = dev->config;
+	struct hpm_i2c_data *data = dev->data;
+	int ret;
+
+#if defined(HPM_IP_FEATURE_I2C_SUPPORT_RESET) && (HPM_IP_FEATURE_I2C_SUPPORT_RESET == 1)
+	k_mutex_lock(&data->lock, K_FOREVER);
+
+	if (!i2c_get_line_scl_status(config->base)) {
+		ret = -EBUSY;
+		goto unlock;
+	}
+
+	if (!i2c_get_line_sda_status(config->base)) {
+		i2c_gen_reset_signal(config->base, 9U);
+		k_busy_wait(1000U);
+	}
+
+	ret = i2c_get_line_sda_status(config->base) ? 0 : -EBUSY;
+
+unlock:
+	k_mutex_unlock(&data->lock);
+	return ret;
+#else
+	ARG_UNUSED(config);
+	ARG_UNUSED(data);
+	return -ENOTSUP;
+#endif
 }
 
 static int hpm_i2c_init(const struct device *dev)
@@ -255,6 +302,7 @@ static const struct i2c_driver_api hpm_i2c_api = {
 	.configure = hpm_i2c_configure,
 	.get_config = hpm_i2c_get_config,
 	.transfer = hpm_i2c_transfer,
+	.recover_bus = hpm_i2c_recover_bus,
 };
 
 #define HPM_I2C_INIT(n)                                                                            \

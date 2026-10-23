@@ -67,7 +67,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | IOC / PIOC | 2 controllers | `pinctrl` | Implemented (build-only) | Pad mux and pad settings; build-time conflict checks only |
 | UART | UART0-7, PUART | `serial` | Implemented core (build-only) | Polling and interrupt-driven APIs, FIFO fill/read, runtime IRQ control, callbacks, line-status errors; async/DMA, wide data, flow control and RS-485 not exposed |
 | GPIO | GPIOA/B enabled by default; GPIOX/Y, PGPIO disabled | `gpio` | Implemented core (build-only) | Basic I/O, port operations, interrupts and callbacks; current tests exercise GPIOA |
-| I2C | 4 | `i2c` | Partial | Controller, 7-bit, standard/fast/fast-plus, one message or write-read pair; no target, 10-bit, arbitrary multi-message or DMA |
+| I2C | 4 | `i2c` | Partial | Controller, 7-bit, standard/fast/fast-plus, arbitrary multi-message transactions and bus recovery; no target, 10-bit, SMBus helpers or DMA |
 | SPI | 4 | `spi` | Partial | Controller, Motorola, single-line, native CS, one TX and one RX buffer; no GPIO CS, multi-buffer, half-duplex, TI frame, multi-line, hold/lock |
 | XPI NOR / XIP | 1 | `flash` | Implemented (build-only) | Read, write, erase and page layout through vendor ROM API; no EXIP integration |
 | MCAN / CAN-FD | 4 | `can` | Implemented (build-only) | Zephyr `can_mcan` backend, classic CAN and CAN-FD timing, shared 32 KiB AHB message RAM split into 8 KiB windows; timestamp/TSU integration pending |
