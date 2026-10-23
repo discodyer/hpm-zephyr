@@ -820,6 +820,10 @@
 };
 
 &gpio0 {
+	/*
+	 * All GPIO ports share the GPIO0 register block. The unit-address is
+	 * only a unique node identifier; hpmicro-gpio-port selects the port.
+	 */
 	gpioa: gpio@0 {
 		compatible = "hpmicro,hpm-gpio";
 		reg = <0x0 0x4000>;
