@@ -1,7 +1,12 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-description: HPMicro DMAV2 controller with DMAMUX
+description: |
+  HPMicro DMAV2 controller with channel-coupled DMAMUX.
+
+  Each DMA channel has a matching DMAMUX channel. Client DMA specifiers use
+  two cells: the DMA channel and the DMAMUX request source. The request source
+  is ignored for memory-to-memory transfers.
 
 compatible: "hpmicro,hpm-dma"
 
@@ -10,8 +15,28 @@ include: dma-controller.yaml
 properties:
   reg:
     required: true
+    description: |
+      DMAV2 register block followed by the DMAMUX register block.
+
+  reg-names:
+    required: true
+    description: Must be "dma" followed by "dmamux".
 
   interrupts:
+    required: true
+
+  clocks:
+    required: true
+
+  clock-names:
+    required: true
+
+  clock-name:
+    type: int
+    required: true
+
+  clock-src:
+    type: int
     required: true
 
   dma-channels:
@@ -19,3 +44,11 @@ properties:
 
   dma-requests:
     required: true
+    description: Number of valid DMAMUX request source identifiers.
+
+  "#dma-cells":
+    const: 2
+
+dma-cells:
+  - channel
+  - request

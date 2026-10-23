@@ -150,3 +150,7 @@
 &mbx0b {
 	status = "okay";
 };
+
+&hdma {
+	status = "okay";
+};

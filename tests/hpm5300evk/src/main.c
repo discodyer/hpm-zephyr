@@ -9,6 +9,7 @@
 #include <zephyr/drivers/crc.h>
 #include <zephyr/drivers/comparator.h>
 #include <zephyr/drivers/dac.h>
+#include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/entropy.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/gpio.h>
@@ -44,6 +45,7 @@
 #define OTP_NODE        DT_NODELABEL(otp)
 #define MBX0A_NODE      DT_NODELABEL(mbx0a)
 #define MBX0B_NODE      DT_NODELABEL(mbx0b)
+#define DMA_NODE        DT_NODELABEL(hdma)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(CLOCK_NODE, okay));
@@ -110,7 +112,11 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(MBX0A_NODE, disabled));
 #if !DT_NODE_HAS_STATUS(MBX0B_NODE, okay)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(MBX0B_NODE, disabled));
 #endif
-BUILD_ASSERT(DT_PROP(DT_NODELABEL(hdma), dma_channels) == 32);
+#if !DT_NODE_HAS_STATUS(DMA_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(DMA_NODE, disabled));
+#else
+BUILD_ASSERT(DT_PROP(DMA_NODE, dma_channels) == 32);
+#endif
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
 ZTEST(hpm5300evk, test_devices_ready)
@@ -164,6 +170,18 @@ ZTEST(hpm5300evk, test_devices_ready)
 #endif
 #if DT_NODE_HAS_STATUS(MBX0B_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(MBX0B_NODE)));
+#endif
+#if DT_NODE_HAS_STATUS(DMA_NODE, okay)
+	uint32_t dma_attribute;
+	int dma_channel;
+
+	zassert_true(device_is_ready(DEVICE_DT_GET(DMA_NODE)));
+	zassert_ok(dma_get_attribute(DEVICE_DT_GET(DMA_NODE), DMA_ATTR_MAX_BLOCK_COUNT,
+				     &dma_attribute));
+	zassert_equal(dma_attribute, 1U);
+	dma_channel = dma_request_channel(DEVICE_DT_GET(DMA_NODE), NULL);
+	zassert_true(dma_channel >= 0);
+	dma_release_channel(DEVICE_DT_GET(DMA_NODE), (uint32_t)dma_channel);
 #endif
 #if CONFIG_UART_INTERRUPT_DRIVEN
 	zassert_ok(uart_irq_callback_user_data_set(DEVICE_DT_GET(UART_NODE), NULL, NULL));
