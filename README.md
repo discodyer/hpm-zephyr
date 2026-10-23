@@ -77,7 +77,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | DAC12 | 2 | `dac` | Missing | No driver |
 | ACMP | 1 block, 2 comparators | `comparator` | Missing | No driver |
 | OPAMP | 2 | `opamp` | Missing | No driver |
-| GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Missing | No driver |
+| GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Implemented (build-only) | Four hardware alarm channels, top/reload callback, absolute and relative alarms, guard period; capture and output compare are separate consumers |
 | Watchdog | EWDG0-1, PEWDG | `watchdog` | Implemented (build-only) | Single timeout/channel, 32 kHz counter clock, SoC reset, early timeout callback, sleep/debug pause options; window and CPU-core reset unsupported |
 | RTC | 1 feature | `rtc` | Missing | No DTS node, binding or HAL integration yet |
 | USB HS OTG | 1 | UDC/UHC | Missing | Native Zephyr UDC/UHC driver not implemented; CherryUSB not adopted |

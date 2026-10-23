@@ -1,0 +1,13 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_GPTMR := hpmicro,hpm-gptmr
+
+config COUNTER_HPMICRO
+	bool "HPMicro GPTMR/PTMR counter driver"
+	default y
+	depends on DT_HAS_HPMICRO_HPM_GPTMR_ENABLED
+	depends on HAS_HPMSDK_GPTMR
+	select USE_HPMSDK_GPTMR
+	help
+	  Enable the HPMicro general-purpose and power timer counter driver.

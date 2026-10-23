@@ -12,3 +12,13 @@
 &ewdg0 {
 	status = "okay";
 };
+
+/ {
+	aliases {
+		counter0 = &gptmr0;
+	};
+};
+
+&gptmr0 {
+	status = "okay";
+};
