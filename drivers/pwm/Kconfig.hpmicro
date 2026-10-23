@@ -5,6 +5,7 @@ DT_COMPAT_HPM_PWM := hpmicro,hpm-pwm
 
 config PWM_HPMICRO
 	bool "HPMicro PWM driver"
+	depends on PWM
 	default y
 	depends on DT_HAS_HPMICRO_HPM_PWM_ENABLED
 	depends on HAS_HPMSDK_PWM

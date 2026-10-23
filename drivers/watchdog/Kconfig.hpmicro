@@ -5,6 +5,7 @@ DT_COMPAT_HPM_EWDG := hpmicro,hpm-ewdg
 
 config WDT_HPMICRO
 	bool "HPMicro EWDG watchdog driver"
+	depends on WATCHDOG
 	default y
 	depends on DT_HAS_HPMICRO_HPM_EWDG_ENABLED
 	depends on HAS_HPMSDK_EWDG

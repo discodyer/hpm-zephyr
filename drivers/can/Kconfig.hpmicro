@@ -1,0 +1,15 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_MCAN := hpmicro,hpm-mcan
+
+config CAN_HPMICRO
+	bool "HPMicro MCAN CAN-FD driver"
+	depends on CAN
+	default y
+	depends on DT_HAS_HPMICRO_HPM_MCAN_ENABLED
+	depends on HAS_HPMSDK_MCAN
+	select CAN_MCAN
+	select PINCTRL
+	help
+	  Enable the HPMicro MCAN driver using the generic Bosch M_CAN backend.

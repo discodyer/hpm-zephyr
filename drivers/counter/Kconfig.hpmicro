@@ -5,6 +5,7 @@ DT_COMPAT_HPM_GPTMR := hpmicro,hpm-gptmr
 
 config COUNTER_HPMICRO
 	bool "HPMicro GPTMR/PTMR counter driver"
+	depends on COUNTER
 	default y
 	depends on DT_HAS_HPMICRO_HPM_GPTMR_ENABLED
 	depends on HAS_HPMSDK_GPTMR
