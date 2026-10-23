@@ -25,3 +25,14 @@ tests:
     integration_platforms:
       - hpm5361icb
     extra_args: CONFIG_HPM_SDK_BUILD_ALL_DRIVERS=y
+
+  boards.hpmicro.hpm5300evk.peripherals:
+    tags:
+      - hpmicro
+      - drivers
+    platform_allow:
+      - hpm5300evk/hpm5361
+    build_only: true
+    extra_args:
+      - EXTRA_DTC_OVERLAY_FILE=peripherals.overlay
+      - EXTRA_CONF_FILE=peripherals.conf

@@ -1,0 +1,13 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_EWDG := hpmicro,hpm-ewdg
+
+config WDT_HPMICRO
+	bool "HPMicro EWDG watchdog driver"
+	default y
+	depends on DT_HAS_HPMICRO_HPM_EWDG_ENABLED
+	depends on HAS_HPMSDK_EWDG
+	select USE_HPMSDK_EWDG
+	help
+	  Enable the HPMicro enhanced watchdog (EWDG) driver.
