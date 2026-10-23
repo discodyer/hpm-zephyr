@@ -73,7 +73,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | MCAN / CAN-FD | 4 | `can` | Implemented (build-only) | Zephyr `can_mcan` backend, classic CAN and CAN-FD timing, shared 32 KiB AHB message RAM split into 8 KiB windows; timestamp/TSU integration pending |
 | PWM | 2 x 8 channels | `pwm` | Implemented (build-only) | Edge-aligned `set_cycles`, polarity, 0-100% duty; complementary/dead-zone/fault/capture modes not exposed yet |
 | HDMA / DMAMUX | 32 channels | `dma` | Missing | No driver |
-| ADC16 | 2 | `adc` | Missing | No driver |
+| ADC16 | 2 | `adc` | Implemented (build-only) | Synchronous single-ended reads, 8/10/12/16-bit resolution, sample-cycle acquisition, PLL/ANA clock selection; no async, DMA sequence or hardware trigger |
 | DAC12 | 2 | `dac` | Missing | No driver |
 | ACMP | 1 block, 2 comparators | `comparator` | Missing | No driver |
 | OPAMP | 2 | `opamp` | Missing | No driver |

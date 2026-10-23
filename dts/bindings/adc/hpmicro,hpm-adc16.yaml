@@ -20,5 +20,25 @@ properties:
   clock-names:
     required: true
 
-  "#io-channel-cells":
-    const: 1
+  clock-name:
+    type: int
+    required: true
+
+  clock-src:
+    type: int
+    required: true
+
+  ana-clock-name:
+    type: int
+    required: true
+
+  ana-clock-src:
+    type: int
+    required: true
+
+  vref-mv:
+    type: int
+    description: ADC reference voltage in millivolts
+
+io-channel-cells:
+  - input

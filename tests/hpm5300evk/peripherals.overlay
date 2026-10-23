@@ -58,3 +58,24 @@
 	pinctrl-0 = <&pa14_mcan3_rxd &pa15_mcan3_txd>;
 	pinctrl-names = "default";
 };
+
+/ {
+	zephyr,user {
+		io-channels = <&adc0 0>;
+	};
+};
+
+&adc0 {
+	status = "okay";
+	vref-mv = <3300>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel@0 {
+		reg = <0>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <0>;
+		zephyr,resolution = <12>;
+	};
+};
