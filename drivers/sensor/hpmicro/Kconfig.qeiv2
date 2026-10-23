@@ -12,4 +12,6 @@ config QEIV2_HPMICRO
 	depends on HAS_HPMSDK_QEIV2
 	select USE_HPMSDK_QEIV2
 	help
-	  Enable the HPMicro QEIV2 ABZ quadrature encoder driver.
+	  Enable the HPMicro QEIV2 quadrature encoder driver. It supports ABZ,
+	  pulse/direction, up/down and UVW square-wave decoding through the sensor
+	  API, plus HPM-specific speed-counter, comparator and event interfaces.

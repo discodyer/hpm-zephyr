@@ -159,6 +159,7 @@
 	status = "okay";
 	pinctrl-0 = <&pb12_qei0_a &pb13_qei0_b &pb14_qei0_z>;
 	pinctrl-names = "default";
+	mode = "abz";
 	counts-per-revolution = <4096>;
 	z-calibration;
 };

@@ -4,9 +4,10 @@
 description: |
   HPMicro QEIV2 quadrature encoder interface.
 
-  The initial driver binding covers ABZ quadrature decoding. The phase
-  counter wraps at counts-per-revolution and the controller's angle output is
-  exposed through the generic sensor rotation channel.
+  The driver covers square-wave ABZ quadrature, pulse/direction, up/down and
+  UVW decoding. The phase counter wraps at counts-per-revolution and the
+  controller's angle output is exposed through the generic sensor rotation
+  channel. Sine/cosine ADC modes are not supported.
 
 compatible: "hpmicro,hpm-qeiv2"
 
@@ -32,6 +33,18 @@ properties:
   clock-src:
     type: int
     required: true
+
+  mode:
+    type: string
+    default: "abz"
+    enum:
+      - "abz"
+      - "pulse-direction"
+      - "up-down"
+      - "uvw"
+    description: |
+      Square-wave input decoding mode. UVW uses A/U, B/V and Z/W and installs
+      the six default UVW position codes from the vendor driver.
 
   counts-per-revolution:
     type: int

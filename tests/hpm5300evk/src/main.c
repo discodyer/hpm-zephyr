@@ -26,6 +26,7 @@
 #include <zephyr/drivers/otp.h>
 #include <zephyr/drivers/ptp_clock.h>
 #include <zephyr/drivers/sensor.h>
+#include <drivers/sensor/hpmicro_qeiv2.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/uart.h>
@@ -234,7 +235,70 @@ ZTEST(hpm5300evk, test_devices_ready)
 	dma_release_channel(DEVICE_DT_GET(DMA_NODE), (uint32_t)dma_channel);
 #endif
 #if DT_NODE_HAS_STATUS(QEI0_NODE, okay)
-	zassert_true(device_is_ready(DEVICE_DT_GET(QEI0_NODE)));
+	const struct device *qei = DEVICE_DT_GET(QEI0_NODE);
+	struct hpm_qeiv2_mode_config qei_mode = {
+		.mode = HPM_QEIV2_MODE_ABZ,
+		.counts_per_revolution = 4096U,
+		.z_calibration = true,
+	};
+	const struct hpm_qeiv2_compare_config qei_compare = {
+		.source = HPM_QEIV2_COMPARE_PHASE,
+		.value = 2048U,
+		.ignore_direction = true,
+		.ignore_z = true,
+	};
+	const struct hpm_qeiv2_compare_config qei_compare_conflict = {
+		.source = HPM_QEIV2_COMPARE_POSITION,
+		.value = 0x40000000U,
+		.ignore_direction = true,
+	};
+	struct hpm_qeiv2_speed_snapshot qei_speed;
+	struct sensor_value qei_value;
+	uint32_t qei_events;
+
+	zassert_true(device_is_ready(qei));
+	zassert_true(DEVICE_API_IS(sensor, qei));
+	zassert_true(DEVICE_API_IS(hpm_qeiv2, qei));
+	zassert_ok(hpm_qeiv2_configure_mode(qei, &qei_mode));
+	qei_mode.mode = HPM_QEIV2_MODE_UVW;
+	qei_mode.z_calibration = false;
+	zassert_ok(hpm_qeiv2_configure_mode(qei, &qei_mode));
+	qei_mode.mode = HPM_QEIV2_MODE_ABZ;
+	qei_mode.z_calibration = true;
+	zassert_ok(hpm_qeiv2_configure_mode(qei, &qei_mode));
+	qei_mode.z_calibration = false;
+	qei_mode.counts_per_revolution = 1U;
+	zassert_equal(hpm_qeiv2_configure_mode(qei, &qei_mode), -EINVAL);
+	qei_mode.counts_per_revolution = 4096U;
+	qei_mode.mode = HPM_QEIV2_MODE_PULSE_DIRECTION;
+	qei_mode.z_calibration = true;
+	zassert_equal(hpm_qeiv2_configure_mode(qei, &qei_mode), -EINVAL);
+	qei_mode.mode = HPM_QEIV2_MODE_ABZ;
+	qei_mode.z_calibration = false;
+	qei_mode.z_calibration_ignore_ab = true;
+	zassert_equal(hpm_qeiv2_configure_mode(qei, &qei_mode), -EINVAL);
+	qei_mode.z_calibration_ignore_ab = false;
+	zassert_equal(hpm_qeiv2_configure_mode(qei, NULL), -EINVAL);
+	zassert_ok(sensor_sample_fetch_chan(qei, SENSOR_CHAN_ENCODER_COUNT));
+	zassert_ok(sensor_channel_get(qei, SENSOR_CHAN_ENCODER_COUNT, &qei_value));
+	zassert_ok(hpm_qeiv2_configure_speed(qei, 0U, 64U, 2500000U));
+	zassert_ok(hpm_qeiv2_configure_speed(qei, 1U, 128U, 25000000U));
+	zassert_equal(hpm_qeiv2_configure_speed(qei, HPM_QEIV2_SPEED_CHANNEL_COUNT, 1U, 1U),
+		      -EINVAL);
+	zassert_equal(hpm_qeiv2_configure_speed(qei, 0U, 0U, 1U), -EINVAL);
+	zassert_equal(hpm_qeiv2_configure_speed(qei, 0U, 1U, 0U), -EINVAL);
+	zassert_ok(hpm_qeiv2_get_speed_snapshot(qei, 0U, &qei_speed));
+	zassert_equal(hpm_qeiv2_get_speed_snapshot(qei, 1U, NULL), -EINVAL);
+	zassert_ok(hpm_qeiv2_configure_compare(qei, 0U, &qei_compare));
+	zassert_equal(hpm_qeiv2_configure_compare(qei, 1U, &qei_compare_conflict), -ENOTSUP);
+	zassert_ok(hpm_qeiv2_configure_mode(qei, &qei_mode));
+	zassert_ok(hpm_qeiv2_configure_compare(qei, 0U, &qei_compare_conflict));
+	zassert_equal(hpm_qeiv2_configure_compare(qei, 1U, &qei_compare), -ENOTSUP);
+	zassert_ok(hpm_qeiv2_get_events(qei, &qei_events));
+	zassert_ok(hpm_qeiv2_clear_events(qei, HPM_QEIV2_EVENT_ALL));
+	zassert_equal(hpm_qeiv2_clear_events(qei, BIT(0)), -EINVAL);
+	zassert_ok(hpm_qeiv2_set_event_callback(qei, HPM_QEIV2_EVENT_POSITION_COMPARE, NULL, NULL));
+	zassert_equal(hpm_qeiv2_set_event_callback(qei, BIT(0), NULL, NULL), -EINVAL);
 #endif
 #if DT_NODE_HAS_STATUS(FGPIO_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(FGPIO_NODE)));
