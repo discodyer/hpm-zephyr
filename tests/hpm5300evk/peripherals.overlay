@@ -208,3 +208,7 @@
 &synt {
 	status = "okay";
 };
+
+&plb {
+	status = "okay";
+};

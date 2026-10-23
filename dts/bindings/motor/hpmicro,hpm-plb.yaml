@@ -1,7 +1,11 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-description: HPMicro programmable logic block
+description: |
+  HPMicro programmable logic block.
+
+  PLB contains four TYPE_A combinational/sequential channels and four TYPE_B
+  counting/filtering channels, all connected through the trigger manager.
 
 compatible: "hpmicro,hpm-plb"
 

@@ -71,3 +71,17 @@ config SYNT_HPMICRO
 	help
 	  Enable the HPMicro synchronization timer. It provides the motor-system
 	  synchronization counter, comparator events and the shared timestamp.
+
+DT_COMPAT_HPM_PLB := hpmicro,hpm-plb
+
+config PLB_HPMICRO
+	bool "HPMicro programmable logic block driver"
+	default y
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_PLB_ENABLED
+	depends on HAS_HPMSDK_PLB
+	select USE_HPMSDK_PLB
+	help
+	  Enable the HPMicro programmable logic block. The driver exposes the
+	  TYPE_A truth tables and TYPE_B slice, comparator and counter primitives;
+	  SDK PLB filter and encoder components are not built.

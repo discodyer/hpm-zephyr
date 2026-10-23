@@ -20,6 +20,7 @@
 #include <drivers/motor/hpmicro_mmc.h>
 #include <drivers/motor/hpmicro_rdc.h>
 #include <drivers/motor/hpmicro_synt.h>
+#include <drivers/motor/hpmicro_plb.h>
 #include <zephyr/drivers/mux.h>
 #include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/otp.h>
@@ -62,6 +63,7 @@
 #define MMC0_NODE         DT_NODELABEL(mmc0)
 #define RDC_NODE          DT_NODELABEL(rdc)
 #define SYNT_NODE         DT_NODELABEL(synt)
+#define PLB_NODE          DT_NODELABEL(plb)
 #define MUX_CONSUMER_NODE DT_NODELABEL(mux_consumer)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
@@ -161,6 +163,9 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(RDC_NODE, disabled));
 #endif
 #if !DT_NODE_HAS_STATUS(SYNT_NODE, okay)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(SYNT_NODE, disabled));
+#endif
+#if !DT_NODE_HAS_STATUS(PLB_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(PLB_NODE, disabled));
 #endif
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
@@ -495,6 +500,29 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_synt_get_saved_timestamp(synt, &synt_value));
 	zassert_ok(hpm_synt_timestamp_enable(synt, false));
 	zassert_equal(hpm_synt_set_comparator(synt, 16U, 0U), -EINVAL);
+#endif
+#if DT_NODE_HAS_STATUS(PLB_NODE, okay)
+	const struct device *plb = DEVICE_DT_GET(PLB_NODE);
+	const struct hpm_plb_type_a_config plb_type_a = {
+		.truth = {0x1111U, 0x0303U, 0xAAAAU, 0xFFFFU},
+	};
+	uint32_t plb_counter;
+
+	zassert_true(device_is_ready(plb));
+	zassert_ok(hpm_plb_configure_type_a(plb, 0U, &plb_type_a));
+	zassert_ok(hpm_plb_inject_type_a(plb, 0U, 0x0FU));
+	zassert_ok(hpm_plb_set_type_b_slice(plb, 0U, 0U, HPM_PLB_SLICE_ADD_ONE));
+	zassert_ok(hpm_plb_set_type_b_slices(plb, 0U, 0xAAAAU, HPM_PLB_SLICE_ADD_ONE));
+	zassert_ok(hpm_plb_set_type_b_all_slices(plb, 0U, HPM_PLB_SLICE_KEEP));
+	zassert_ok(hpm_plb_set_type_b_comparator(plb, 0U, 0U, 0x1234U,
+						 HPM_PLB_COMPARATOR_GREATER_OR_EQUAL));
+	zassert_ok(hpm_plb_set_type_b_counter(plb, 0U, 0x55U));
+	zassert_ok(hpm_plb_get_type_b_counter(plb, 0U, &plb_counter));
+	zassert_equal(plb_counter, 0x55U);
+	zassert_equal(hpm_plb_inject_type_a(plb, 0U, 0x10U), -EINVAL);
+	zassert_equal(
+		hpm_plb_set_type_b_slice(plb, 0U, HPM_PLB_TYPE_B_SLICE_COUNT, HPM_PLB_SLICE_KEEP),
+		-EINVAL);
 #endif
 #if DT_NODE_HAS_STATUS(TRGM_NODE, okay)
 	const struct device *mux_dev = MUX_CONTROL_DT_DEV_GET(MUX_CONSUMER_NODE);
