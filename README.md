@@ -83,7 +83,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | USB HS OTG | 1 | UDC/UHC | Missing | Native Zephyr UDC/UHC driver not implemented; CherryUSB not adopted |
 | MBX | MBX0A/B | `mbox` | Implemented (build-only) | One 32-bit word-message channel per endpoint, interrupt-driven receive callbacks and clock gating; separate 4-word FIFO, signalling-only mode and shared-memory IPC protocol not exposed |
 | GPIOM | 1 | Custom | Missing | No Zephyr generic API; ownership policy needs design |
-| TRGM | 1 | Custom | Missing | No driver |
+| TRGM | 1 | `mux` | Implemented core (build-only) | One mux control per TRGM output; runtime source selection and readback through the generic mux API. Output inversion/edge-pulse configuration, input filters, DMA/IRQ routing and the ADC/DAC/position matrices are not exposed |
 | QEIV2 | 2 | `sensor` | Implemented core (build-only) | ABZ quadrature mode, configurable counts and Z calibration, A/B delay filter, angle, raw position and revolution count; PD/UD/UVW/sincos, speed measurement, compare and interrupts not exposed |
 | QEO | 2 | Custom | Missing | No driver |
 | SEI | 2 channels | Custom | Missing | No driver |

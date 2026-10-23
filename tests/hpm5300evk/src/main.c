@@ -14,6 +14,7 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/mbox.h>
+#include <zephyr/drivers/mux.h>
 #include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/otp.h>
 #include <zephyr/drivers/ptp_clock.h>
@@ -47,6 +48,8 @@
 #define MBX0B_NODE      DT_NODELABEL(mbx0b)
 #define DMA_NODE        DT_NODELABEL(hdma)
 #define QEI0_NODE       DT_NODELABEL(qei0)
+#define TRGM_NODE       DT_NODELABEL(trgm0)
+#define MUX_CONSUMER_NODE DT_NODELABEL(mux_consumer)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(CLOCK_NODE, okay));
@@ -121,6 +124,10 @@ BUILD_ASSERT(DT_PROP(DMA_NODE, dma_channels) == 32);
 #if !DT_NODE_HAS_STATUS(QEI0_NODE, okay)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(QEI0_NODE, disabled));
 #endif
+#if DT_NODE_HAS_STATUS(TRGM_NODE, okay)
+MUX_CONTROL_DT_SPEC_DEFINE_BY_IDX(MUX_CONSUMER_NODE, 0);
+MUX_STATE_DT_SPEC_DEFINE(MUX_CONSUMER_NODE);
+#endif
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
 ZTEST(hpm5300evk, test_devices_ready)
@@ -189,6 +196,20 @@ ZTEST(hpm5300evk, test_devices_ready)
 #endif
 #if DT_NODE_HAS_STATUS(QEI0_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(QEI0_NODE)));
+#endif
+#if DT_NODE_HAS_STATUS(TRGM_NODE, okay)
+	const struct device *mux_dev = MUX_CONTROL_DT_DEV_GET(MUX_CONSUMER_NODE);
+	const struct mux_control *mux_control = MUX_CONTROL_DT_GET(MUX_CONSUMER_NODE);
+	const struct mux_state *mux_default = MUX_STATE_DT_GET(MUX_CONSUMER_NODE);
+	uint32_t mux_state;
+
+	zassert_true(device_is_ready(mux_dev));
+	zassert_ok(mux_control_set(mux_dev, mux_control, 9U));
+	zassert_ok(mux_state_get(mux_dev, mux_control, &mux_state));
+	zassert_equal(mux_state, 9U);
+	zassert_ok(mux_state_apply(mux_dev, mux_default));
+	zassert_ok(mux_state_get(mux_dev, mux_default->control, &mux_state));
+	zassert_equal(mux_state, mux_default->state);
 #endif
 #if CONFIG_UART_INTERRUPT_DRIVEN
 	zassert_ok(uart_irq_callback_user_data_set(DEVICE_DT_GET(UART_NODE), NULL, NULL));

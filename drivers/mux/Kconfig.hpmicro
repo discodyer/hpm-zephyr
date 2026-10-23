@@ -1,0 +1,17 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_TRGM := hpmicro,hpm-trgm
+
+config MUX_HPMICRO_TRGM
+	bool "HPMicro TRGM trigger routing driver"
+	default y
+	depends on MUX
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_TRGM_ENABLED
+	depends on HAS_HPMSDK_TRGM
+	select USE_HPMSDK_TRGM
+	help
+	  Enable the HPMicro TRGM driver as a Zephyr mux controller. Each
+	  mux control selects one TRGM output; the mux state selects the TRGM
+	  input source using the HPM_TRGM0_INPUT_SRC_* values from the SDK.

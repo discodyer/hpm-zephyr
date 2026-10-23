@@ -162,3 +162,16 @@
 	counts-per-revolution = <4096>;
 	z-calibration;
 };
+
+&trgm0 {
+	status = "okay";
+};
+
+/ {
+	mux_consumer: mux-consumer {
+		compatible = "hpmicro,mux-consumer-test";
+		mux-controls = <&trgm0 32>;
+		mux-states = <&trgm0 32 8>;
+		status = "okay";
+	};
+};

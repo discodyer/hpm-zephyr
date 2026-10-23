@@ -744,6 +744,10 @@
 			reg = <0xf033c000 0x1000>;
 			interrupts = <44 1>, <49 1>;
 			interrupt-parent = <&plic>;
+			clocks = <&clk CLOCK_MOT0 CLK_SRC_OSC24M 1>;
+			clock-names = "trgm";
+			#mux-control-cells = <1>;
+			#mux-state-cells = <2>;
 			status = "disabled";
 		};
 

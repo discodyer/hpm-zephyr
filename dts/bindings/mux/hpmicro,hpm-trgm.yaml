@@ -1,0 +1,39 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  HPMicro Trigger Manager (TRGM).
+
+  Each TRGM output is addressed as a mux control line. The mux state is the
+  TRGM input source number, using the HPM_TRGM0_INPUT_SRC_* constants from the
+  pinned HPM SDK.
+
+compatible: "hpmicro,hpm-trgm"
+
+include: [base.yaml, mux-controller.yaml]
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  clocks:
+    required: true
+
+  clock-names:
+    required: true
+
+  "#mux-control-cells":
+    const: 1
+
+  "#mux-state-cells":
+    const: 2
+
+mux-control-cells:
+  - output
+
+mux-state-cells:
+  - output
+  - source

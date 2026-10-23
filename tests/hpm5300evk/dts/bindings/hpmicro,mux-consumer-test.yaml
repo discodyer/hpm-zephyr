@@ -1,0 +1,8 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: Test-only HPMicro TRGM mux consumer
+
+compatible: "hpmicro,mux-consumer-test"
+
+include: [base.yaml, mux-consumer.yaml]
