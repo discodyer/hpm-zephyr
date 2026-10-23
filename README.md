@@ -55,6 +55,60 @@ ZEPHYR_BASE="$PWD/zephyr" HPM_SDK_DIR="$PWD/hpm_sdk" \
   ./hpm-zephyr/scripts/twister_smoke.sh
 ```
 
+## Driver support
+
+The driver layer is intentionally narrower than the HPM5361 Devicetree. A
+binding or a disabled DTS node describes hardware, but does not mean that a
+Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
+
+| Peripheral | Instances | Zephyr API | Driver status | Current scope / missing work |
+|---|---:|---|---|---|
+| Clock / PLL | 1 PLLCTLV2 | `clock_control` | Implemented (build-only) | Clock gating and rate queries; PM/PDGO domains are separate |
+| IOC / PIOC | 2 controllers | `pinctrl` | Implemented (build-only) | Pad mux and pad settings; build-time conflict checks only |
+| UART | UART0-7, PUART | `serial` | Partial | Polling only; no interrupt-driven, DMA, flow-control or RS-485 API; Kconfig currently advertises interrupt support |
+| GPIO | GPIOA/B/X/Y, PGPIO | `gpio` | Implemented core (build-only) | Basic I/O, port operations, interrupts and callbacks |
+| I2C | 4 | `i2c` | Partial | Controller, 7-bit, standard/fast/fast-plus, one message or write-read pair; no target, 10-bit, arbitrary multi-message or DMA |
+| SPI | 4 | `spi` | Partial | Controller, Motorola, single-line, native CS, one TX and one RX buffer; no GPIO CS, multi-buffer, half-duplex, TI frame, multi-line, hold/lock |
+| XPI NOR / XIP | 1 | `flash` | Implemented (build-only) | Read, write, erase and page layout through vendor ROM API; no EXIP integration |
+| MCAN / CAN-FD | 4 | `can` | Missing | No driver, Kconfig or pinctrl consumer |
+| PWM | 2 x 8 channels | `pwm` | Missing | No driver |
+| HDMA / DMAMUX | 32 channels | `dma` | Missing | No driver |
+| ADC16 | 2 | `adc` | Missing | No driver |
+| DAC12 | 2 | `dac` | Missing | No driver |
+| ACMP | 1 block, 2 comparators | `comparator` | Missing | No driver |
+| OPAMP | 2 | `opamp` | Missing | No driver |
+| GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Missing | No driver |
+| Watchdog | EWDG0-1, PEWDG | `watchdog` | Missing | No driver |
+| RTC | 1 feature | `rtc` | Missing | No DTS node, binding or HAL integration yet |
+| USB HS OTG | 1 | UDC/UHC | Missing | Native Zephyr UDC/UHC driver not implemented; CherryUSB not adopted |
+| MBX | MBX0A/B | `mbox` | Missing | No driver |
+| GPIOM | 1 | Custom | Missing | No Zephyr generic API; ownership policy needs design |
+| TRGM | 1 | Custom | Missing | No driver |
+| QEIV2 | 2 | `sensor` QDEC or custom | Missing | No driver |
+| QEO | 2 | Custom | Missing | No driver |
+| SEI | 2 channels | Custom | Missing | No driver |
+| MMC | 2 | Custom | Missing | No driver |
+| RDC | 1 | `sensor` or custom | Missing | No driver |
+| PLB | 1 | Custom | Missing | No driver |
+| SYNT | 1 | `counter` or custom | Missing | No driver |
+| CRC | 1 | `crc` | Missing | No driver |
+| TSNS | 1 | `sensor` | Missing | No driver |
+| RNG | 1 | `entropy` | Missing | No driver |
+| PTPC | 1 | `ptp_clock` | Missing | No driver |
+| SDP | 1 | `crypto` candidate | Missing | API and algorithm mapping not designed |
+| SEC / SECMON / KEYM | 1 each | Custom/security | Missing | No Zephyr integration |
+| OTP | 1 | `otp` | Missing | No driver |
+
+Implemented drivers are build-only until hardware validation is completed;
+missing drivers are not built or enabled. The SoC startup, PLIC, PLICSW, machine
+timer and cache paths are native Zephyr/SoC integration rather than HPM driver
+classes. No third-party module is currently selected for the remaining standard
+Zephyr APIs; USB and motor-control features still need a separate design
+decision before adding any third-party stack.
+
+The detailed, workspace-level matrix and task queue are maintained in
+`docs/agent/tasks.md`.
+
 ## HPM5361 packages
 
 HPM5361 has three ordering variants with different package pin exposure. The
@@ -105,11 +159,12 @@ vendor HAL source. Devicetree still controls which instances a board enables.
 The optional `CONFIG_HPM_SDK_BUILD_ALL_DRIVERS=y` compiles every HAL source
 listed for the selected SoC for build-only regression testing.
 
-The SoC DTSI describes the full HPM5361 instance set, including UART0-7,
+The SoC DTSI describes the major HPM5361 instance set, including UART0-7,
 I2C0-3, SPI0-3, MCAN0-3, PWM0-1, ADC0-1, DAC0-1, ACMP, OPAMP0-1, GPTMR0-3,
 EWDG0-1, HDMA, USB0, GPIOA/B/X/Y, PGPIO, PUART, PTMR and PEWDG. Instances whose
 Zephyr drivers are not implemented yet remain disabled. Their bindings define
-the hardware contract but do not imply driver support.
+the hardware contract but do not imply driver support. The DTS inventory is not
+yet complete: for example, RTC still has no node or binding.
 
 The workspace-level agent notes record the maintenance assessment, the
 per-SoC capability matrix, board interfaces, all-HAL build-only coverage and
