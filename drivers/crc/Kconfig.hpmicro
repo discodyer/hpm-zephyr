@@ -1,0 +1,26 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_CRC := hpmicro,hpm-crc
+
+config CRC_HPMICRO
+	bool "HPMicro CRC accelerator driver"
+	default y
+	depends on CRC_DRIVER
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_CRC_ENABLED
+	depends on HAS_HPMSDK_CRC
+	select USE_HPMSDK_CRC
+	select CRC_DRIVER_HAS_CRC8
+	select CRC_DRIVER_HAS_CRC8_CCITT
+	select CRC_DRIVER_HAS_CRC8_ROHC
+	select CRC_DRIVER_HAS_CRC16
+	select CRC_DRIVER_HAS_CRC16_CCITT
+	select CRC_DRIVER_HAS_CRC16_ITU_T
+	select CRC_DRIVER_HAS_CRC16_REFLECT
+	select CRC_DRIVER_HAS_CRC16_ANSI
+	select CRC_DRIVER_HAS_CRC32_C
+	select CRC_DRIVER_HAS_CRC32_IEEE
+	select CRC_DRIVER_HAS_CRC32_MPEG2
+	help
+	  Enable the HPMicro multi-channel CRC accelerator driver.

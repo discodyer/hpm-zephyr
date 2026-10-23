@@ -91,7 +91,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | RDC | 1 | `sensor` or custom | Missing | No driver |
 | PLB | 1 | Custom | Missing | No driver |
 | SYNT | 1 | `counter` or custom | Missing | No driver |
-| CRC | 1 | `crc` | Missing | No driver |
+| CRC | 1 block, 8 channels | `crc` | Implemented (build-only) | Streaming CRC API, byte input, 8/16/32-bit polynomials, input/output reflection, IEEE/Castagnoli/MPEG-2 final XOR handling |
 | TSNS | 1 | `sensor` | Missing | No driver |
 | RNG | 1 | `entropy` | Implemented (build-only) | Hardware TRNG with automatic reseeding, optional startup self-test and blocking thread-mode entropy reads; no ISR or asynchronous API |
 | PTPC | 1 | `ptp_clock` | Missing | No driver |

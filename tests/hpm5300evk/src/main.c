@@ -6,6 +6,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/crc.h>
 #include <zephyr/drivers/comparator.h>
 #include <zephyr/drivers/dac.h>
 #include <zephyr/drivers/entropy.h>
@@ -32,6 +33,7 @@
 #define COMPARATOR_NODE DT_NODELABEL(acmp1)
 #define OPAMP_NODE     DT_NODELABEL(opamp0)
 #define RNG_NODE       DT_NODELABEL(rng)
+#define CRC_NODE       DT_NODELABEL(crc0)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(CLOCK_NODE, okay));
@@ -76,6 +78,9 @@ BUILD_ASSERT(DT_ENUM_IDX(OPAMP_NODE, positive_input) == 0);
 #if !DT_NODE_HAS_STATUS(RNG_NODE, okay)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(RNG_NODE, disabled));
 #endif
+#if DT_NODE_HAS_STATUS(CRC_NODE, okay)
+BUILD_ASSERT(DT_SAME_NODE(DT_CHOSEN(zephyr_crc), CRC_NODE));
+#endif
 BUILD_ASSERT(DT_PROP(DT_NODELABEL(hdma), dma_channels) == 32);
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
@@ -103,6 +108,9 @@ ZTEST(hpm5300evk, test_devices_ready)
 #endif
 #if DT_NODE_HAS_STATUS(RNG_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(RNG_NODE)));
+#endif
+#if DT_NODE_HAS_STATUS(CRC_NODE, okay)
+	zassert_true(device_is_ready(DEVICE_DT_GET(CRC_NODE)));
 #endif
 }
 

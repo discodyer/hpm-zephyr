@@ -9,6 +9,10 @@
 	aliases {
 		watchdog0 = &ewdg0;
 	};
+
+	chosen {
+		zephyr,crc = &crc0;
+	};
 };
 
 &ewdg0 {
@@ -119,4 +123,8 @@
 &rng {
 	status = "okay";
 	self-test;
+};
+
+&crc0 {
+	status = "okay";
 };
