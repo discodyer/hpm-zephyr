@@ -1,0 +1,16 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_QEO := hpmicro,hpm-qeo
+
+config QEO_HPMICRO
+	bool "HPMicro QEO encoder output driver"
+	default y
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_QEO_ENABLED
+	depends on HAS_HPMSDK_QEO
+	select USE_HPMSDK_QEO
+	help
+	  Enable the HPMicro quadrature encoder output driver. The initial
+	  adaptation supports ABZ output, software position injection and
+	  internal position readback.

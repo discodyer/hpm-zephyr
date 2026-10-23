@@ -15,6 +15,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <drivers/gpiom/hpmicro_gpiom.h>
 #include <zephyr/drivers/mbox.h>
+#include <drivers/motor/hpmicro_qeo.h>
 #include <zephyr/drivers/mux.h>
 #include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/otp.h>
@@ -52,6 +53,7 @@
 #define TRGM_NODE         DT_NODELABEL(trgm0)
 #define FGPIO_NODE        DT_NODELABEL(fgpioa)
 #define GPIOM_NODE        DT_NODELABEL(gpiom0)
+#define QEO0_NODE         DT_NODELABEL(qeo0)
 #define MUX_CONSUMER_NODE DT_NODELABEL(mux_consumer)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
@@ -136,6 +138,9 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(FGPIO_NODE, disabled));
 #endif
 #if !DT_NODE_HAS_STATUS(GPIOM_NODE, okay)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(GPIOM_NODE, disabled));
+#endif
+#if !DT_NODE_HAS_STATUS(QEO0_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(QEO0_NODE, disabled));
 #endif
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
@@ -242,6 +247,27 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_gpiom_set_controller(gpiom, HPM_GPIOM_PORT_GPIOB, 15, gpiom_original));
 	zassert_ok(hpm_gpiom_set_visibility(gpiom, HPM_GPIOM_PORT_GPIOB, 15, gpiom_original,
 					    gpiom_original_visible));
+#endif
+#if DT_NODE_HAS_STATUS(QEO0_NODE, okay)
+	const struct device *qeo = DEVICE_DT_GET(QEO0_NODE);
+	const struct hpm_qeo_abz_config qeo_config = {
+		.lines = DT_PROP(QEO0_NODE, lines),
+		.max_frequency = DT_PROP(QEO0_NODE, max_frequency),
+		.watchdog_frequency = DT_PROP(QEO0_NODE, watchdog_frequency),
+		.output = HPM_QEO_ABZ_OUTPUT_ABZ,
+		.z_pulse_width = HPM_QEO_Z_PULSE_75_PERCENT,
+	};
+	uint32_t qeo_position;
+	bool qeo_finished;
+
+	zassert_true(device_is_ready(qeo));
+	zassert_ok(hpm_qeo_configure_abz(qeo, &qeo_config));
+	zassert_ok(hpm_qeo_set_position_source(qeo, HPM_QEO_POSITION_SOFTWARE));
+	zassert_ok(hpm_qeo_inject_position(qeo, 0x40000000U));
+	zassert_ok(hpm_qeo_get_position(qeo, &qeo_position));
+	zassert_ok(hpm_qeo_calculation_finished(qeo, &qeo_finished));
+	zassert_ok(hpm_qeo_set_position_source(qeo, HPM_QEO_POSITION_HARDWARE));
+	zassert_equal(hpm_qeo_inject_position(qeo, 0U), -EACCES);
 #endif
 #if DT_NODE_HAS_STATUS(TRGM_NODE, okay)
 	const struct device *mux_dev = MUX_CONTROL_DT_DEV_GET(MUX_CONSUMER_NODE);

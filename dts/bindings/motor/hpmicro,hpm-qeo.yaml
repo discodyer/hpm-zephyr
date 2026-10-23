@@ -16,3 +16,43 @@ properties:
 
   clock-names:
     required: true
+
+  lines:
+    type: int
+    min: 1
+    required: true
+    description: Number of output lines per mechanical revolution.
+
+  max-frequency:
+    type: int
+    min: 1
+    description: Maximum A pulse frequency in Hz.
+
+  watchdog-frequency:
+    type: int
+    min: 1
+    description: Optional ABZ watchdog frequency in Hz.
+
+  output-type:
+    type: string
+    default: "abz"
+    enum:
+      - "abz"
+      - "pulse-direction"
+      - "up-down"
+      - "three-phase"
+
+  z-pulse-width:
+    type: string
+    default: "100-percent"
+    enum:
+      - "25-percent"
+      - "75-percent"
+      - "100-percent"
+
+  invert-a:
+    type: boolean
+  invert-b:
+    type: boolean
+  invert-z:
+    type: boolean
