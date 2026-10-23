@@ -17,6 +17,7 @@
 #include <zephyr/drivers/mbox.h>
 #include <drivers/motor/hpmicro_qeo.h>
 #include <drivers/motor/hpmicro_sei.h>
+#include <drivers/motor/hpmicro_mmc.h>
 #include <zephyr/drivers/mux.h>
 #include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/otp.h>
@@ -56,6 +57,7 @@
 #define GPIOM_NODE        DT_NODELABEL(gpiom0)
 #define QEO0_NODE         DT_NODELABEL(qeo0)
 #define SEI_NODE          DT_NODELABEL(sei)
+#define MMC0_NODE         DT_NODELABEL(mmc0)
 #define MUX_CONSUMER_NODE DT_NODELABEL(mux_consumer)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
@@ -146,6 +148,9 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(QEO0_NODE, disabled));
 #endif
 #if !DT_NODE_HAS_STATUS(SEI_NODE, okay)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(SEI_NODE, disabled));
+#endif
+#if !DT_NODE_HAS_STATUS(MMC0_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(MMC0_NODE, disabled));
 #endif
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
@@ -337,6 +342,78 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_sei_get_status(sei, HPM_SEI_CHANNEL_0, &sei_status));
 	zassert_ok(hpm_sei_enable(sei, HPM_SEI_CHANNEL_0, true));
 	zassert_ok(hpm_sei_enable(sei, HPM_SEI_CHANNEL_0, false));
+#endif
+#if DT_NODE_HAS_STATUS(MMC0_NODE, okay)
+	const struct device *mmc = DEVICE_DT_GET(MMC0_NODE);
+	const struct hpm_mmc_track_mode mmc_track_mode = {
+		.position_mode = {
+			.continuous_step_threshold = 0x1000000U,
+			.continuous_circle_threshold = 0x1000000U,
+			.out_of_sync_theta_threshold = 0x1000000U,
+		},
+	};
+	const struct hpm_mmc_coefficient_config mmc_coefficients = {
+		.p = 1.0,
+		.i = 0.0,
+		.a = 0.0,
+		.update_mask = HPM_MMC_COEFFICIENT_UPDATE_P,
+	};
+	const struct hpm_mmc_position_config mmc_position = {
+		.position = 0x10000000U,
+		.update_mask = HPM_MMC_POSITION_UPDATE_POSITION,
+		.trigger = HPM_MMC_POSITION_TRIGGER_TIMESTAMP,
+	};
+	const struct hpm_mmc_position_config mmc_delta_position = {
+		.position = 0x00100000U,
+		.update_mask = HPM_MMC_POSITION_UPDATE_POSITION,
+		.trigger = HPM_MMC_POSITION_TRIGGER_TIMESTAMP,
+	};
+	const struct hpm_mmc_predictor_mode mmc_predictor_mode = {
+		.time_mode = HPM_MMC_PREDICTOR_CONTINUOUS,
+	};
+	const struct hpm_mmc_predictor_period mmc_predictor_period = {
+		.period_time = 1000U,
+		.first_time = 1000U,
+	};
+	const struct hpm_mmc_position_trigger_config mmc_position_trigger = {
+		.enable = true,
+		.position = 0x08000000U,
+	};
+	const struct hpm_mmc_speed_trigger_config mmc_speed_trigger = {
+		.enable = true,
+		.absolute = true,
+		.speed = 1.0,
+	};
+	struct hpm_mmc_position_result mmc_result;
+	struct hpm_mmc_coefficient_result mmc_coefficient_result;
+	struct hpm_mmc_status mmc_status;
+
+	zassert_true(device_is_ready(mmc));
+	zassert_ok(hpm_mmc_configure_track_mode(mmc, &mmc_track_mode));
+	zassert_ok(hpm_mmc_configure_track_coefficients(mmc, &mmc_coefficients));
+	zassert_ok(hpm_mmc_configure_track_position(mmc, &mmc_position));
+	zassert_ok(hpm_mmc_configure_track_delta_position(mmc, &mmc_delta_position));
+	zassert_ok(hpm_mmc_configure_track_position_trigger(mmc, &mmc_position_trigger));
+	zassert_ok(hpm_mmc_configure_track_speed_trigger(mmc, &mmc_speed_trigger));
+	zassert_ok(hpm_mmc_configure_predictor_mode(mmc, 0U, &mmc_predictor_mode));
+	zassert_ok(hpm_mmc_configure_predictor_position(mmc, 0U, &mmc_position));
+	zassert_ok(hpm_mmc_configure_predictor_delta_position(mmc, 0U, &mmc_delta_position));
+	zassert_ok(hpm_mmc_configure_predictor_period(mmc, 0U, &mmc_predictor_period));
+	zassert_ok(hpm_mmc_configure_predictor_position_trigger(mmc, 0U, &mmc_position_trigger));
+	zassert_ok(hpm_mmc_configure_predictor_speed_trigger(mmc, 0U, &mmc_speed_trigger));
+	zassert_ok(hpm_mmc_enable_predictor(mmc, 0U, true));
+	zassert_ok(hpm_mmc_enable_predictor(mmc, 0U, false));
+	zassert_ok(hpm_mmc_get_track_result(mmc, &mmc_result, &mmc_coefficient_result));
+	zassert_ok(hpm_mmc_get_predictor_result(mmc, 0U, &mmc_result));
+	zassert_ok(hpm_mmc_get_status(mmc, &mmc_status));
+	zassert_ok(hpm_mmc_clear_track_status(mmc, mmc_status.track));
+	zassert_ok(hpm_mmc_clear_predictor_status(mmc, 0U, mmc_status.predictor[0]));
+	zassert_ok(hpm_mmc_enable(mmc, true));
+	zassert_ok(hpm_mmc_enable(mmc, false));
+	zassert_ok(hpm_mmc_reset(mmc));
+	zassert_equal(
+		hpm_mmc_configure_predictor_mode(mmc, HPM_MMC_PREDICTOR_COUNT, &mmc_predictor_mode),
+		-EINVAL);
 #endif
 #if DT_NODE_HAS_STATUS(TRGM_NODE, okay)
 	const struct device *mux_dev = MUX_CONTROL_DT_DEV_GET(MUX_CONSUMER_NODE);

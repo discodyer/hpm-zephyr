@@ -196,3 +196,7 @@
 &sei {
 	status = "okay";
 };
+
+&mmc0 {
+	status = "okay";
+};

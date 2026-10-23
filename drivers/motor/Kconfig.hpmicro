@@ -28,3 +28,18 @@ config SEI_HPMICRO
 	  Enable the HPMicro serial encoder interface. This is a protocol-neutral
 	  execution layer for transceiver, instruction, latch, SAMPLE/UPDATE and
 	  engine configuration. Encoder protocols are implemented by consumers.
+
+DT_COMPAT_HPM_MMC := hpmicro,hpm-mmc
+
+config MMC_HPMICRO
+	bool "HPMicro motion processing unit driver"
+	default y
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_MMC_ENABLED
+	depends on HAS_HPMSDK_MMC
+	select USE_HPMSDK_MMC
+	help
+	  Enable the HPMicro motion processing unit. The initial driver exposes
+	  track and predictor configuration, position and trigger inputs,
+	  result/status access and module control. Interrupt callbacks and TRGM
+	  position routing are not exposed yet.

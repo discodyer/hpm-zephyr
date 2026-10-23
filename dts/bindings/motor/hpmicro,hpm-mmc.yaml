@@ -1,7 +1,12 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-description: HPMicro motion math coprocessor
+description: |
+  HPMicro motion processing unit.
+
+  The controller combines position tracking and two predictors. Software
+  supplies position, velocity, acceleration, coefficient and trigger
+  parameters at runtime.
 
 compatible: "hpmicro,hpm-mmc"
 
