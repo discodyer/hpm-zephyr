@@ -61,7 +61,7 @@
 
 / {
 	zephyr,user {
-		io-channels = <&adc0 0>;
+		io-channels = <&adc0 0>, <&dac0 0>;
 	};
 };
 
@@ -76,6 +76,17 @@
 		zephyr,gain = "ADC_GAIN_1";
 		zephyr,reference = "ADC_REF_INTERNAL";
 		zephyr,acquisition-time = <0>;
+		zephyr,resolution = <12>;
+	};
+};
+
+&dac0 {
+	status = "okay";
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel@0 {
+		reg = <0>;
 		zephyr,resolution = <12>;
 	};
 };

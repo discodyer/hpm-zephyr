@@ -813,6 +813,10 @@
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_DAC0 CLK_SRC_PLL1_CLK2 3>;
 			clock-names = "dac";
+			clock-name = <CLOCK_DAC0>;
+			clock-src = <CLK_DAC_SRC_ANA2>;
+			ana-clock-name = <CLOCK_ANA2>;
+			ana-clock-src = <CLK_SRC_PLL1_CLK2>;
 			#io-channel-cells = <1>;
 			status = "disabled";
 		};
@@ -824,6 +828,10 @@
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_DAC1 CLK_SRC_PLL1_CLK2 3>;
 			clock-names = "dac";
+			clock-name = <CLOCK_DAC1>;
+			clock-src = <CLK_DAC_SRC_ANA3>;
+			ana-clock-name = <CLOCK_ANA3>;
+			ana-clock-src = <CLK_SRC_PLL1_CLK2>;
 			#io-channel-cells = <1>;
 			status = "disabled";
 		};

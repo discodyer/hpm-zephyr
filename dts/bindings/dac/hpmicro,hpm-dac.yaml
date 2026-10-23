@@ -20,5 +20,21 @@ properties:
   clock-names:
     required: true
 
-  "#io-channel-cells":
-    const: 1
+  clock-name:
+    type: int
+    required: true
+
+  clock-src:
+    type: int
+    required: true
+
+  ana-clock-name:
+    type: int
+    required: true
+
+  ana-clock-src:
+    type: int
+    required: true
+
+io-channel-cells:
+  - output

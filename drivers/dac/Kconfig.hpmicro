@@ -1,0 +1,14 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_DAC := hpmicro,hpm-dac
+
+config DAC_HPMICRO
+	bool "HPMicro DAC12 driver"
+	default y
+	depends on DAC
+	depends on DT_HAS_HPMICRO_HPM_DAC_ENABLED
+	depends on HAS_HPMSDK_DAC
+	select USE_HPMSDK_DAC
+	help
+	  Enable the HPMicro 12-bit DAC driver.

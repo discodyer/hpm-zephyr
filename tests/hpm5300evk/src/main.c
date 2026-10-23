@@ -6,6 +6,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/dac.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
@@ -24,6 +25,7 @@
 #define SPI_NODE       DT_NODELABEL(spi1)
 #define PACKAGE_NODE   DT_NODELABEL(hpm5361_package)
 #define ADC_NODE       DT_NODELABEL(adc0)
+#define DAC_NODE       DT_NODELABEL(dac0)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(CLOCK_NODE, okay));
@@ -46,6 +48,12 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(ADC_NODE, disabled));
 #else
 BUILD_ASSERT(DT_NODE_EXISTS(DT_CHILD_BY_UNIT_ADDR_INT(ADC_NODE, 0)));
 BUILD_ASSERT(DT_PROP(DT_CHILD_BY_UNIT_ADDR_INT(ADC_NODE, 0), zephyr_resolution) == 12);
+#endif
+#if !DT_NODE_HAS_STATUS(DAC_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(DAC_NODE, disabled));
+#else
+BUILD_ASSERT(DT_NODE_EXISTS(DT_CHILD_BY_UNIT_ADDR_INT(DAC_NODE, 0)));
+BUILD_ASSERT(DT_PROP(DT_CHILD_BY_UNIT_ADDR_INT(DAC_NODE, 0), zephyr_resolution) == 12);
 #endif
 BUILD_ASSERT(DT_PROP(DT_NODELABEL(hdma), dma_channels) == 32);
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
