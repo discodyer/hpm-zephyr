@@ -1,0 +1,16 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_RNG := hpmicro,hpm-rng
+
+config ENTROPY_HPMICRO_RNG
+	bool "HPMicro RNG entropy driver"
+	default y
+	depends on ENTROPY_GENERATOR
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_RNG_ENABLED
+	depends on HAS_HPMSDK_RNG
+	select ENTROPY_HAS_DRIVER
+	select USE_HPMSDK_RNG
+	help
+	  Enable the HPMicro hardware true random number generator.

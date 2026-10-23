@@ -19,3 +19,7 @@ properties:
 
   clock-names:
     required: true
+
+  self-test:
+    type: boolean
+    description: Run the RNG self-test during device initialization.

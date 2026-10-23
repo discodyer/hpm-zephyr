@@ -93,7 +93,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | SYNT | 1 | `counter` or custom | Missing | No driver |
 | CRC | 1 | `crc` | Missing | No driver |
 | TSNS | 1 | `sensor` | Missing | No driver |
-| RNG | 1 | `entropy` | Missing | No driver |
+| RNG | 1 | `entropy` | Implemented (build-only) | Hardware TRNG with automatic reseeding, optional startup self-test and blocking thread-mode entropy reads; no ISR or asynchronous API |
 | PTPC | 1 | `ptp_clock` | Missing | No driver |
 | SDP | 1 | `crypto` candidate | Missing | API and algorithm mapping not designed |
 | SEC / SECMON / KEYM | 1 each | Custom/security | Missing | No Zephyr integration |
