@@ -115,6 +115,8 @@
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_GPTMR0 CLK_SRC_OSC24M 1>;
 			clock-names = "gptmr";
+			clock-name = <CLOCK_GPTMR0>;
+			clock-src = <CLK_SRC_OSC24M>;
 			status = "disabled";
 		};
 
@@ -125,6 +127,8 @@
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_GPTMR1 CLK_SRC_OSC24M 1>;
 			clock-names = "gptmr";
+			clock-name = <CLOCK_GPTMR1>;
+			clock-src = <CLK_SRC_OSC24M>;
 			status = "disabled";
 		};
 
@@ -135,6 +139,8 @@
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_GPTMR2 CLK_SRC_OSC24M 1>;
 			clock-names = "gptmr";
+			clock-name = <CLOCK_GPTMR2>;
+			clock-src = <CLK_SRC_OSC24M>;
 			status = "disabled";
 		};
 
@@ -145,6 +151,8 @@
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_GPTMR3 CLK_SRC_OSC24M 1>;
 			clock-names = "gptmr";
+			clock-name = <CLOCK_GPTMR3>;
+			clock-src = <CLK_SRC_OSC24M>;
 			status = "disabled";
 		};
 
@@ -408,6 +416,8 @@
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_PTMR CLK_SRC_OSC24M 1>;
 			clock-names = "gptmr";
+			clock-name = <CLOCK_PTMR>;
+			clock-src = <CLK_SRC_OSC24M>;
 			status = "disabled";
 		};
 

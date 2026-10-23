@@ -19,3 +19,11 @@ properties:
 
   clock-names:
     required: true
+
+  clock-name:
+    type: int
+    required: true
+
+  clock-src:
+    type: int
+    required: true

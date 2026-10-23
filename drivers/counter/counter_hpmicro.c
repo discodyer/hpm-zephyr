@@ -35,6 +35,9 @@ struct hpm_gptmr_config {
 	GPTMR_Type *base;
 	const struct device *clock_dev;
 	clock_control_subsys_t clock_subsys;
+	clock_name_t clock_name;
+	clock_source_t clock_src;
+	uint32_t clock_div;
 	void (*irq_config_func)(const struct device *dev);
 };
 
@@ -352,6 +355,7 @@ static int hpm_gptmr_init(const struct device *dev)
 	gptmr_channel_config_t channel_cfg;
 	uint32_t frequency;
 	uint32_t channel;
+	hpm_stat_t status;
 	int ret;
 
 	if (!device_is_ready(config->clock_dev)) {
@@ -361,6 +365,12 @@ static int hpm_gptmr_init(const struct device *dev)
 	ret = clock_control_on(config->clock_dev, config->clock_subsys);
 	if (ret < 0) {
 		return ret;
+	}
+
+	status = clock_set_source_divider(config->clock_name, config->clock_src, config->clock_div);
+	if ((status != status_success) && (status != status_clk_fixed) &&
+	    (status != status_clk_shared_cpu0)) {
+		return -EIO;
 	}
 
 	ret = clock_control_get_rate(config->clock_dev, config->clock_subsys, &frequency);
@@ -439,6 +449,9 @@ static DEVICE_API(counter, hpm_gptmr_api) = {
 		.base = (GPTMR_Type *)DT_INST_REG_ADDR(n),                                         \
 		.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),                                \
 		.clock_subsys = (clock_control_subsys_t)DT_INST_CLOCKS_CELL(n, name),              \
+		.clock_name = DT_INST_PROP(n, clock_name),                                         \
+		.clock_src = DT_INST_PROP(n, clock_src),                                           \
+		.clock_div = DT_INST_CLOCKS_CELL_BY_IDX(n, 0, divider),                            \
 		.irq_config_func = hpm_gptmr_irq_config_##n,                                       \
 	};                                                                                         \
                                                                                                    \
