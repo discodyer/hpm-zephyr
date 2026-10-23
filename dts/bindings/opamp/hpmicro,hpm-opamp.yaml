@@ -1,7 +1,12 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-description: HPMicro operational amplifier
+description: |
+  HPMicro operational amplifier.
+
+  The HPM5300 OPAMP supports follower, inverting, non-inverting and
+  externally-defined custom topologies. It does not provide a differential
+  amplifier mode.
 
 compatible: "hpmicro,hpm-opamp"
 
@@ -16,3 +21,84 @@ properties:
 
   clock-names:
     required: true
+
+  positive-input:
+    required: true
+    type: string
+    enum:
+      - "INP0"
+      - "INP1"
+      - "INP2"
+      - "INP3"
+      - "VSUPPLY_25"
+      - "VSUPPLY_50"
+      - "VSUPPLY_75"
+      - "FLOATING"
+    description: |
+      Selects the non-inverting input. INP0-INP3 are package inputs,
+      VSUPPLY_* select internal supply-derived references and FLOATING
+      disconnects the non-inverting input.
+
+  negative-input:
+    required: true
+    type: string
+    enum:
+      - "INN0"
+      - "INN1"
+      - "INN2"
+      - "INN3"
+      - "FLOATING"
+    description: |
+      Selects the inverting input. INN0-INN3 are package inputs and
+      FLOATING disconnects the inverting input. The fixed follower,
+      internal-reference non-inverting and DAC-reference topologies
+      override this selection as required by the hardware.
+
+  reference-source:
+    type: string
+    enum:
+      - "internal"
+      - "external"
+      - "dac"
+    default: "internal"
+    description: |
+      Selects the amplification reference for inverting and non-inverting
+      modes. Ignored in follower and standalone modes.
+
+  gain:
+    type: string
+    enum:
+      - "OPAMP_GAIN_2"
+      - "OPAMP_GAIN_4"
+      - "OPAMP_GAIN_8"
+      - "OPAMP_GAIN_16"
+      - "OPAMP_GAIN_32"
+      - "OPAMP_GAIN_64"
+    default: "OPAMP_GAIN_2"
+    description: |
+      Initial internal feedback gain. In inverting mode this represents the
+      magnitude of the negative gain.
+
+  external-filter-capacitor:
+    type: boolean
+    description: |
+      Select the topology variant with an external filter capacitor for
+      inverting or non-inverting amplification.
+
+  miller-capacitor:
+    type: string
+    enum:
+      - "x5"
+      - "x6"
+      - "x7"
+      - "x8"
+      - "x10"
+      - "x13"
+      - "x15"
+      - "x18"
+    default: "x7"
+    description: Internal Miller compensation capacitor selection.
+
+  phase-margin-capacitor:
+    type: boolean
+    description: Enable the internal phase-margin compensation capacitor.

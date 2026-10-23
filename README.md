@@ -76,7 +76,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | ADC16 | 2 | `adc` | Implemented (build-only) | Synchronous single-ended reads, 8/10/12/16-bit resolution, sample-cycle acquisition, PLL/ANA clock selection; no async, DMA sequence or hardware trigger |
 | DAC12 | 2 | `dac` | Implemented (build-only) | Direct-mode 12-bit channel setup and synchronous value writes; buffer, step and trigger modes not exposed |
 | ACMP | 1 block, 2 comparators | `comparator` | Implemented (build-only) | Per-channel comparator devices, input selection, hysteresis, filtering, internal DAC threshold, edge IRQ/callback; live output level is not exposed by hardware |
-| OPAMP | 2 | `opamp` | Missing | No driver |
+| OPAMP | 2 | `opamp` | Implemented (build-only) | Follower, inverting, non-inverting and custom modes; internal/external/DAC references, initial and runtime gain, input selection, Miller and phase-margin capacitors; no differential mode |
 | GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Implemented (build-only) | Four hardware alarm channels, top/reload callback, absolute and relative alarms, guard period; capture and output compare are separate consumers |
 | Watchdog | EWDG0-1, PEWDG | `watchdog` | Implemented (build-only) | Single timeout/channel, 32 kHz counter clock, SoC reset, early timeout callback, sleep/debug pause options; window and CPU-core reset unsupported |
 | RTC | 1 feature | `rtc` | Missing | No DTS node, binding or HAL integration yet |

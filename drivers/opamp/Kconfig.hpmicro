@@ -1,0 +1,24 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_OPAMP := hpmicro,hpm-opamp
+
+config OPAMP_HPMICRO
+	bool "HPMicro OPAMP driver"
+	default y
+	depends on OPAMP
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_OPAMP_ENABLED
+	depends on HAS_HPMSDK_OPAMP
+	select PINCTRL
+	select USE_HPMSDK_OPAMP
+	help
+	  Enable the HPMicro operational amplifier driver.
+
+config OPAMP_HPMICRO_PROGRAMMABLE_GAIN
+	bool "Enable runtime HPMicro OPAMP gain changes"
+	depends on OPAMP_HPMICRO
+	help
+	  Expose opamp_set_gain() for HPMicro OPAMP instances. Gain changes are
+	  applied to the direct configuration register and are only appropriate
+	  for inverting or non-inverting amplification modes.

@@ -10,6 +10,7 @@
 #include <zephyr/drivers/dac.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/uart.h>
@@ -28,6 +29,7 @@
 #define ADC_NODE       DT_NODELABEL(adc0)
 #define DAC_NODE       DT_NODELABEL(dac0)
 #define COMPARATOR_NODE DT_NODELABEL(acmp1)
+#define OPAMP_NODE     DT_NODELABEL(opamp0)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(CLOCK_NODE, okay));
@@ -63,6 +65,12 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(COMPARATOR_NODE, disabled));
 BUILD_ASSERT(DT_REG_ADDR(COMPARATOR_NODE) == 1);
 BUILD_ASSERT(DT_PROP(COMPARATOR_NODE, negative_input) == 4);
 #endif
+#if !DT_NODE_HAS_STATUS(OPAMP_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(OPAMP_NODE, disabled));
+#else
+BUILD_ASSERT(DT_ENUM_IDX(OPAMP_NODE, functional_mode) == 3);
+BUILD_ASSERT(DT_ENUM_IDX(OPAMP_NODE, positive_input) == 0);
+#endif
 BUILD_ASSERT(DT_PROP(DT_NODELABEL(hdma), dma_channels) == 32);
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
@@ -81,6 +89,12 @@ ZTEST(hpm5300evk, test_devices_ready)
 #endif
 #if DT_NODE_HAS_STATUS(COMPARATOR_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(COMPARATOR_NODE)));
+#endif
+#if DT_NODE_HAS_STATUS(OPAMP_NODE, okay)
+	zassert_true(device_is_ready(DEVICE_DT_GET(OPAMP_NODE)));
+#if CONFIG_OPAMP_HPMICRO_PROGRAMMABLE_GAIN
+	zassert_ok(opamp_set_gain(DEVICE_DT_GET(OPAMP_NODE), OPAMP_GAIN_4));
+#endif
 #endif
 }
 

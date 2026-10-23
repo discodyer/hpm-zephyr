@@ -103,3 +103,15 @@
 	hysteresis = <3>;
 	enable-output-pin;
 };
+
+&opamp0 {
+	status = "okay";
+	pinctrl-0 = <&pb00_analog &pb04_analog>;
+	pinctrl-names = "default";
+	functional-mode = "follower";
+	positive-input = "INP0";
+	negative-input = "FLOATING";
+	gain = "OPAMP_GAIN_2";
+	miller-capacitor = "x7";
+	phase-margin-capacitor;
+};
