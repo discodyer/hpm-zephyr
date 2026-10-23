@@ -13,6 +13,7 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/opamp.h>
+#include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/uart.h>
@@ -34,6 +35,7 @@
 #define OPAMP_NODE     DT_NODELABEL(opamp0)
 #define RNG_NODE       DT_NODELABEL(rng)
 #define CRC_NODE       DT_NODELABEL(crc0)
+#define TSNS_NODE      DT_NODELABEL(tsns0)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(CLOCK_NODE, okay));
@@ -81,6 +83,12 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(RNG_NODE, disabled));
 #if DT_NODE_HAS_STATUS(CRC_NODE, okay)
 BUILD_ASSERT(DT_SAME_NODE(DT_CHOSEN(zephyr_crc), CRC_NODE));
 #endif
+#if !DT_NODE_HAS_STATUS(TSNS_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(TSNS_NODE, disabled));
+#else
+BUILD_ASSERT(DT_PROP(TSNS_NODE, averaging) == 3);
+BUILD_ASSERT(DT_PROP(TSNS_NODE, measurement_speed) == 96);
+#endif
 BUILD_ASSERT(DT_PROP(DT_NODELABEL(hdma), dma_channels) == 32);
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
@@ -111,6 +119,9 @@ ZTEST(hpm5300evk, test_devices_ready)
 #endif
 #if DT_NODE_HAS_STATUS(CRC_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(CRC_NODE)));
+#endif
+#if DT_NODE_HAS_STATUS(TSNS_NODE, okay)
+	zassert_true(device_is_ready(DEVICE_DT_GET(TSNS_NODE)));
 #endif
 }
 

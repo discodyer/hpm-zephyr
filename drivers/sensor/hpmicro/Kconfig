@@ -1,0 +1,23 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_TSNS := hpmicro,hpm-tsns
+
+config TSNS_HPMICRO
+	bool "HPMicro TSNS die-temperature sensor driver"
+	default y
+	depends on SENSOR
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_TSNS_ENABLED
+	depends on HAS_HPMSDK_TSNS
+	select USE_HPMSDK_TSNS
+	help
+	  Enable the HPMicro on-chip temperature sensor driver.
+
+config TSNS_HPMICRO_TIMEOUT_MS
+	int "HPMicro TSNS sample timeout"
+	default 100
+	range 1 10000
+	depends on TSNS_HPMICRO
+	help
+	  Maximum time to wait for a valid die-temperature sample.

@@ -11,11 +11,29 @@ properties:
   reg:
     required: true
 
-  interrupts:
-    required: true
-
   clocks:
     required: true
 
   clock-names:
     required: true
+
+  averaging:
+    type: int
+    enum: [0, 1, 2, 3, 4, 5, 6, 7]
+    default: 3
+    description: |
+      Number of samples averaged, expressed as log2(averages). Value 0
+      measures once and value 7 averages up to 128 samples.
+
+  measurement-speed:
+    type: int
+    default: 96
+    description: |
+      Step duration in 24 MHz clock cycles. Valid hardware values are 24-255.
+
+  sample-interval-cycles:
+    type: int
+    default: 0
+    description: |
+      Continuous-mode sample interval and sample validity period in 24 MHz
+      clock cycles. Zero keeps the hardware reset value.

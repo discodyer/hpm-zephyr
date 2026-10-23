@@ -128,3 +128,9 @@
 &crc0 {
 	status = "okay";
 };
+
+&tsns0 {
+	status = "okay";
+	averaging = <3>;
+	measurement-speed = <96>;
+};
