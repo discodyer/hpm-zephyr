@@ -165,6 +165,12 @@ ZTEST(hpm5300evk, test_devices_ready)
 #if DT_NODE_HAS_STATUS(MBX0B_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(MBX0B_NODE)));
 #endif
+#if CONFIG_UART_INTERRUPT_DRIVEN
+	zassert_ok(uart_irq_callback_user_data_set(DEVICE_DT_GET(UART_NODE), NULL, NULL));
+	uart_irq_tx_disable(DEVICE_DT_GET(UART_NODE));
+	uart_irq_rx_disable(DEVICE_DT_GET(UART_NODE));
+	uart_irq_err_disable(DEVICE_DT_GET(UART_NODE));
+#endif
 }
 
 ZTEST(hpm5300evk, test_flash_partition_device)

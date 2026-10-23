@@ -65,7 +65,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 |---|---:|---|---|---|
 | Clock / PLL | 1 PLLCTLV2 | `clock_control` | Implemented (build-only) | Clock gating and rate queries; PM/PDGO domains are separate |
 | IOC / PIOC | 2 controllers | `pinctrl` | Implemented (build-only) | Pad mux and pad settings; build-time conflict checks only |
-| UART | UART0-7, PUART | `serial` | Partial | Polling only; no interrupt-driven, DMA, flow-control or RS-485 API; Kconfig currently advertises interrupt support |
+| UART | UART0-7, PUART | `serial` | Implemented core (build-only) | Polling and interrupt-driven APIs, FIFO fill/read, runtime IRQ control, callbacks, line-status errors; async/DMA, wide data, flow control and RS-485 not exposed |
 | GPIO | GPIOA/B enabled by default; GPIOX/Y, PGPIO disabled | `gpio` | Implemented core (build-only) | Basic I/O, port operations, interrupts and callbacks; current tests exercise GPIOA |
 | I2C | 4 | `i2c` | Partial | Controller, 7-bit, standard/fast/fast-plus, one message or write-read pair; no target, 10-bit, arbitrary multi-message or DMA |
 | SPI | 4 | `spi` | Partial | Controller, Motorola, single-line, native CS, one TX and one RX buffer; no GPIO CS, multi-buffer, half-duplex, TI frame, multi-line, hold/lock |
