@@ -79,7 +79,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | OPAMP | 2 | `opamp` | Implemented (build-only) | Follower, inverting, non-inverting and custom modes; internal/external/DAC references, initial and runtime gain, input selection, Miller and phase-margin capacitors; no differential mode |
 | GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Implemented (build-only) | Four hardware alarm channels, top/reload callback, absolute and relative alarms, guard period; capture and output compare are separate consumers |
 | Watchdog | EWDG0-1, PEWDG | `watchdog` | Implemented (build-only) | Single timeout/channel, 32 kHz counter clock, SoC reset, early timeout callback, sleep/debug pause options; window and CPU-core reset unsupported |
-| RTC | 1 feature | `rtc` | Missing | No DTS node, binding or HAL integration yet |
+| RTC | None | N/A | Not applicable | HPM5300/HPM5361 has no independent RTC block; use a board-level external RTC if wall-clock time is required |
 | USB HS OTG | 1 | UDC/UHC | Missing | Native Zephyr UDC/UHC driver not implemented; CherryUSB not adopted |
 | MBX | MBX0A/B | `mbox` | Implemented (build-only) | One 32-bit word-message channel per endpoint, interrupt-driven receive callbacks and clock gating; separate 4-word FIFO, signalling-only mode and shared-memory IPC protocol not exposed |
 | GPIOM | 1 | Custom | Missing | No Zephyr generic API; ownership policy needs design |
@@ -164,7 +164,7 @@ I2C0-3, SPI0-3, MCAN0-3, PWM0-1, ADC0-1, DAC0-1, ACMP, OPAMP0-1, GPTMR0-3,
 EWDG0-1, HDMA, USB0, GPIOA/B/X/Y, PGPIO, PUART, PTMR and PEWDG. Instances whose
 Zephyr drivers are not implemented yet remain disabled. Their bindings define
 the hardware contract but do not imply driver support. The DTS inventory is not
-yet complete: for example, RTC still has no node or binding.
+yet complete for special-function blocks. HPM5300/HPM5361 has no independent RTC; wall-clock time requires a board-level external RTC.
 
 The workspace-level agent notes record the maintenance assessment, the
 per-SoC capability matrix, board interfaces, all-HAL build-only coverage and
