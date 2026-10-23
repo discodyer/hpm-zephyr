@@ -71,7 +71,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | SPI | 4 | `spi` | Partial | Controller, Motorola, single-line, native CS, one TX and one RX buffer; no GPIO CS, multi-buffer, half-duplex, TI frame, multi-line, hold/lock |
 | XPI NOR / XIP | 1 | `flash` | Implemented (build-only) | Read, write, erase and page layout through vendor ROM API; no EXIP integration |
 | MCAN / CAN-FD | 4 | `can` | Missing | No driver, Kconfig or pinctrl consumer |
-| PWM | 2 x 8 channels | `pwm` | Missing | No driver |
+| PWM | 2 x 8 channels | `pwm` | Implemented (build-only) | Edge-aligned `set_cycles`, polarity, 0-100% duty; complementary/dead-zone/fault/capture modes not exposed yet |
 | HDMA / DMAMUX | 32 channels | `dma` | Missing | No driver |
 | ADC16 | 2 | `adc` | Missing | No driver |
 | DAC12 | 2 | `dac` | Missing | No driver |

@@ -22,3 +22,9 @@
 &gptmr0 {
 	status = "okay";
 };
+
+&pwm0 {
+	status = "okay";
+	pinctrl-0 = <&pa04_pwm0_p_0>;
+	pinctrl-names = "default";
+};
