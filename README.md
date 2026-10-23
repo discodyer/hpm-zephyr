@@ -70,7 +70,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | I2C | 4 | `i2c` | Partial | Controller, 7-bit, standard/fast/fast-plus, one message or write-read pair; no target, 10-bit, arbitrary multi-message or DMA |
 | SPI | 4 | `spi` | Partial | Controller, Motorola, single-line, native CS, one TX and one RX buffer; no GPIO CS, multi-buffer, half-duplex, TI frame, multi-line, hold/lock |
 | XPI NOR / XIP | 1 | `flash` | Implemented (build-only) | Read, write, erase and page layout through vendor ROM API; no EXIP integration |
-| MCAN / CAN-FD | 4 | `can` | Missing | No driver, Kconfig or pinctrl consumer |
+| MCAN / CAN-FD | 4 | `can` | Implemented (build-only) | Zephyr `can_mcan` backend, classic CAN and CAN-FD timing, shared 32 KiB AHB message RAM split into 8 KiB windows; timestamp/TSU integration pending |
 | PWM | 2 x 8 channels | `pwm` | Implemented (build-only) | Edge-aligned `set_cycles`, polarity, 0-100% duty; complementary/dead-zone/fault/capture modes not exposed yet |
 | HDMA / DMAMUX | 32 channels | `dma` | Missing | No driver |
 | ADC16 | 2 | `adc` | Missing | No driver |

@@ -5,10 +5,13 @@ description: HPMicro MCAN CAN-FD controller
 
 compatible: "hpmicro,hpm-mcan"
 
-include: [can-fd-controller.yaml, pinctrl-device.yaml]
+include: ["bosch,m_can-base.yaml", pinctrl-device.yaml]
 
 properties:
   reg:
+    required: true
+
+  reg-names:
     required: true
 
   interrupts:

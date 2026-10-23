@@ -521,51 +521,70 @@
 			status = "disabled";
 		};
 
+		/*
+		 * All MCAN instances share the 32 KiB AHB SRAM at 0xF0400000.
+		 * Each instance owns an 8 KiB window selected by the offset in
+		 * bosch,mram-cfg. The message_ram reg range ends at each instance's
+		 * window, so the generic Bosch M_CAN frontend derives an exact 8 KiB
+		 * MRAM size after applying the per-instance offset.
+		 */
 		mcan0: can@f0280000 {
 			compatible = "hpmicro,hpm-mcan";
-			reg = <0xf0280000 0x1000>;
+			reg = <0xf0280000 0x1000>,
+			      <0xf0400000 0x2000>;
+			reg-names = "m_can", "message_ram";
 			interrupts = <35 1>;
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_CAN0 CLK_SRC_PLL1_CLK0 10>;
 			clock-names = "can";
 			clock-name = <CLOCK_CAN0>;
 			clock-src = <CLK_SRC_PLL1_CLK0>;
+			bosch,mram-cfg = <0x0 14 8 8 0 0 4 8>;
 			status = "disabled";
 		};
 
 		mcan1: can@f0284000 {
 			compatible = "hpmicro,hpm-mcan";
-			reg = <0xf0284000 0x1000>;
+			reg = <0xf0284000 0x1000>,
+			      <0xf0400000 0x4000>;
+			reg-names = "m_can", "message_ram";
 			interrupts = <36 1>;
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_CAN1 CLK_SRC_PLL1_CLK0 10>;
 			clock-names = "can";
 			clock-name = <CLOCK_CAN1>;
 			clock-src = <CLK_SRC_PLL1_CLK0>;
+			bosch,mram-cfg = <0x2000 14 8 8 0 0 4 8>;
 			status = "disabled";
 		};
 
 		mcan2: can@f0288000 {
 			compatible = "hpmicro,hpm-mcan";
-			reg = <0xf0288000 0x1000>;
+			reg = <0xf0288000 0x1000>,
+			      <0xf0400000 0x6000>;
+			reg-names = "m_can", "message_ram";
 			interrupts = <37 1>;
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_CAN2 CLK_SRC_PLL1_CLK0 10>;
 			clock-names = "can";
 			clock-name = <CLOCK_CAN2>;
 			clock-src = <CLK_SRC_PLL1_CLK0>;
+			bosch,mram-cfg = <0x4000 14 8 8 0 0 4 8>;
 			status = "disabled";
 		};
 
 		mcan3: can@f028c000 {
 			compatible = "hpmicro,hpm-mcan";
-			reg = <0xf028c000 0x1000>;
+			reg = <0xf028c000 0x1000>,
+			      <0xf0400000 0x8000>;
+			reg-names = "m_can", "message_ram";
 			interrupts = <38 1>;
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_CAN3 CLK_SRC_PLL1_CLK0 10>;
 			clock-names = "can";
 			clock-name = <CLOCK_CAN3>;
 			clock-src = <CLK_SRC_PLL1_CLK0>;
+			bosch,mram-cfg = <0x6000 14 8 8 0 0 4 8>;
 			status = "disabled";
 		};
 

@@ -28,3 +28,33 @@
 	pinctrl-0 = <&pa04_pwm0_p_0>;
 	pinctrl-names = "default";
 };
+
+/ {
+	aliases {
+		can0 = &mcan0;
+	};
+};
+
+&mcan0 {
+	status = "okay";
+	pinctrl-0 = <&pa16_mcan0_txd &pa17_mcan0_rxd>;
+	pinctrl-names = "default";
+};
+
+&mcan1 {
+	status = "okay";
+	pinctrl-0 = <&pa20_mcan1_rxd &pa21_mcan1_txd>;
+	pinctrl-names = "default";
+};
+
+&mcan2 {
+	status = "okay";
+	pinctrl-0 = <&pa08_mcan2_txd &pa09_mcan2_rxd>;
+	pinctrl-names = "default";
+};
+
+&mcan3 {
+	status = "okay";
+	pinctrl-0 = <&pa14_mcan3_rxd &pa15_mcan3_txd>;
+	pinctrl-names = "default";
+};
