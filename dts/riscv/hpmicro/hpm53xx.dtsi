@@ -452,6 +452,7 @@
 
 		mbx0a: mailbox@f00a0000 {
 			compatible = "hpmicro,hpm-mbx";
+			#mbox-cells = <1>;
 			reg = <0xf00a0000 0x1000>;
 			interrupts = <30 1>;
 			interrupt-parent = <&plic>;
@@ -462,6 +463,7 @@
 
 		mbx0b: mailbox@f00a4000 {
 			compatible = "hpmicro,hpm-mbx";
+			#mbox-cells = <1>;
 			reg = <0xf00a4000 0x1000>;
 			interrupts = <31 1>;
 			interrupt-parent = <&plic>;

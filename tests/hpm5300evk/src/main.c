@@ -12,6 +12,7 @@
 #include <zephyr/drivers/entropy.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/mbox.h>
 #include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/otp.h>
 #include <zephyr/drivers/ptp_clock.h>
@@ -41,6 +42,8 @@
 #define PTPC0_NODE      DT_NODELABEL(ptpc0)
 #define PTPC1_NODE      DT_NODELABEL(ptpc1)
 #define OTP_NODE        DT_NODELABEL(otp)
+#define MBX0A_NODE      DT_NODELABEL(mbx0a)
+#define MBX0B_NODE      DT_NODELABEL(mbx0b)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(CLOCK_NODE, okay));
@@ -101,6 +104,12 @@ BUILD_ASSERT(DT_REG_ADDR(PTPC1_NODE) == 1);
 #if !DT_NODE_HAS_STATUS(OTP_NODE, okay)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(OTP_NODE, disabled));
 #endif
+#if !DT_NODE_HAS_STATUS(MBX0A_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(MBX0A_NODE, disabled));
+#endif
+#if !DT_NODE_HAS_STATUS(MBX0B_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(MBX0B_NODE, disabled));
+#endif
 BUILD_ASSERT(DT_PROP(DT_NODELABEL(hdma), dma_channels) == 32);
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
@@ -147,6 +156,14 @@ ZTEST(hpm5300evk, test_devices_ready)
 
 	zassert_true(device_is_ready(DEVICE_DT_GET(OTP_NODE)));
 	zassert_ok(otp_read(DEVICE_DT_GET(OTP_NODE), 0, &otp_word, sizeof(otp_word)));
+#endif
+#if DT_NODE_HAS_STATUS(MBX0A_NODE, okay)
+	zassert_true(device_is_ready(DEVICE_DT_GET(MBX0A_NODE)));
+	zassert_equal(mbox_mtu_get(DEVICE_DT_GET(MBX0A_NODE)), sizeof(uint32_t));
+	zassert_equal(mbox_max_channels_get(DEVICE_DT_GET(MBX0A_NODE)), 1U);
+#endif
+#if DT_NODE_HAS_STATUS(MBX0B_NODE, okay)
+	zassert_true(device_is_ready(DEVICE_DT_GET(MBX0B_NODE)));
 #endif
 }
 

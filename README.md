@@ -81,7 +81,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | Watchdog | EWDG0-1, PEWDG | `watchdog` | Implemented (build-only) | Single timeout/channel, 32 kHz counter clock, SoC reset, early timeout callback, sleep/debug pause options; window and CPU-core reset unsupported |
 | RTC | 1 feature | `rtc` | Missing | No DTS node, binding or HAL integration yet |
 | USB HS OTG | 1 | UDC/UHC | Missing | Native Zephyr UDC/UHC driver not implemented; CherryUSB not adopted |
-| MBX | MBX0A/B | `mbox` | Missing | No driver |
+| MBX | MBX0A/B | `mbox` | Implemented (build-only) | One 32-bit word-message channel per endpoint, interrupt-driven receive callbacks and clock gating; separate 4-word FIFO, signalling-only mode and shared-memory IPC protocol not exposed |
 | GPIOM | 1 | Custom | Missing | No Zephyr generic API; ownership policy needs design |
 | TRGM | 1 | Custom | Missing | No driver |
 | QEIV2 | 2 | `sensor` QDEC or custom | Missing | No driver |

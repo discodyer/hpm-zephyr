@@ -142,3 +142,11 @@
 &otp {
 	status = "okay";
 };
+
+&mbx0a {
+	status = "okay";
+};
+
+&mbx0b {
+	status = "okay";
+};

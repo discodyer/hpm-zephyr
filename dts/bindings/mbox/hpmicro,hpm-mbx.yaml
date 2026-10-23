@@ -1,11 +1,18 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-description: HPMicro message mailbox
+description: |
+  HPMicro inter-core message mailbox endpoint.
+
+  MBX0A and MBX0B are the two register interfaces of one hardware mailbox.
+  Data written to one endpoint is received by the other. Each endpoint has a
+  single 32-bit word-message register plus a separate four-word FIFO. The
+  Zephyr mailbox binding exposes the word-message path as one channel so that
+  message boundaries and callback payload sizes remain well defined.
 
 compatible: "hpmicro,hpm-mbx"
 
-include: base.yaml
+include: [base.yaml, mailbox-controller.yaml]
 
 properties:
   reg:
@@ -19,3 +26,6 @@ properties:
 
   clock-names:
     required: true
+
+mbox-cells:
+  - channel

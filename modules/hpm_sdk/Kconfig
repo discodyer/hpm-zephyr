@@ -335,6 +335,9 @@ config USE_HPMSDK_LOBS
 config USE_HPMSDK_LVB
 	bool
 	depends on HAS_HPMSDK_LVB
+config USE_HPMSDK_MBX
+	bool
+	depends on HAS_HPMSDK_MBX
 config USE_HPMSDK_MCAN
 	bool
 	depends on HAS_HPMSDK_MCAN

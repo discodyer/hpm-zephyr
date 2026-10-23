@@ -1,0 +1,17 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_MBX := hpmicro,hpm-mbx
+
+config MBOX_HPMICRO
+	bool "HPMicro MBX mailbox driver"
+	default y
+	depends on MBOX
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_MBX_ENABLED
+	depends on HAS_HPMSDK_MBX
+	select USE_HPMSDK_MBX
+	help
+	  Enable the HPMicro inter-core mailbox driver. Each MBX endpoint is
+	  exposed as one Zephyr mailbox channel for the single-word register
+	  path. The separate four-word FIFO path is not exposed.
