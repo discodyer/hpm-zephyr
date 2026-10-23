@@ -302,6 +302,9 @@ config USE_HPMSDK_FFA
 config USE_HPMSDK_GPIO
 	bool
 	depends on HAS_HPMSDK_GPIO
+config USE_HPMSDK_GPIOM
+	bool
+	depends on HAS_HPMSDK_GPIOM
 config USE_HPMSDK_GPTMR
 	bool
 	depends on HAS_HPMSDK_GPTMR

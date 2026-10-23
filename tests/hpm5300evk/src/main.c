@@ -13,6 +13,7 @@
 #include <zephyr/drivers/entropy.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/gpio.h>
+#include <drivers/gpiom/hpmicro_gpiom.h>
 #include <zephyr/drivers/mbox.h>
 #include <zephyr/drivers/mux.h>
 #include <zephyr/drivers/opamp.h>
@@ -50,6 +51,7 @@
 #define QEI0_NODE         DT_NODELABEL(qei0)
 #define TRGM_NODE         DT_NODELABEL(trgm0)
 #define FGPIO_NODE        DT_NODELABEL(fgpioa)
+#define GPIOM_NODE        DT_NODELABEL(gpiom0)
 #define MUX_CONSUMER_NODE DT_NODELABEL(mux_consumer)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
@@ -132,6 +134,9 @@ MUX_STATE_DT_SPEC_DEFINE(MUX_CONSUMER_NODE);
 #if !DT_NODE_HAS_STATUS(FGPIO_NODE, okay)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(FGPIO_NODE, disabled));
 #endif
+#if !DT_NODE_HAS_STATUS(GPIOM_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(GPIOM_NODE, disabled));
+#endif
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
 ZTEST(hpm5300evk, test_devices_ready)
@@ -203,6 +208,40 @@ ZTEST(hpm5300evk, test_devices_ready)
 #endif
 #if DT_NODE_HAS_STATUS(FGPIO_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(FGPIO_NODE)));
+#endif
+#if DT_NODE_HAS_STATUS(GPIOM_NODE, okay)
+	const struct device *gpiom = DEVICE_DT_GET(GPIOM_NODE);
+	enum hpm_gpiom_controller gpiom_controller;
+	enum hpm_gpiom_controller gpiom_original;
+	bool gpiom_visible;
+	bool gpiom_original_visible;
+	bool gpiom_locked;
+
+	zassert_true(device_is_ready(gpiom));
+	zassert_ok(hpm_gpiom_get_controller(gpiom, HPM_GPIOM_PORT_GPIOB, 15, &gpiom_original));
+	zassert_ok(hpm_gpiom_get_visibility(gpiom, HPM_GPIOM_PORT_GPIOB, 15, gpiom_original,
+					    &gpiom_original_visible));
+	zassert_ok(hpm_gpiom_is_locked(gpiom, HPM_GPIOM_PORT_GPIOB, 15, &gpiom_locked));
+	zassert_false(gpiom_locked);
+
+	gpiom_controller = gpiom_original == HPM_GPIOM_CONTROLLER_GPIO0
+				   ? HPM_GPIOM_CONTROLLER_FGPIO0
+				   : HPM_GPIOM_CONTROLLER_GPIO0;
+	zassert_ok(hpm_gpiom_set_controller(gpiom, HPM_GPIOM_PORT_GPIOB, 15, gpiom_controller));
+	zassert_ok(hpm_gpiom_get_controller(gpiom, HPM_GPIOM_PORT_GPIOB, 15, &gpiom_controller));
+	zassert_ok(hpm_gpiom_set_visibility(gpiom, HPM_GPIOM_PORT_GPIOB, 15, gpiom_controller,
+					    !gpiom_original_visible));
+	zassert_ok(hpm_gpiom_get_visibility(gpiom, HPM_GPIOM_PORT_GPIOB, 15, gpiom_controller,
+					    &gpiom_visible));
+	zassert_equal(gpiom_visible, !gpiom_original_visible);
+	zassert_equal(hpm_gpiom_set_controller(gpiom, (enum hpm_gpiom_port)2, 15, gpiom_controller),
+		      -EINVAL);
+	zassert_equal(hpm_gpiom_set_controller(gpiom, HPM_GPIOM_PORT_GPIOB, 32, gpiom_controller),
+		      -EINVAL);
+
+	zassert_ok(hpm_gpiom_set_controller(gpiom, HPM_GPIOM_PORT_GPIOB, 15, gpiom_original));
+	zassert_ok(hpm_gpiom_set_visibility(gpiom, HPM_GPIOM_PORT_GPIOB, 15, gpiom_original,
+					    gpiom_original_visible));
 #endif
 #if DT_NODE_HAS_STATUS(TRGM_NODE, okay)
 	const struct device *mux_dev = MUX_CONTROL_DT_DEV_GET(MUX_CONSUMER_NODE);

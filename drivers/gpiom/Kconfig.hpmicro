@@ -1,0 +1,25 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_GPIOM := hpmicro,hpm-gpiom
+
+config GPIOM_HPMICRO
+	bool "HPMicro GPIO manager driver"
+	default y
+	depends on DT_HAS_HPMICRO_HPM_GPIOM_ENABLED
+	depends on HAS_HPMSDK_GPIOM
+	select USE_HPMSDK_GPIOM
+	help
+	  Enable the HPMicro GPIO manager. It assigns each GPIO pin to GPIO0 or
+	  FGPIO0, controls input visibility and provides irreversible pin locks.
+
+if GPIOM_HPMICRO
+
+config GPIOM_HPMICRO_INIT_PRIORITY
+	int "HPMicro GPIO manager init priority"
+	default 40
+	help
+	  Initialization priority for the HPMicro GPIO manager. It must run
+	  before GPIO consumers that configure GPIOM-owned pins.
+
+endif # GPIOM_HPMICRO

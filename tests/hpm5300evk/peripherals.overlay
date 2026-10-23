@@ -179,3 +179,7 @@
 &fgpioa {
 	status = "okay";
 };
+
+&gpiom0 {
+	status = "okay";
+};
