@@ -1,0 +1,17 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_ACMP_COMP := hpmicro,hpm-acmp-comp
+
+config COMPARATOR_HPMICRO_ACMP
+	bool "HPMicro ACMP driver"
+	default y
+	depends on COMPARATOR
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_ACMP_COMP_ENABLED
+	depends on HAS_HPMSDK_ACMP
+	select PINCTRL
+	select USE_HPMSDK_ACMP
+	help
+	  Enable the HPMicro analog comparator driver. Each enabled child node
+	  represents one comparator channel sharing the ACMP register block.

@@ -1,17 +1,19 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-description: HPMicro analog comparator
+description: |
+  HPMicro analog comparator controller.
+
+  The controller owns the shared register block and clock. Each comparator
+  channel is represented by a child node compatible with
+  "hpmicro,hpm-acmp-comp".
 
 compatible: "hpmicro,hpm-acmp"
 
-include: [base.yaml, pinctrl-device.yaml]
+include: base.yaml
 
 properties:
   reg:
-    required: true
-
-  interrupts:
     required: true
 
   clocks:
@@ -19,3 +21,9 @@ properties:
 
   clock-names:
     required: true
+
+  "#address-cells":
+    const: 1
+
+  "#size-cells":
+    const: 0

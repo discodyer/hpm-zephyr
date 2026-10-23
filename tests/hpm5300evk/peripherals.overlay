@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <dt-bindings/comparator/hpmicro-acmp.h>
+
 / {
 	aliases {
 		watchdog0 = &ewdg0;
@@ -89,4 +91,15 @@
 		reg = <0>;
 		zephyr,resolution = <12>;
 	};
+};
+
+&acmp1 {
+	status = "okay";
+	pinctrl-0 = <&pb09_acmp_comp_1 &pb11_analog>;
+	pinctrl-names = "default";
+	positive-input = <HPM_ACMP_INPUT_DAC_OUT>;
+	negative-input = <HPM_ACMP_INPUT_ANALOG_4>;
+	dac-value = <128>;
+	hysteresis = <3>;
+	enable-output-pin;
 };

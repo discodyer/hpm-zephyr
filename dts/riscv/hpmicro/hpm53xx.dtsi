@@ -5,6 +5,7 @@
 
 /dts-v1/;
 #include <zephyr/dt-bindings/gpio/gpio.h>
+#include <dt-bindings/comparator/hpmicro-acmp.h>
 #include <mem.h>
 #include <freq.h>
 
@@ -855,11 +856,30 @@
 		acmp: comparator@f30b0000 {
 			compatible = "hpmicro,hpm-acmp";
 			reg = <0xf30b0000 0x4000>;
-			interrupts = <62 1>, <63 1>;
-			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_ACMP0 CLK_SRC_OSC24M 1>;
 			clock-names = "acmp";
-			status = "disabled";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			acmp0: comparator@0 {
+				compatible = "hpmicro,hpm-acmp-comp";
+				reg = <0>;
+				interrupts = <62 1>;
+				interrupt-parent = <&plic>;
+				positive-input = <HPM_ACMP_INPUT_DAC_OUT>;
+				negative-input = <HPM_ACMP_INPUT_DAC_OUT>;
+				status = "disabled";
+			};
+
+			acmp1: comparator@1 {
+				compatible = "hpmicro,hpm-acmp-comp";
+				reg = <1>;
+				interrupts = <63 1>;
+				interrupt-parent = <&plic>;
+				positive-input = <HPM_ACMP_INPUT_DAC_OUT>;
+				negative-input = <HPM_ACMP_INPUT_DAC_OUT>;
+				status = "disabled";
+			};
 		};
 	};
 };
