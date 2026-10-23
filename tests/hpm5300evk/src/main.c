@@ -26,29 +26,30 @@
 #include <zephyr/ztest.h>
 #include <dt-bindings/clock/hpm5361-clocks.h>
 
-#define UART_NODE       DT_NODELABEL(uart0)
-#define CLOCK_NODE      DT_NODELABEL(clk)
-#define GPIO_NODE       DT_NODELABEL(gpioa)
-#define FLASH_NODE      DT_NODELABEL(xpi0)
-#define FLASH_MEM_NODE  DT_NODELABEL(flash0)
-#define I2C_NODE        DT_NODELABEL(i2c0)
-#define SPI_NODE        DT_NODELABEL(spi1)
-#define PACKAGE_NODE    DT_NODELABEL(hpm5361_package)
-#define ADC_NODE        DT_NODELABEL(adc0)
-#define DAC_NODE        DT_NODELABEL(dac0)
-#define COMPARATOR_NODE DT_NODELABEL(acmp1)
-#define OPAMP_NODE      DT_NODELABEL(opamp0)
-#define RNG_NODE        DT_NODELABEL(rng)
-#define CRC_NODE        DT_NODELABEL(crc0)
-#define TSNS_NODE       DT_NODELABEL(tsns0)
-#define PTPC0_NODE      DT_NODELABEL(ptpc0)
-#define PTPC1_NODE      DT_NODELABEL(ptpc1)
-#define OTP_NODE        DT_NODELABEL(otp)
-#define MBX0A_NODE      DT_NODELABEL(mbx0a)
-#define MBX0B_NODE      DT_NODELABEL(mbx0b)
-#define DMA_NODE        DT_NODELABEL(hdma)
-#define QEI0_NODE       DT_NODELABEL(qei0)
-#define TRGM_NODE       DT_NODELABEL(trgm0)
+#define UART_NODE         DT_NODELABEL(uart0)
+#define CLOCK_NODE        DT_NODELABEL(clk)
+#define GPIO_NODE         DT_NODELABEL(gpioa)
+#define FLASH_NODE        DT_NODELABEL(xpi0)
+#define FLASH_MEM_NODE    DT_NODELABEL(flash0)
+#define I2C_NODE          DT_NODELABEL(i2c0)
+#define SPI_NODE          DT_NODELABEL(spi1)
+#define PACKAGE_NODE      DT_NODELABEL(hpm5361_package)
+#define ADC_NODE          DT_NODELABEL(adc0)
+#define DAC_NODE          DT_NODELABEL(dac0)
+#define COMPARATOR_NODE   DT_NODELABEL(acmp1)
+#define OPAMP_NODE        DT_NODELABEL(opamp0)
+#define RNG_NODE          DT_NODELABEL(rng)
+#define CRC_NODE          DT_NODELABEL(crc0)
+#define TSNS_NODE         DT_NODELABEL(tsns0)
+#define PTPC0_NODE        DT_NODELABEL(ptpc0)
+#define PTPC1_NODE        DT_NODELABEL(ptpc1)
+#define OTP_NODE          DT_NODELABEL(otp)
+#define MBX0A_NODE        DT_NODELABEL(mbx0a)
+#define MBX0B_NODE        DT_NODELABEL(mbx0b)
+#define DMA_NODE          DT_NODELABEL(hdma)
+#define QEI0_NODE         DT_NODELABEL(qei0)
+#define TRGM_NODE         DT_NODELABEL(trgm0)
+#define FGPIO_NODE        DT_NODELABEL(fgpioa)
 #define MUX_CONSUMER_NODE DT_NODELABEL(mux_consumer)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
@@ -128,6 +129,9 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(QEI0_NODE, disabled));
 MUX_CONTROL_DT_SPEC_DEFINE_BY_IDX(MUX_CONSUMER_NODE, 0);
 MUX_STATE_DT_SPEC_DEFINE(MUX_CONSUMER_NODE);
 #endif
+#if !DT_NODE_HAS_STATUS(FGPIO_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(FGPIO_NODE, disabled));
+#endif
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
 ZTEST(hpm5300evk, test_devices_ready)
@@ -196,6 +200,9 @@ ZTEST(hpm5300evk, test_devices_ready)
 #endif
 #if DT_NODE_HAS_STATUS(QEI0_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(QEI0_NODE)));
+#endif
+#if DT_NODE_HAS_STATUS(FGPIO_NODE, okay)
+	zassert_true(device_is_ready(DEVICE_DT_GET(FGPIO_NODE)));
 #endif
 #if DT_NODE_HAS_STATUS(TRGM_NODE, okay)
 	const struct device *mux_dev = MUX_CONTROL_DT_DEV_GET(MUX_CONSUMER_NODE);

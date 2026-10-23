@@ -17,7 +17,9 @@ properties:
     description: HPM SDK GPIO port index.
 
   interrupts:
-    required: true
+    description: |
+      GPIO interrupt line. The fast GPIO (FGPIO) controller has no interrupt
+      output, so instances representing FGPIO omit this property.
 
   "#gpio-cells":
     const: 2

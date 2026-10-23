@@ -109,6 +109,12 @@
 			ranges = <0x0 0xf00d0000 DT_SIZE_K(16)>;
 		};
 
+		fgpio: peripheral@c0000 {
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0x0 0xc0000 DT_SIZE_K(16)>;
+		};
+
 		gptmr0: timer@f0000000 {
 			compatible = "hpmicro,hpm-gptmr";
 			reg = <0xf0000000 0x1000>;
@@ -962,6 +968,52 @@
 		hpmicro-gpio-port = <14>;
 		interrupts = <4 1>;
 		interrupt-parent = <&plic>;
+		status = "disabled";
+	};
+};
+
+&fgpio {
+	/*
+	 * FGPIO has the same port layout as GPIO0 but no interrupt output.
+	 * Enable an FGPIO port only when GPIOM assigns pins to it.
+	 */
+	fgpioa: gpio@0 {
+		compatible = "hpmicro,hpm-gpio";
+		reg = <0x0 0x4000>;
+		ngpios = <32>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		hpmicro-gpio-port = <0>;
+		status = "disabled";
+	};
+
+	fgpiob: gpio@1 {
+		compatible = "hpmicro,hpm-gpio";
+		reg = <0x0 0x4000>;
+		ngpios = <32>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		hpmicro-gpio-port = <1>;
+		status = "disabled";
+	};
+
+	fgpiox: gpio@2 {
+		compatible = "hpmicro,hpm-gpio";
+		reg = <0x0 0x4000>;
+		ngpios = <8>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		hpmicro-gpio-port = <13>;
+		status = "disabled";
+	};
+
+	fgpioy: gpio@3 {
+		compatible = "hpmicro,hpm-gpio";
+		reg = <0x0 0x4000>;
+		ngpios = <8>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		hpmicro-gpio-port = <14>;
 		status = "disabled";
 	};
 };

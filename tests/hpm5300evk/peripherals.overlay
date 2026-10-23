@@ -175,3 +175,7 @@
 		status = "okay";
 	};
 };
+
+&fgpioa {
+	status = "okay";
+};

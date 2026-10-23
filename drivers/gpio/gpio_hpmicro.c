@@ -147,6 +147,7 @@ static int hpm_gpio_manage_callback(const struct device *dev, struct gpio_callba
 	return gpio_manage_callback(&data->callbacks, callback, set);
 }
 
+#if DT_ANY_INST_HAS_PROP_STATUS_OKAY(interrupts)
 static void hpm_gpio_isr(const struct device *dev)
 {
 	const struct hpm_gpio_config *config = dev->config;
@@ -159,6 +160,7 @@ static void hpm_gpio_isr(const struct device *dev)
 
 	gpio_fire_callbacks(&data->callbacks, dev, status);
 }
+#endif
 
 static const struct gpio_driver_api hpm_gpio_api = {
 	.pin_configure = hpm_gpio_pin_configure,
@@ -179,8 +181,15 @@ static const struct gpio_driver_api hpm_gpio_api = {
 		irq_enable(DT_INST_IRQN(n));                                                       \
 	}
 
+#define HPM_GPIO_IRQ_CONFIG_OR_NONE(n)                                                             \
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, interrupts), (HPM_GPIO_IRQ_CONFIG(n)), ())
+
+#define HPM_GPIO_IRQ_CONFIG_FIELD(n)                                                               \
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, interrupts), (                                \
+		.irq_config_func = hpm_gpio_irq_config_##n,), (.irq_config_func = NULL,))
+
 #define HPM_GPIO_INIT(n)                                                                           \
-	HPM_GPIO_IRQ_CONFIG(n)                                                                     \
+	HPM_GPIO_IRQ_CONFIG_OR_NONE(n)                                                             \
                                                                                                    \
 	static struct hpm_gpio_data hpm_gpio_data_##n;                                             \
                                                                                                    \
@@ -191,14 +200,15 @@ static const struct gpio_driver_api hpm_gpio_api = {
 			},                                                                         \
 		.base = (GPIO_Type *)DT_INST_REG_ADDR(n),                                          \
 		.port = DT_INST_PROP(n, hpmicro_gpio_port),                                        \
-		.irq_config_func = hpm_gpio_irq_config_##n,                                        \
-	};                                                                                         \
+		HPM_GPIO_IRQ_CONFIG_FIELD(n)};                                                     \
                                                                                                    \
 	static int hpm_gpio_init_##n(const struct device *dev)                                     \
 	{                                                                                          \
 		const struct hpm_gpio_config *config = dev->config;                                \
                                                                                                    \
-		config->irq_config_func(dev);                                                      \
+		if (config->irq_config_func != NULL) {                                             \
+			config->irq_config_func(dev);                                              \
+		}                                                                                  \
                                                                                                    \
 		return 0;                                                                          \
 	}                                                                                          \
