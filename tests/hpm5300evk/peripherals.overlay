@@ -204,3 +204,7 @@
 &rdc {
 	status = "okay";
 };
+
+&synt {
+	status = "okay";
+};

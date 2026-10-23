@@ -90,7 +90,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | MMC | 2 | Custom `hpm_mmc` | Implemented core (build-only) | Track and two-predictor configuration, position/delta input, coefficients, position/speed triggers, result/status access and module control; interrupt callbacks and TRGM position routing are not exposed |
 | RDC | 1 | Custom `hpm_rdc` | Implemented core (build-only) | PWM/DAC excitation configuration, I/Q ADC accumulation input, filtering/scaling, output triggers and accumulated/extrema/delay result access; angular conversion, interrupts and TRGM/DAC routing are not exposed |
 | PLB | 1 | Custom | Missing | No driver |
-| SYNT | 1 | `counter` or custom | Missing | No driver |
+| SYNT | 1 | Custom `hpm_synt` | Implemented core (build-only) | Motor-system synchronization counter, four comparator outputs, debug-stop control and the shared timestamp/set/increment/decrement/capture interface; TRGM routing and userspace wrappers are not exposed |
 | CRC | 1 block, 8 channels | `crc` | Implemented (build-only) | Streaming CRC API, byte input, 8/16/32-bit polynomials, input/output reflection, IEEE/Castagnoli/MPEG-2 final XOR handling |
 | TSNS | 1 | `sensor` | Implemented (build-only) | Continuous die-temperature measurement, configurable averaging/speed/interval, exact fixed-point conversion to sensor_value; limits and interrupts not exposed |
 | RNG | 1 | `entropy` | Implemented (build-only) | Hardware TRNG with automatic reseeding, optional startup self-test and blocking thread-mode entropy reads; no ISR or asynchronous API |

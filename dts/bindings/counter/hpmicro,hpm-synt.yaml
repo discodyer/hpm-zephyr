@@ -1,7 +1,11 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-description: HPMicro synchronization timer
+description: |
+  HPMicro synchronization timer.
+
+  SYNT provides a synchronization counter with four comparator outputs and a
+  separate free-running timestamp used by the motion-control subsystem.
 
 compatible: "hpmicro,hpm-synt"
 

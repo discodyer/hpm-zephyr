@@ -19,6 +19,7 @@
 #include <drivers/motor/hpmicro_sei.h>
 #include <drivers/motor/hpmicro_mmc.h>
 #include <drivers/motor/hpmicro_rdc.h>
+#include <drivers/motor/hpmicro_synt.h>
 #include <zephyr/drivers/mux.h>
 #include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/otp.h>
@@ -60,6 +61,7 @@
 #define SEI_NODE          DT_NODELABEL(sei)
 #define MMC0_NODE         DT_NODELABEL(mmc0)
 #define RDC_NODE          DT_NODELABEL(rdc)
+#define SYNT_NODE         DT_NODELABEL(synt)
 #define MUX_CONSUMER_NODE DT_NODELABEL(mux_consumer)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
@@ -156,6 +158,9 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(MMC0_NODE, disabled));
 #endif
 #if !DT_NODE_HAS_STATUS(RDC_NODE, okay)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(RDC_NODE, disabled));
+#endif
+#if !DT_NODE_HAS_STATUS(SYNT_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(SYNT_NODE, disabled));
 #endif
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
@@ -468,6 +473,28 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_rdc_accumulation_enable(rdc, false));
 	zassert_ok(hpm_rdc_excitation_enable(rdc, false));
 	zassert_equal(hpm_rdc_set_channel_threshold(rdc, (enum hpm_rdc_channel)2, 0), -EINVAL);
+#endif
+#if DT_NODE_HAS_STATUS(SYNT_NODE, okay)
+	const struct device *synt = DEVICE_DT_GET(SYNT_NODE);
+	uint32_t synt_value;
+
+	zassert_true(device_is_ready(synt));
+	zassert_ok(hpm_synt_set_reload(synt, 0x888888U));
+	zassert_ok(hpm_synt_set_comparator(synt, 0U, 0x111111U));
+	zassert_ok(hpm_synt_counter_debug_stop(synt, true));
+	zassert_ok(hpm_synt_counter_reset(synt));
+	zassert_ok(hpm_synt_counter_enable(synt, true));
+	zassert_ok(hpm_synt_get_counter(synt, &synt_value));
+	zassert_ok(hpm_synt_counter_enable(synt, false));
+	zassert_ok(hpm_synt_timestamp_debug_stop(synt, true));
+	zassert_ok(hpm_synt_timestamp_reset(synt));
+	zassert_ok(hpm_synt_timestamp_enable(synt, true));
+	zassert_ok(hpm_synt_timestamp_update(synt, HPM_SYNT_TIMESTAMP_SET, 0x1000U));
+	zassert_ok(hpm_synt_timestamp_update(synt, HPM_SYNT_TIMESTAMP_INCREMENT, 0x10U));
+	zassert_ok(hpm_synt_get_timestamp(synt, &synt_value));
+	zassert_ok(hpm_synt_get_saved_timestamp(synt, &synt_value));
+	zassert_ok(hpm_synt_timestamp_enable(synt, false));
+	zassert_equal(hpm_synt_set_comparator(synt, 16U, 0U), -EINVAL);
 #endif
 #if DT_NODE_HAS_STATUS(TRGM_NODE, okay)
 	const struct device *mux_dev = MUX_CONTROL_DT_DEV_GET(MUX_CONSUMER_NODE);

@@ -452,6 +452,9 @@ config USE_HPMSDK_SEI
 config USE_HPMSDK_SMIX
 	bool
 	depends on HAS_HPMSDK_SMIX
+config USE_HPMSDK_SYNT
+	bool
+	depends on HAS_HPMSDK_SYNT
 config USE_HPMSDK_SPI
 	bool
 	depends on HAS_HPMSDK_SPI

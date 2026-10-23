@@ -58,3 +58,16 @@ config RDC_HPMICRO
 	  covers excitation output, I/Q accumulation input, accumulation
 	  filtering, trigger output and result access. Interrupt callbacks and
 	  TRGM/DAC routing are not exposed yet.
+
+DT_COMPAT_HPM_SYNT := hpmicro,hpm-synt
+
+config SYNT_HPMICRO
+	bool "HPMicro synchronization timer driver"
+	default y
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_SYNT_ENABLED
+	depends on HAS_HPMSDK_SYNT
+	select USE_HPMSDK_SYNT
+	help
+	  Enable the HPMicro synchronization timer. It provides the motor-system
+	  synchronization counter, comparator events and the shared timestamp.
