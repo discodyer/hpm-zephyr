@@ -134,3 +134,7 @@
 	averaging = <3>;
 	measurement-speed = <96>;
 };
+
+&ptpc0 {
+	status = "okay";
+};

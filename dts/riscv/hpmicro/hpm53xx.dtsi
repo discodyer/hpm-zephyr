@@ -589,14 +589,29 @@
 			status = "disabled";
 		};
 
-		ptpc: timer@f02fc000 {
-			compatible = "hpmicro,hpm-ptpc";
+		ptpc: ptp-controller@f02fc000 {
+			compatible = "hpmicro,hpm-ptpc-controller";
 			reg = <0xf02fc000 0x4000>;
-			interrupts = <39 1>;
-			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_PTPC CLK_SRC_OSC24M 1>;
 			clock-names = "ptpc";
-			status = "disabled";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			ptpc0: ptp-clock@0 {
+				compatible = "hpmicro,hpm-ptpc";
+				reg = <0>;
+				interrupts = <39 1>;
+				interrupt-parent = <&plic>;
+				status = "disabled";
+			};
+
+			ptpc1: ptp-clock@1 {
+				compatible = "hpmicro,hpm-ptpc";
+				reg = <1>;
+				interrupts = <39 1>;
+				interrupt-parent = <&plic>;
+				status = "disabled";
+			};
 		};
 
 		qei0: qei@f0300000 {

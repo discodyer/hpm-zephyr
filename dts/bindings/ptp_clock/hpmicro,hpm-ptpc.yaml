@@ -1,7 +1,7 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-description: HPMicro PTPC timer
+description: HPMicro PTPC timestamp counter
 
 compatible: "hpmicro,hpm-ptpc"
 
@@ -10,12 +10,7 @@ include: base.yaml
 properties:
   reg:
     required: true
+    description: Timestamp counter index (0 or 1).
 
   interrupts:
-    required: true
-
-  clocks:
-    required: true
-
-  clock-names:
     required: true

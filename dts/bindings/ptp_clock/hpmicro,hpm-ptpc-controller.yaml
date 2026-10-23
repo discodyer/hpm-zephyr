@@ -1,0 +1,26 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  HPMicro PTPC timestamp controller. The controller owns the shared register
+  block and clock; each child is an independent timestamp counter.
+
+compatible: "hpmicro,hpm-ptpc-controller"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+  clocks:
+    required: true
+
+  clock-names:
+    required: true
+
+  "#address-cells":
+    const: 1
+
+  "#size-cells":
+    const: 0
