@@ -282,8 +282,80 @@ ZTEST(hpm5300evk, test_devices_ready)
 		.output = HPM_QEO_ABZ_OUTPUT_ABZ,
 		.z_pulse_width = HPM_QEO_Z_PULSE_75_PERCENT,
 	};
+	struct hpm_qeo_wave_config qeo_wave_config = {
+		.lines = 4U,
+		.type = HPM_QEO_WAVE_COSINE,
+		.saddle_type = HPM_QEO_WAVE_SADDLE_STANDARD,
+		.channel =
+			{
+				{
+					.phase_shift_degrees = 0.0,
+					.enable_amplitude = true,
+					.amplitude = 0.75,
+					.limits =
+						{
+							.max_limit0 = 0xffffU,
+							.max_limit1 = 0xffffU,
+						},
+				},
+				{
+					.phase_shift_degrees = 120.0,
+					.enable_amplitude = true,
+					.amplitude = 0.75,
+					.limits =
+						{
+							.max_limit0 = 0xffffU,
+							.max_limit1 = 0xffffU,
+						},
+				},
+				{
+					.phase_shift_degrees = 240.0,
+					.enable_amplitude = true,
+					.amplitude = 0.75,
+					.limits =
+						{
+							.max_limit0 = 0xffffU,
+							.max_limit1 = 0xffffU,
+						},
+				},
+			},
+	};
+	struct hpm_qeo_pwm_config qeo_pwm_config = {
+		.lines = 4U,
+		.phase_count = 4U,
+		.phase_shift_degrees = {0.0, 90.0, 180.0, 270.0},
+		.phase_table = HPM_QEO_PWM_PHASE_TABLE_POSITIVE,
+	};
+	struct hpm_qeo_pwm_phase_output_table qeo_pwm_phase_output = {
+		.output =
+			{
+				HPM_QEO_PWM_OUTPUT_NOT_FORCED,
+				HPM_QEO_PWM_OUTPUT_NOT_FORCED,
+				HPM_QEO_PWM_OUTPUT_FORCE_HIGH,
+				HPM_QEO_PWM_OUTPUT_FORCE_LOW,
+				HPM_QEO_PWM_OUTPUT_FORCE_HIGH,
+				HPM_QEO_PWM_OUTPUT_FORCE_LOW,
+				HPM_QEO_PWM_OUTPUT_NOT_FORCED,
+				HPM_QEO_PWM_OUTPUT_NOT_FORCED,
+			},
+	};
+	struct hpm_qeo_pwm_safety_output_table qeo_pwm_safety_output = {
+		.output =
+			{
+				HPM_QEO_PWM_SAFETY_OUTPUT_HIGH_Z,
+				HPM_QEO_PWM_SAFETY_OUTPUT_HIGH_Z,
+				HPM_QEO_PWM_SAFETY_OUTPUT_HIGH_Z,
+				HPM_QEO_PWM_SAFETY_OUTPUT_HIGH_Z,
+				HPM_QEO_PWM_SAFETY_OUTPUT_HIGH_Z,
+				HPM_QEO_PWM_SAFETY_OUTPUT_HIGH_Z,
+				HPM_QEO_PWM_SAFETY_OUTPUT_HIGH_Z,
+				HPM_QEO_PWM_SAFETY_OUTPUT_HIGH_Z,
+			},
+	};
 	uint32_t qeo_position;
+	uint16_t qeo_wave_output;
 	bool qeo_finished;
+	bool qeo_in_safety;
 
 	zassert_true(device_is_ready(qeo));
 	zassert_ok(hpm_qeo_configure_abz(qeo, &qeo_config));
@@ -293,6 +365,45 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_qeo_calculation_finished(qeo, &qeo_finished));
 	zassert_ok(hpm_qeo_set_position_source(qeo, HPM_QEO_POSITION_HARDWARE));
 	zassert_equal(hpm_qeo_inject_position(qeo, 0U), -EACCES);
+
+	zassert_ok(hpm_qeo_configure_wave(qeo, &qeo_wave_config));
+	zassert_ok(hpm_qeo_get_wave_output(qeo, 0U, &qeo_wave_output));
+	zassert_equal(hpm_qeo_get_wave_output(qeo, HPM_QEO_WAVE_CHANNEL_COUNT, &qeo_wave_output),
+		      -EINVAL);
+	zassert_equal(hpm_qeo_get_wave_output(qeo, 0U, NULL), -EINVAL);
+	qeo_wave_config.type = (enum hpm_qeo_wave_type)4;
+	zassert_equal(hpm_qeo_configure_wave(qeo, &qeo_wave_config), -EINVAL);
+	qeo_wave_config.type = HPM_QEO_WAVE_COSINE;
+	qeo_wave_config.channel[1].phase_shift_degrees = 361.0;
+	zassert_equal(hpm_qeo_configure_wave(qeo, &qeo_wave_config), -EINVAL);
+	qeo_wave_config.channel[1].phase_shift_degrees = 120.0;
+	qeo_wave_config.channel[1].amplitude = 16.0;
+	zassert_equal(hpm_qeo_configure_wave(qeo, &qeo_wave_config), -EINVAL);
+	qeo_wave_config.channel[1].amplitude = 0.75;
+	qeo_wave_config.channel[1].mid_point_shift = 16.0;
+	zassert_equal(hpm_qeo_configure_wave(qeo, &qeo_wave_config), -EINVAL);
+
+	zassert_ok(hpm_qeo_configure_pwm(qeo, &qeo_pwm_config));
+	qeo_pwm_config.phase_count = HPM_QEO_PWM_PHASE_COUNT + 1U;
+	zassert_equal(hpm_qeo_configure_pwm(qeo, &qeo_pwm_config), -EINVAL);
+	qeo_pwm_config.phase_count = 4U;
+	zassert_ok(hpm_qeo_set_pwm_phase_table(qeo, HPM_QEO_PWM_PHASE_TABLE_POSITIVE, 0U,
+					       &qeo_pwm_phase_output));
+	zassert_ok(hpm_qeo_set_pwm_phase_table(qeo, HPM_QEO_PWM_PHASE_TABLE_NEGATIVE,
+					       HPM_QEO_PWM_PHASE_COUNT - 1U,
+					       &qeo_pwm_phase_output));
+	zassert_equal(hpm_qeo_set_pwm_phase_table(qeo, HPM_QEO_PWM_PHASE_TABLE_POSITIVE,
+						  HPM_QEO_PWM_PHASE_COUNT, &qeo_pwm_phase_output),
+		      -EINVAL);
+	zassert_ok(hpm_qeo_select_pwm_phase_table(qeo, HPM_QEO_PWM_PHASE_TABLE_NEGATIVE));
+	zassert_ok(hpm_qeo_set_pwm_safety_table(qeo, &qeo_pwm_safety_output));
+	zassert_ok(hpm_qeo_pwm_in_safety(qeo, &qeo_in_safety));
+	zassert_ok(hpm_qeo_set_pwm_safety(qeo, true));
+	zassert_ok(hpm_qeo_pwm_in_safety(qeo, &qeo_in_safety));
+	zassert_true(qeo_in_safety);
+	zassert_ok(hpm_qeo_set_pwm_safety(qeo, false));
+	qeo_pwm_safety_output.output[0] = (enum hpm_qeo_pwm_safety_output)3;
+	zassert_equal(hpm_qeo_set_pwm_safety_table(qeo, &qeo_pwm_safety_output), -EINVAL);
 #endif
 #if DT_NODE_HAS_STATUS(SEI_NODE, okay)
 	const struct device *sei = DEVICE_DT_GET(SEI_NODE);

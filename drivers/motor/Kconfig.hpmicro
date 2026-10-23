@@ -11,9 +11,10 @@ config QEO_HPMICRO
 	depends on HAS_HPMSDK_QEO
 	select USE_HPMSDK_QEO
 	help
-	  Enable the HPMicro quadrature encoder output driver. The initial
-	  adaptation supports ABZ output, software position injection and
-	  internal position readback.
+	  Enable the HPMicro quadrature encoder output driver. The driver supports
+	  ABZ output, three-channel WAVE output, PWM FORCE phase tables, PWM
+	  safety mode, software position injection and internal position readback.
+	  Position routing through TRGM/MMC is not included.
 
 DT_COMPAT_HPM_SEI := hpmicro,hpm-sei
 
