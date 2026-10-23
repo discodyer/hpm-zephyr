@@ -88,7 +88,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | QEO | 2 | Custom `hpm_qeo` | Implemented core (build-only) | ABZ, pulse/direction, up/down and three-phase output modes; resolution, maximum frequency, watchdog, polarity, Z pulse width, hardware/software position source, position injection and status readback. WAVE output, PWM FORCE tables, safety mode and TRGM/MMC integration are not exposed |
 | SEI | 2 channels | Custom `hpm_sei` | Implemented core (build-only) | Protocol-neutral transceiver, instruction, latch, SAMPLE/UPDATE, engine and data-register access; encoder protocols (SSI, Tamagawa, BiSS, EnDat, etc.), periodic/external trigger routing and interrupt callbacks are not built in |
 | MMC | 2 | Custom `hpm_mmc` | Implemented core (build-only) | Track and two-predictor configuration, position/delta input, coefficients, position/speed triggers, result/status access and module control; interrupt callbacks and TRGM position routing are not exposed |
-| RDC | 1 | `sensor` or custom | Missing | No driver |
+| RDC | 1 | Custom `hpm_rdc` | Implemented core (build-only) | PWM/DAC excitation configuration, I/Q ADC accumulation input, filtering/scaling, output triggers and accumulated/extrema/delay result access; angular conversion, interrupts and TRGM/DAC routing are not exposed |
 | PLB | 1 | Custom | Missing | No driver |
 | SYNT | 1 | `counter` or custom | Missing | No driver |
 | CRC | 1 block, 8 channels | `crc` | Implemented (build-only) | Streaming CRC API, byte input, 8/16/32-bit polynomials, input/output reflection, IEEE/Castagnoli/MPEG-2 final XOR handling |

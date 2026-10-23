@@ -18,6 +18,7 @@
 #include <drivers/motor/hpmicro_qeo.h>
 #include <drivers/motor/hpmicro_sei.h>
 #include <drivers/motor/hpmicro_mmc.h>
+#include <drivers/motor/hpmicro_rdc.h>
 #include <zephyr/drivers/mux.h>
 #include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/otp.h>
@@ -58,6 +59,7 @@
 #define QEO0_NODE         DT_NODELABEL(qeo0)
 #define SEI_NODE          DT_NODELABEL(sei)
 #define MMC0_NODE         DT_NODELABEL(mmc0)
+#define RDC_NODE          DT_NODELABEL(rdc)
 #define MUX_CONSUMER_NODE DT_NODELABEL(mux_consumer)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
@@ -151,6 +153,9 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(SEI_NODE, disabled));
 #endif
 #if !DT_NODE_HAS_STATUS(MMC0_NODE, okay)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(MMC0_NODE, disabled));
+#endif
+#if !DT_NODE_HAS_STATUS(RDC_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(RDC_NODE, disabled));
 #endif
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
@@ -346,11 +351,12 @@ ZTEST(hpm5300evk, test_devices_ready)
 #if DT_NODE_HAS_STATUS(MMC0_NODE, okay)
 	const struct device *mmc = DEVICE_DT_GET(MMC0_NODE);
 	const struct hpm_mmc_track_mode mmc_track_mode = {
-		.position_mode = {
-			.continuous_step_threshold = 0x1000000U,
-			.continuous_circle_threshold = 0x1000000U,
-			.out_of_sync_theta_threshold = 0x1000000U,
-		},
+		.position_mode =
+			{
+				.continuous_step_threshold = 0x1000000U,
+				.continuous_circle_threshold = 0x1000000U,
+				.out_of_sync_theta_threshold = 0x1000000U,
+			},
 	};
 	const struct hpm_mmc_coefficient_config mmc_coefficients = {
 		.p = 1.0,
@@ -414,6 +420,54 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(
 		hpm_mmc_configure_predictor_mode(mmc, HPM_MMC_PREDICTOR_COUNT, &mmc_predictor_mode),
 		-EINVAL);
+#endif
+#if DT_NODE_HAS_STATUS(RDC_NODE, okay)
+	const struct device *rdc = DEVICE_DT_GET(RDC_NODE);
+	const struct hpm_rdc_output_config rdc_output = {
+		.mode = HPM_RDC_OUTPUT_PWM,
+		.excitation_period_cycles = 35840U,
+		.excitation_points = HPM_RDC_EXCITATION_64_POINTS,
+		.pwm_period_samples = 0U,
+		.amplitude_mantissa = 2U,
+		.amplitude_exponent = 3U,
+	};
+	const struct hpm_rdc_input_config rdc_input = {
+		.rectify_signal = HPM_RDC_RECTIFY_EXCITATION_0,
+		.accumulation_cycles = 4U,
+		.stamp = HPM_RDC_STAMP_END,
+		.adc_channel_i = 5U,
+		.adc_port_i = 0U,
+		.adc_channel_q = 6U,
+		.adc_port_q = 1U,
+	};
+	const struct hpm_rdc_accumulation_config rdc_accumulation = {
+		.filter_edges = 4U,
+		.edge_distance = 1U,
+		.right_shift = 8U,
+		.excitation_carrier_period = 35840U,
+		.sync_delay_i = 1U,
+		.sync_delay_q = 1U,
+		.amplitude_max = 0x00FFFFFFU,
+		.amplitude_min = 0U,
+	};
+	struct hpm_rdc_result rdc_result;
+
+	zassert_true(device_is_ready(rdc));
+	zassert_ok(hpm_rdc_configure_output(rdc, &rdc_output));
+	zassert_ok(hpm_rdc_configure_input(rdc, &rdc_input));
+	zassert_ok(hpm_rdc_configure_accumulation(rdc, &rdc_accumulation));
+	zassert_ok(hpm_rdc_set_channel_threshold(rdc, HPM_RDC_CHANNEL_I, 0));
+	zassert_ok(hpm_rdc_set_channel_sync_delay(rdc, HPM_RDC_CHANNEL_Q, 1U));
+	zassert_ok(hpm_rdc_configure_trigger(rdc, HPM_RDC_TRIGGER_0, 150, true));
+	zassert_ok(hpm_rdc_configure_trigger(rdc, HPM_RDC_TRIGGER_1, 0, false));
+	zassert_ok(hpm_rdc_excitation_enable(rdc, true));
+	zassert_ok(hpm_rdc_software_trigger(rdc));
+	zassert_ok(hpm_rdc_accumulation_enable(rdc, true));
+	zassert_ok(hpm_rdc_clear_extrema(rdc));
+	zassert_ok(hpm_rdc_get_result(rdc, &rdc_result));
+	zassert_ok(hpm_rdc_accumulation_enable(rdc, false));
+	zassert_ok(hpm_rdc_excitation_enable(rdc, false));
+	zassert_equal(hpm_rdc_set_channel_threshold(rdc, (enum hpm_rdc_channel)2, 0), -EINVAL);
 #endif
 #if DT_NODE_HAS_STATUS(TRGM_NODE, okay)
 	const struct device *mux_dev = MUX_CONTROL_DT_DEV_GET(MUX_CONSUMER_NODE);

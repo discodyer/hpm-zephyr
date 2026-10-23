@@ -1,7 +1,11 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-description: HPMicro resolver-to-digital converter
+description: |
+  HPMicro resolver-to-digital converter.
+
+  The controller generates a resolver excitation signal and accumulates
+  rectified I/Q ADC samples for position processing.
 
 compatible: "hpmicro,hpm-rdc"
 

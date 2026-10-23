@@ -200,3 +200,7 @@
 &mmc0 {
 	status = "okay";
 };
+
+&rdc {
+	status = "okay";
+};

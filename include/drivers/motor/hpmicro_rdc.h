@@ -1,0 +1,212 @@
+/*
+ * Copyright (c) 2026 The HPM Zephyr Module Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#ifndef ZEPHYR_INCLUDE_DRIVERS_MOTOR_HPMICRO_RDC_H_
+#define ZEPHYR_INCLUDE_DRIVERS_MOTOR_HPMICRO_RDC_H_
+
+#include <errno.h>
+#include <stdbool.h>
+#include <stdint.h>
+
+#include <zephyr/device.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/**
+ * @brief HPMicro resolver-to-digital converter
+ * @defgroup hpm_rdc_interface HPMicro RDC
+ * @ingroup io_interfaces
+ * @{
+ */
+
+enum hpm_rdc_output_mode {
+	HPM_RDC_OUTPUT_DAC = 0,
+	HPM_RDC_OUTPUT_PWM = 1,
+};
+
+enum hpm_rdc_excitation_points {
+	HPM_RDC_EXCITATION_4_POINTS = 0,
+	HPM_RDC_EXCITATION_8_POINTS,
+	HPM_RDC_EXCITATION_16_POINTS,
+	HPM_RDC_EXCITATION_32_POINTS,
+	HPM_RDC_EXCITATION_64_POINTS,
+	HPM_RDC_EXCITATION_128_POINTS,
+	HPM_RDC_EXCITATION_256_POINTS,
+	HPM_RDC_EXCITATION_512_POINTS,
+	HPM_RDC_EXCITATION_1024_POINTS,
+};
+
+enum hpm_rdc_rectify_signal {
+	HPM_RDC_RECTIFY_EXCITATION_0 = 0,
+	HPM_RDC_RECTIFY_EXCITATION_90,
+	HPM_RDC_RECTIFY_EXCITATION_180,
+	HPM_RDC_RECTIFY_EXCITATION_270,
+	HPM_RDC_RECTIFY_EXTERNAL,
+	HPM_RDC_RECTIFY_EXTERNAL_INVERTED,
+};
+
+enum hpm_rdc_accumulation_stamp {
+	HPM_RDC_STAMP_END = 0,
+	HPM_RDC_STAMP_START = 1,
+	HPM_RDC_STAMP_CENTER = 2,
+};
+
+enum hpm_rdc_channel {
+	HPM_RDC_CHANNEL_I = 0,
+	HPM_RDC_CHANNEL_Q = 1,
+};
+
+enum hpm_rdc_trigger {
+	HPM_RDC_TRIGGER_0 = 0,
+	HPM_RDC_TRIGGER_1 = 1,
+};
+
+struct hpm_rdc_output_config {
+	enum hpm_rdc_output_mode mode;
+	uint32_t excitation_period_cycles;
+	enum hpm_rdc_excitation_points excitation_points;
+	uint8_t pwm_period_samples;
+	bool output_swap;
+	int32_t amplitude_offset;
+	uint16_t amplitude_mantissa;
+	uint8_t amplitude_exponent;
+	bool pwm_dither;
+	bool pwm_p_active_low;
+	bool pwm_n_active_low;
+	bool hardware_trigger;
+	uint32_t hardware_trigger_delay;
+	uint8_t dac_channel_i;
+	uint8_t dac_channel_q;
+	uint8_t pwm_deadzone_p;
+	uint8_t pwm_deadzone_n;
+};
+
+struct hpm_rdc_input_config {
+	enum hpm_rdc_rectify_signal rectify_signal;
+	uint8_t accumulation_cycles;
+	enum hpm_rdc_accumulation_stamp stamp;
+	uint8_t adc_channel_i;
+	uint8_t adc_port_i;
+	uint8_t adc_channel_q;
+	uint8_t adc_port_q;
+};
+
+struct hpm_rdc_accumulation_config {
+	uint8_t filter_edges;
+	uint8_t edge_distance;
+	uint8_t right_shift;
+	bool discard_invalid;
+	uint32_t excitation_carrier_period;
+	uint32_t sync_delay_i;
+	uint32_t sync_delay_q;
+	uint32_t amplitude_max;
+	uint32_t amplitude_min;
+};
+
+struct hpm_rdc_result {
+	uint32_t i;
+	uint32_t q;
+	int32_t min_i;
+	int32_t max_i;
+	int32_t min_q;
+	int32_t max_q;
+	uint32_t rise_delay_i;
+	uint32_t fall_delay_i;
+	uint32_t rise_delay_q;
+	uint32_t fall_delay_q;
+	uint32_t interrupt_status;
+};
+
+/** @cond INTERNAL_HIDDEN */
+__subsystem struct hpm_rdc_driver_api {
+	int (*configure_output)(const struct device *dev,
+				const struct hpm_rdc_output_config *config);
+	int (*configure_input)(const struct device *dev, const struct hpm_rdc_input_config *config);
+	int (*configure_accumulation)(const struct device *dev,
+				      const struct hpm_rdc_accumulation_config *config);
+	int (*set_channel_threshold)(const struct device *dev, enum hpm_rdc_channel channel,
+				     int32_t threshold);
+	int (*set_channel_sync_delay)(const struct device *dev, enum hpm_rdc_channel channel,
+				      uint32_t delay);
+	int (*configure_trigger)(const struct device *dev, enum hpm_rdc_trigger trigger,
+				 int32_t offset, bool enable);
+	int (*excitation_enable)(const struct device *dev, bool enable);
+	int (*software_trigger)(const struct device *dev);
+	int (*accumulation_enable)(const struct device *dev, bool enable);
+	int (*get_result)(const struct device *dev, struct hpm_rdc_result *result);
+	int (*clear_extrema)(const struct device *dev);
+};
+/** @endcond */
+
+static inline int hpm_rdc_configure_output(const struct device *dev,
+					   const struct hpm_rdc_output_config *config)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->configure_output(dev, config);
+}
+
+static inline int hpm_rdc_configure_input(const struct device *dev,
+					  const struct hpm_rdc_input_config *config)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->configure_input(dev, config);
+}
+
+static inline int hpm_rdc_configure_accumulation(const struct device *dev,
+						 const struct hpm_rdc_accumulation_config *config)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->configure_accumulation(dev, config);
+}
+
+static inline int hpm_rdc_set_channel_threshold(const struct device *dev,
+						enum hpm_rdc_channel channel, int32_t threshold)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->set_channel_threshold(dev, channel, threshold);
+}
+
+static inline int hpm_rdc_set_channel_sync_delay(const struct device *dev,
+						 enum hpm_rdc_channel channel, uint32_t delay)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->set_channel_sync_delay(dev, channel, delay);
+}
+
+static inline int hpm_rdc_configure_trigger(const struct device *dev, enum hpm_rdc_trigger trigger,
+					    int32_t offset, bool enable)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->configure_trigger(dev, trigger, offset, enable);
+}
+
+static inline int hpm_rdc_excitation_enable(const struct device *dev, bool enable)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->excitation_enable(dev, enable);
+}
+
+static inline int hpm_rdc_software_trigger(const struct device *dev)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->software_trigger(dev);
+}
+
+static inline int hpm_rdc_accumulation_enable(const struct device *dev, bool enable)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->accumulation_enable(dev, enable);
+}
+
+static inline int hpm_rdc_get_result(const struct device *dev, struct hpm_rdc_result *result)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->get_result(dev, result);
+}
+
+static inline int hpm_rdc_clear_extrema(const struct device *dev)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->clear_extrema(dev);
+}
+
+/** @} */
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* ZEPHYR_INCLUDE_DRIVERS_MOTOR_HPMICRO_RDC_H_ */
