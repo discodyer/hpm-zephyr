@@ -3,42 +3,49 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <dt-bindings/pinctrl/hpmicro-pinctrl-common.h>
+#include <hpmicro/hpm5361-icb-pinctrl.dtsi>
 
-&pinctrl {
-	pinmux_uart0: pinmux_uart0 {
-		group0 {
-			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTA, 0),
-						 IOC_TYPE_IOC, 0, 2)>,
-				 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTA, 1),
-						 IOC_TYPE_IOC, 0, 2)>;
-		};
+/* HPM5300EVK carries the LQFP100 HPM5361ICB1 package. */
+&pb02_i2c0_scl {
+	group0 {
+		drive-open-drain;
+		bias-pull-up;
+		input-enable;
 	};
+};
 
-	pinmux_i2c0: pinmux_i2c0 {
-		group0 {
-			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTB, 2),
-						 IOC_TYPE_IOC, 0, 4)>,
-				 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTB, 3),
-						 IOC_TYPE_IOC, 0, 4)>;
-			drive-open-drain;
-			bias-pull-up;
-			input-enable;
-		};
+&pb03_i2c0_sda {
+	group0 {
+		drive-open-drain;
+		bias-pull-up;
+		input-enable;
 	};
+};
 
-	pinmux_spi1: pinmux_spi1 {
-		group0 {
-			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTA, 26),
-						 IOC_TYPE_IOC, 0, 5)>,
-				 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTA, 27),
-						 IOC_TYPE_IOC, 0, 5)>,
-				 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTA, 28),
-						 IOC_TYPE_IOC, 0, 5)>,
-				 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTA, 29),
-						 IOC_TYPE_IOC, 0, 5)>;
-			hpmicro-slew-rate = "fast";
-			hpmicro-slew-pd = "200M";
-		};
+&pa26_spi1_cs_0 {
+	group0 {
+		hpmicro-slew-rate = "fast";
+		hpmicro-slew-pd = "200M";
+	};
+};
+
+&pa27_spi1_sclk {
+	group0 {
+		hpmicro-slew-rate = "fast";
+		hpmicro-slew-pd = "200M";
+	};
+};
+
+&pa28_spi1_miso {
+	group0 {
+		hpmicro-slew-rate = "fast";
+		hpmicro-slew-pd = "200M";
+	};
+};
+
+&pa29_spi1_mosi {
+	group0 {
+		hpmicro-slew-rate = "fast";
+		hpmicro-slew-pd = "200M";
 	};
 };

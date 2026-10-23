@@ -1,0 +1,15 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: HPMicro one-time programmable memory
+
+compatible: "hpmicro,hpm-otp"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true

@@ -40,8 +40,14 @@ typedef struct {
 		.pincfg = Z_PINCTRL_HPMICRO_PINCFG_INIT(node_id),                                  \
 	},
 
+#define Z_PINCTRL_STATE_PIN_CHILD_INIT(node_id)                                                    \
+	DT_FOREACH_PROP_ELEM(node_id, pinmux, Z_PINCTRL_STATE_PIN_INIT)
+
+#define Z_PINCTRL_STATE_PIN_GROUP_INIT(node_id, state_prop, idx)                                   \
+	DT_FOREACH_CHILD(DT_PHANDLE_BY_IDX(node_id, state_prop, idx),                              \
+			 Z_PINCTRL_STATE_PIN_CHILD_INIT)
+
 #define Z_PINCTRL_STATE_PINS_INIT(node_id, prop)                                                   \
-	{DT_FOREACH_CHILD_VARGS(DT_PHANDLE(node_id, prop), DT_FOREACH_PROP_ELEM, pinmux,           \
-				Z_PINCTRL_STATE_PIN_INIT)}
+	{DT_FOREACH_PROP_ELEM_SEP(node_id, prop, Z_PINCTRL_STATE_PIN_GROUP_INIT, ())}
 
 #endif /* HPM_ZEPHYR_SOC_HPM5300_PINCTRL_SOC_H_ */

@@ -1,0 +1,42 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: HPM5361 package pin availability metadata
+
+compatible: "hpmicro,hpm5361-package"
+
+include: base.yaml
+
+properties:
+  hpmicro,package:
+    type: string
+    required: true
+    enum:
+      - "lqfp100"
+      - "lqfp64"
+      - "qfn48"
+    description: Physical package type.
+
+  hpmicro,model:
+    type: string
+    required: true
+    enum:
+      - "HPM5361ICB1"
+      - "HPM5361ICF1"
+      - "HPM5361IEG1"
+    description: Full HPM5361 ordering code for this package.
+
+  hpmicro,gpio-count:
+    type: int
+    required: true
+    description: Number of GPIO pins bonded out by this package.
+
+  hpmicro,analog-pin-count:
+    type: int
+    required: true
+    description: Number of analog-capable pins bonded out by this package.
+
+  hpmicro,available-pads:
+    type: string-array
+    required: true
+    description: Bonded-out HPMICRO pad names, for example PA00 or PY03.

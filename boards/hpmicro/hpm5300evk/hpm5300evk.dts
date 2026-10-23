@@ -41,20 +41,21 @@
 &uart0 {
 	status = "okay";
 	current-speed = <115200>;
-	pinctrl-0 = <&pinmux_uart0>;
+	pinctrl-0 = <&pa00_uart0_txd &pa01_uart0_rxd>;
 	pinctrl-names = "default";
 };
 
 &i2c0 {
 	status = "okay";
 	clock-frequency = <100000>;
-	pinctrl-0 = <&pinmux_i2c0>;
+	pinctrl-0 = <&pb02_i2c0_scl &pb03_i2c0_sda>;
 	pinctrl-names = "default";
 };
 
 &spi1 {
 	status = "okay";
-	pinctrl-0 = <&pinmux_spi1>;
+	pinctrl-0 = <&pa26_spi1_cs_0 &pa27_spi1_sclk
+		     &pa28_spi1_miso &pa29_spi1_mosi>;
 	pinctrl-names = "default";
 };
 

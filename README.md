@@ -8,7 +8,7 @@ Out-of-tree Zephyr module for HPMicro HPM5361-based boards.
 boards/hpmicro/hpm5300evk/   HPM5300EVK board definitions
 boards/hpmicro/hpm5361icb/   HPM5361ICB board definitions
 soc/hpmicro/hpm5300/         HPM5300 SoC family integration
-dts/riscv/hpmicro/           HPM5300 devicetree sources
+dts/riscv/hpmicro/           HPM5300 devicetree sources and package pinctrl
 dts/bindings/                Devicetree bindings
 drivers/                     Zephyr drivers backed by HPM SDK
 include/                     Public DT bindings and driver headers
@@ -24,7 +24,8 @@ modules/hpm_sdk/             HPM SDK integration glue
 
 Both targets currently provide interrupt routing, machine timer, clock/PLL and
 Andes L1 cache startup, UART pinctrl/clock/baud initialization, full pad
-pinctrl, GPIO interrupts, and an XPI NOR flash driver. The XIP image reserves
+pinctrl, GPIO interrupts, and an XPI NOR flash driver. HPM5300EVK also enables
+I2C0 and SPI1. The XIP image reserves
 the BootROM NOR configuration at `0x80000400`, places the boot header at
 `0x80001000`, and starts the application at `0x80003000`. Flash write, erase,
 and initialization execute from RAM while XIP is active.
@@ -54,6 +55,40 @@ ZEPHYR_BASE="$PWD/zephyr" HPM_SDK_DIR="$PWD/hpm_sdk" \
   ./hpm-zephyr/scripts/twister_smoke.sh
 ```
 
+## HPM5361 packages
+
+HPM5361 has three ordering variants with different package pin exposure. The
+common SoC DTSI describes only silicon-level instances; each board must include
+exactly one package pinctrl DTSI:
+
+| Package | Ordering code | GPIOs | Analog pins | DTSI |
+|---|---|---:|---:|---|
+| LQFP100 | HPM5361ICB1 | 56 | 16 | `dts/riscv/hpmicro/hpm5361-icb-pinctrl.dtsi` |
+| LQFP64 | HPM5361ICF1 | 36 | 10 | `dts/riscv/hpmicro/hpm5361-icf-pinctrl.dtsi` |
+| QFN48 | HPM5361IEG1 | 29 | 8 | `dts/riscv/hpmicro/hpm5361-ieg-pinctrl.dtsi` |
+
+The package DTSIs are generated from the pinned SDK IOMUX headers and expose
+one `/omit-if-no-ref/` node per pad/function pair. Boards compose functions
+with multiple phandles, for example:
+
+```dts
+pinctrl-0 = <&pa00_uart0_txd &pa01_uart0_rxd>;
+```
+
+`ngpios` describes the GPIO controller's implemented width and is not a
+package pin count. The number of bonded-out pins is recorded in the package
+metadata node instead. `scripts/check_pinctrl.py` verifies that enabled
+consumers do not reference unbonded pads and do not assign one pad twice in the
+same pin state. The RAM and XIP smoke scripts run this check automatically.
+
+The upstream vendor DTS remains untouched. Regenerate the package files after
+an SDK update with:
+
+```sh
+./hpm-zephyr/scripts/generate_hpm5361_pinctrl.py
+./hpm-zephyr/scripts/generate_hpm5361_pinctrl.py --check
+```
+
 ## HPM SDK integration
 
 The complete, unmodified upstream `hpm_sdk` is kept as a separate west project
@@ -70,9 +105,15 @@ vendor HAL source. Devicetree still controls which instances a board enables.
 The optional `CONFIG_HPM_SDK_BUILD_ALL_DRIVERS=y` compiles every HAL source
 listed for the selected SoC for build-only regression testing.
 
-The workspace-level agent notes record the maintenance assessment, the per-SoC
-capability matrix, board interfaces, all-HAL build-only coverage and upgrade
-process.
+The SoC DTSI describes the full HPM5361 instance set, including UART0-7,
+I2C0-3, SPI0-3, MCAN0-3, PWM0-1, ADC0-1, DAC0-1, ACMP, OPAMP0-1, GPTMR0-3,
+EWDG0-1, HDMA, USB0, GPIOA/B/X/Y, PGPIO, PUART, PTMR and PEWDG. Instances whose
+Zephyr drivers are not implemented yet remain disabled. Their bindings define
+the hardware contract but do not imply driver support.
+
+The workspace-level agent notes record the maintenance assessment, the
+per-SoC capability matrix, board interfaces, all-HAL build-only coverage and
+upgrade process.
 
 ## Development
 

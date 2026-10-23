@@ -43,6 +43,9 @@ cmake -S "$APP_DIR" -B "$APP_DIR/build" -GNinja \
 	-DCONFIG_HPM_SDK_BUILD_ALL_DRIVERS="${HPM_SDK_ALL_DRIVERS:-n}"
 cmake --build "$APP_DIR/build"
 
+python3 "$MODULE_DIR/scripts/check_pinctrl.py" \
+	"$APP_DIR/build/zephyr/zephyr.dts" --zephyr-base "$ZEPHYR_BASE"
+
 printf 'HPM5361ICB XIP smoke build passed'
 if [ "${HPM_SDK_ALL_DRIVERS:-n}" = "y" ]; then
 	printf ' (all HAL drivers)'

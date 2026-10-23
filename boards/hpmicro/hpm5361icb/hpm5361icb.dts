@@ -26,7 +26,7 @@
 &uart0 {
 	status = "okay";
 	current-speed = <115200>;
-	pinctrl-0 = <&pinmux_uart0>;
+	pinctrl-0 = <&pa00_uart0_txd &pa01_uart0_rxd>;
 	pinctrl-names = "default";
 };
 

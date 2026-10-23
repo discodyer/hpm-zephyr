@@ -38,4 +38,7 @@ cmake -S "$APP_DIR" -B "$APP_DIR/build" -GNinja \
 	-DHPM_SDK_DIR="$HPM_SDK_DIR"
 cmake --build "$APP_DIR/build"
 
+python3 "$MODULE_DIR/scripts/check_pinctrl.py" \
+	"$APP_DIR/build/zephyr/zephyr.dts" --zephyr-base "$ZEPHYR_BASE"
+
 printf 'HPM5300EVK RAM smoke build passed\n'

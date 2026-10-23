@@ -25,8 +25,20 @@ REQUIRED = (
     "dts/bindings/hpmicro,hpm5361icb.yaml",
     "dts/bindings/i2c/hpmicro,hpm-i2c.yaml",
     "dts/bindings/spi/hpmicro,hpm-spi.yaml",
+    "dts/bindings/hpmicro,hpm5361-package.yaml",
     "dts/riscv/hpmicro/hpm5361.dtsi",
+    "dts/riscv/hpmicro/hpm5361-icb-pinctrl.dtsi",
+    "dts/riscv/hpmicro/hpm5361-icf-pinctrl.dtsi",
+    "dts/riscv/hpmicro/hpm5361-ieg-pinctrl.dtsi",
+    "scripts/generate_hpm5361_pinctrl.py",
+    "scripts/check_pinctrl.py",
 )
+
+PACKAGE_MODELS = {
+    "icb": "HPM5361ICB1",
+    "icf": "HPM5361ICF1",
+    "ieg": "HPM5361IEG1",
+}
 
 
 def _kconfig_symbols(text: str, prefix: str) -> set[str]:
@@ -119,6 +131,22 @@ def main() -> int:
         if setting not in module_yml:
             print(f"module.yml missing setting: {setting}", file=sys.stderr)
             return 1
+
+    package_errors = []
+    for package, model in PACKAGE_MODELS.items():
+        path = ROOT / f"dts/riscv/hpmicro/hpm5361-{package}-pinctrl.dtsi"
+        text = path.read_text(encoding="utf-8")
+        for expected in (
+            'compatible = "hpmicro,hpm5361-package";',
+            f'hpmicro,model = "{model}";',
+            "hpmicro,available-pads =",
+        ):
+            if expected not in text:
+                package_errors.append(f"{path.relative_to(ROOT)}: missing {expected}")
+    if package_errors:
+        for error in package_errors:
+            print(error, file=sys.stderr)
+        return 1
 
     errors = _check_sdk_mapping(ROOT)
     if errors:

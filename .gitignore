@@ -1,6 +1,7 @@
 /build/
 /build-*/
 /twister-out/
+/twister-out.*/
 __pycache__/
 *.swp
 *.swo
