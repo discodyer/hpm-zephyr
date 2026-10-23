@@ -13,6 +13,7 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/opamp.h>
+#include <zephyr/drivers/otp.h>
 #include <zephyr/drivers/ptp_clock.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/i2c.h>
@@ -39,6 +40,7 @@
 #define TSNS_NODE       DT_NODELABEL(tsns0)
 #define PTPC0_NODE      DT_NODELABEL(ptpc0)
 #define PTPC1_NODE      DT_NODELABEL(ptpc1)
+#define OTP_NODE        DT_NODELABEL(otp)
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(CLOCK_NODE, okay));
@@ -96,6 +98,9 @@ BUILD_ASSERT(DT_PROP(TSNS_NODE, measurement_speed) == 96);
 BUILD_ASSERT(DT_REG_ADDR(PTPC0_NODE) == 0);
 #endif
 BUILD_ASSERT(DT_REG_ADDR(PTPC1_NODE) == 1);
+#if !DT_NODE_HAS_STATUS(OTP_NODE, okay)
+BUILD_ASSERT(DT_NODE_HAS_STATUS(OTP_NODE, disabled));
+#endif
 BUILD_ASSERT(DT_PROP(DT_NODELABEL(hdma), dma_channels) == 32);
 BUILD_ASSERT(sizeof(DT_PROP(PACKAGE_NODE, hpmicro_model)) > 1);
 
@@ -136,6 +141,12 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_true(device_is_ready(DEVICE_DT_GET(PTPC0_NODE)));
 	zassert_ok(ptp_clock_get(DEVICE_DT_GET(PTPC0_NODE), &ptp_time));
 	zassert_true(ptp_time.nanosecond < NSEC_PER_SEC);
+#endif
+#if DT_NODE_HAS_STATUS(OTP_NODE, okay)
+	uint32_t otp_word;
+
+	zassert_true(device_is_ready(DEVICE_DT_GET(OTP_NODE)));
+	zassert_ok(otp_read(DEVICE_DT_GET(OTP_NODE), 0, &otp_word, sizeof(otp_word)));
 #endif
 }
 

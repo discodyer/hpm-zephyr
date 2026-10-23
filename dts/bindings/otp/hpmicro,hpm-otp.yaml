@@ -1,7 +1,12 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-description: HPMicro one-time programmable memory
+description: |
+  HPMicro one-time programmable fuse controller.
+
+  The controller exposes 128 32-bit shadow words (512 bytes). Reads use the
+  shadow array loaded at reset. Irreversible programming is only available
+  when CONFIG_OTP_PROGRAM is enabled.
 
 compatible: "hpmicro,hpm-otp"
 

@@ -97,7 +97,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | PTPC | 1 block, 2 timestamp counters | `ptp_clock` | Implemented (build-only) | 32-bit seconds plus nanosecond counters, set/get, signed time adjustment, ADDEND rate adjustment; capture, compare, PPS and CAN timestamp routing not exposed |
 | SDP | 1 | `crypto` candidate | Missing | API and algorithm mapping not designed |
 | SEC / SECMON / KEYM | 1 each | Custom/security | Missing | No Zephyr integration |
-| OTP | 1 | `otp` | Missing | No driver |
+| OTP | 1 | `otp` | Implemented (build-only) | Read-only shadow access by default, byte-addressed API, optional irreversible fuse programming behind CONFIG_OTP_PROGRAM; lock/region helpers and reload not exposed |
 
 Implemented drivers are build-only until hardware validation is completed;
 missing drivers are not built or enabled. The SoC startup, PLIC, PLICSW, machine

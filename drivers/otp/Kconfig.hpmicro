@@ -1,0 +1,32 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_OTP := hpmicro,hpm-otp
+
+config OTP_HPMICRO
+	bool "HPMicro OTP controller driver"
+	default y
+	depends on OTP
+	depends on DT_HAS_HPMICRO_HPM_OTP_ENABLED
+	depends on HAS_HPMSDK_OTP
+	select USE_HPMSDK_OTP
+	help
+	  Enable the HPMicro OTP controller driver. By default this driver is
+	  read-only and accesses the fuse shadow registers. Enabling OTP_PROGRAM
+	  additionally exposes irreversible fuse programming.
+
+if OTP_HPMICRO
+
+module = OTP_HPMICRO
+module-str = OTP_HPMICRO
+source "subsys/logging/Kconfig.template.log_config"
+
+config OTP_HPMICRO_SIZE
+	int "HPMicro OTP addressable bytes"
+	default 512
+	range 4 512
+	help
+	  Size of the HPM5361 OTP shadow array exposed through the Zephyr OTP
+	  API. The hardware has 128 32-bit words.
+
+endif # OTP_HPMICRO

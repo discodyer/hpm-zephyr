@@ -138,3 +138,7 @@
 &ptpc0 {
 	status = "okay";
 };
+
+&otp {
+	status = "okay";
+};
