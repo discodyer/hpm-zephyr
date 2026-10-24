@@ -14,6 +14,7 @@
 #include <zephyr/drivers/dma.h>
 #include <zephyr/irq.h>
 #include <zephyr/kernel.h>
+#include <zephyr/linker/section_tags.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/util.h>
@@ -33,10 +34,16 @@ struct hpm_dma_channel_data {
 	void *user_data;
 	uint32_t direction;
 	uint32_t block_size;
+	uint32_t total_size;
+	uint32_t completed;
+	uint32_t block_sizes[CONFIG_DMA_HPMICRO_MAX_BLOCKS];
 	uint32_t data_size;
 	uint32_t interrupt_mask;
+	uint32_t blocks;
+	uint32_t current_block;
 	bool busy;
 	bool cyclic;
+	bool complete_callback_en;
 };
 
 struct hpm_dma_config {
@@ -48,6 +55,7 @@ struct hpm_dma_config {
 	clock_source_t clock_src;
 	uint32_t clock_div;
 	uint32_t max_requests;
+	dma_linked_descriptor_t (*descriptors)[CONFIG_DMA_HPMICRO_MAX_BLOCKS];
 	void (*irq_config_func)(const struct device *dev);
 };
 
@@ -162,12 +170,39 @@ static void hpm_dma_set_request(const struct device *dev, uint32_t channel, uint
 		      request != HPM_DMA_NO_REQUEST);
 }
 
+static int hpm_dma_validate_block(const struct dma_block_config *block, uint32_t data_size)
+{
+	if (block == NULL) {
+		return -EINVAL;
+	}
+
+	if ((hpm_dma_addr_adjustment(block->source_addr_adj) == HPM_DMA_NO_REQUEST) ||
+	    (hpm_dma_addr_adjustment(block->dest_addr_adj) == HPM_DMA_NO_REQUEST)) {
+		return -EINVAL;
+	}
+
+	if ((block->source_gather_en) || (block->dest_scatter_en) || (block->source_reload_en) ||
+	    (block->dest_reload_en) || (block->fifo_mode_control != 0U) ||
+	    (block->flow_control_mode)) {
+		return -ENOTSUP;
+	}
+
+	if ((block->block_size == 0U) || !IS_ALIGNED(block->block_size, data_size) ||
+	    !IS_ALIGNED(block->source_address, data_size) ||
+	    !IS_ALIGNED(block->dest_address, data_size)) {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int hpm_dma_config(const struct device *dev, uint32_t channel, struct dma_config *dma_cfg)
 {
 	const struct hpm_dma_config *config = dev->config;
 	struct hpm_dma_data *data = dev->data;
 	struct hpm_dma_channel_data *channel_data;
 	const struct dma_block_config *block;
+	const struct dma_block_config *first_block;
 	dma_channel_config_t hal_cfg;
 	uint8_t src_width;
 	uint8_t dst_width;
@@ -188,8 +223,9 @@ static int hpm_dma_config(const struct device *dev, uint32_t channel, struct dma
 		return -EINVAL;
 	}
 
-	if (dma_cfg->block_count != 1U) {
-		return -ENOTSUP;
+	if ((dma_cfg->block_count == 0U) ||
+	    (dma_cfg->block_count > CONFIG_DMA_HPMICRO_MAX_BLOCKS)) {
+		return -EINVAL;
 	}
 
 	if ((dma_cfg->source_data_size == 0U) || (dma_cfg->source_data_size > 4U) ||
@@ -212,24 +248,33 @@ static int hpm_dma_config(const struct device *dev, uint32_t channel, struct dma
 		return -ENOTSUP;
 	}
 
+	if (dma_cfg->cyclic && (dma_cfg->block_count > 1U)) {
+		return -ENOTSUP;
+	}
+
 	src_width = hpm_dma_width(dma_cfg->source_data_size);
 	dst_width = hpm_dma_width(dma_cfg->dest_data_size);
 	if ((src_width == HPM_DMA_NO_REQUEST) || (dst_width == HPM_DMA_NO_REQUEST)) {
 		return -EINVAL;
 	}
 
-	block = dma_cfg->head_block;
-	if ((block->next_block != NULL) || block->source_gather_en || block->dest_scatter_en ||
-	    block->source_reload_en || block->dest_reload_en || (block->fifo_mode_control != 0U) ||
-	    block->flow_control_mode) {
-		return -ENOTSUP;
+	first_block = dma_cfg->head_block;
+	block = first_block;
+	for (uint32_t i = 0U; i < dma_cfg->block_count; i++) {
+		int ret = hpm_dma_validate_block(block, dma_cfg->source_data_size);
+
+		if (ret < 0) {
+			return ret;
+		}
+		block = block->next_block;
 	}
 
-	src_adj = hpm_dma_addr_adjustment(block->source_addr_adj);
-	dst_adj = hpm_dma_addr_adjustment(block->dest_addr_adj);
-	if ((src_adj == HPM_DMA_NO_REQUEST) || (dst_adj == HPM_DMA_NO_REQUEST)) {
+	if (block != NULL) {
 		return -EINVAL;
 	}
+
+	src_adj = hpm_dma_addr_adjustment(first_block->source_addr_adj);
+	dst_adj = hpm_dma_addr_adjustment(first_block->dest_addr_adj);
 
 	burst_size =
 		hpm_dma_burst_size(dma_cfg->source_burst_length != 0U ? dma_cfg->source_burst_length
@@ -272,13 +317,8 @@ static int hpm_dma_config(const struct device *dev, uint32_t channel, struct dma
 
 	hal_cfg = (dma_channel_config_t){0};
 	dma_default_channel_config(config->base, &hal_cfg);
-	hal_cfg.src_addr = block->source_address;
-	hal_cfg.dst_addr = block->dest_address;
-	hal_cfg.size_in_byte = block->block_size;
 	hal_cfg.src_width = src_width;
 	hal_cfg.dst_width = dst_width;
-	hal_cfg.src_addr_ctrl = src_adj;
-	hal_cfg.dst_addr_ctrl = dst_adj;
 	hal_cfg.src_mode = src_mode;
 	hal_cfg.dst_mode = dst_mode;
 	hal_cfg.src_burst_size = burst_size;
@@ -289,6 +329,35 @@ static int hpm_dma_config(const struct device *dev, uint32_t channel, struct dma
 	if (dma_cfg->error_callback_dis) {
 		hal_cfg.interrupt_mask |= DMA_INTERRUPT_MASK_ERROR;
 	}
+
+	block = first_block->next_block;
+	for (uint32_t i = 0U; i < (dma_cfg->block_count - 1U); i++) {
+		dma_linked_descriptor_t *descriptor = &config->descriptors[channel][i];
+		const struct dma_block_config *next = block->next_block;
+
+		hal_cfg.src_addr = block->source_address;
+		hal_cfg.dst_addr = block->dest_address;
+		hal_cfg.size_in_byte = block->block_size;
+		hal_cfg.src_addr_ctrl = hpm_dma_addr_adjustment(block->source_addr_adj);
+		hal_cfg.dst_addr_ctrl = hpm_dma_addr_adjustment(block->dest_addr_adj);
+		hal_cfg.linked_ptr =
+			next == NULL ? 0U : (uint32_t)&config->descriptors[channel][i + 1U];
+
+		status = dma_config_linked_descriptor(config->base, descriptor, channel, &hal_cfg);
+		if (status != status_success) {
+			k_spin_unlock(&channel_data->lock, key);
+			return status == status_dma_alignment_error ? -EINVAL : -EIO;
+		}
+		block = next;
+	}
+
+	hal_cfg.src_addr = first_block->source_address;
+	hal_cfg.dst_addr = first_block->dest_address;
+	hal_cfg.size_in_byte = first_block->block_size;
+	hal_cfg.src_addr_ctrl = src_adj;
+	hal_cfg.dst_addr_ctrl = dst_adj;
+	hal_cfg.linked_ptr =
+		dma_cfg->block_count > 1U ? (uint32_t)&config->descriptors[channel][0] : 0U;
 
 	status = dma_setup_channel(config->base, channel, &hal_cfg, false);
 	if (status != status_success) {
@@ -301,9 +370,20 @@ static int hpm_dma_config(const struct device *dev, uint32_t channel, struct dma
 	channel_data->callback = dma_cfg->dma_callback;
 	channel_data->user_data = dma_cfg->user_data;
 	channel_data->direction = dma_cfg->channel_direction;
-	channel_data->block_size = block->block_size;
+	channel_data->blocks = dma_cfg->block_count;
+	channel_data->current_block = 0U;
+	channel_data->total_size = 0U;
+	block = first_block;
+	for (uint32_t i = 0U; i < dma_cfg->block_count; i++) {
+		channel_data->block_sizes[i] = block->block_size;
+		channel_data->total_size += block->block_size;
+		block = block->next_block;
+	}
+	channel_data->block_size = channel_data->block_sizes[0];
+	channel_data->completed = 0U;
 	channel_data->data_size = dma_cfg->source_data_size;
 	channel_data->cyclic = dma_cfg->cyclic;
+	channel_data->complete_callback_en = dma_cfg->complete_callback_en;
 	channel_data->interrupt_mask = hal_cfg.interrupt_mask;
 	channel_data->busy = false;
 	k_spin_unlock(&channel_data->lock, key);
@@ -341,7 +421,13 @@ static int hpm_dma_reload(const struct device *dev, uint32_t channel, uint32_t s
 	dma_set_source_address(config->base, channel, src);
 	dma_set_destination_address(config->base, channel, dst);
 	dma_set_transfer_size(config->base, channel, size >> shift);
+	config->base->CHCTRL[channel].LLPOINTER = 0U;
+	channel_data->blocks = 1U;
+	channel_data->current_block = 0U;
+	channel_data->block_sizes[0] = size;
 	channel_data->block_size = size;
+	channel_data->total_size = size;
+	channel_data->completed = 0U;
 	k_spin_unlock(&channel_data->lock, key);
 
 	return 0;
@@ -365,6 +451,8 @@ static int hpm_dma_start(const struct device *dev, uint32_t channel)
 		return -EBUSY;
 	}
 
+	channel_data->current_block = 0U;
+	channel_data->completed = 0U;
 	dma_clear_transfer_status(config->base, channel);
 	if (dma_enable_channel(config->base, channel) != status_success) {
 		k_spin_unlock(&channel_data->lock, key);
@@ -412,16 +500,25 @@ static int hpm_dma_get_status(const struct device *dev, uint32_t channel, struct
 
 	channel_data = &data->channels[channel];
 	key = k_spin_lock(&channel_data->lock);
-	remaining = dma_get_remaining_transfer_size(config->base, channel);
+	remaining =
+		dma_get_remaining_transfer_size(config->base, channel) * channel_data->data_size;
 	status->busy = channel_data->busy;
 	status->dir = channel_data->direction;
-	status->pending_length = remaining * channel_data->data_size;
 	status->write_position = 0U;
 	status->read_position = 0U;
 	status->free = 0U;
-	status->total_copied = channel_data->block_size >= status->pending_length
-				       ? channel_data->block_size - status->pending_length
-				       : 0U;
+
+	if (channel_data->busy && (channel_data->current_block < channel_data->blocks)) {
+		uint32_t current_size = channel_data->block_sizes[channel_data->current_block];
+
+		status->total_copied = channel_data->completed +
+				       (current_size >= remaining ? current_size - remaining : 0U);
+	} else {
+		status->total_copied = channel_data->completed;
+	}
+	status->pending_length = channel_data->total_size >= status->total_copied
+					 ? channel_data->total_size - status->total_copied
+					 : 0U;
 	k_spin_unlock(&channel_data->lock, key);
 
 	return 0;
@@ -442,7 +539,7 @@ static int hpm_dma_get_attribute(const struct device *dev, uint32_t type, uint32
 		*value = 1U;
 		return 0;
 	case DMA_ATTR_MAX_BLOCK_COUNT:
-		*value = 1U;
+		*value = CONFIG_DMA_HPMICRO_MAX_BLOCKS;
 		return 0;
 	default:
 		return -EINVAL;
@@ -479,6 +576,7 @@ static void hpm_dma_chan_release(const struct device *dev, uint32_t channel)
 	key = k_spin_lock(&channel_data->lock);
 	dma_disable_channel(config->base, channel);
 	dma_clear_transfer_status(config->base, channel);
+	config->base->CHCTRL[channel].LLPOINTER = 0U;
 	dmamux_config(config->dmamux, channel, 0U, false);
 	channel_data->callback = NULL;
 	channel_data->user_data = NULL;
@@ -499,6 +597,7 @@ static void hpm_dma_isr(const struct device *dev)
 		dma_callback_t callback;
 		void *user_data;
 		uint32_t interrupt_mask;
+		bool invoke_callback = false;
 		int callback_status = DMA_STATUS_COMPLETE;
 
 		key = k_spin_lock(&channel_data->lock);
@@ -511,29 +610,49 @@ static void hpm_dma_isr(const struct device *dev)
 		interrupt_mask = channel_data->interrupt_mask;
 		if ((status & DMA_CHANNEL_STATUS_ERROR) != 0U) {
 			callback_status = -EIO;
+			invoke_callback = (interrupt_mask & DMA_INTERRUPT_MASK_ERROR) == 0U;
 		} else if ((status & DMA_CHANNEL_STATUS_ABORT) != 0U) {
 			callback_status = -ECANCELED;
-		} else if (((status & DMA_CHANNEL_STATUS_HALF_TC) != 0U) &&
-			   ((status & DMA_CHANNEL_STATUS_TC) == 0U)) {
+			invoke_callback = true;
+		} else if ((status & DMA_CHANNEL_STATUS_TC) != 0U) {
+			uint32_t completed_block = channel_data->current_block;
+
+			if (completed_block < channel_data->blocks) {
+				channel_data->completed +=
+					channel_data->block_sizes[completed_block];
+				channel_data->current_block++;
+			}
+
+			if (channel_data->cyclic) {
+				channel_data->current_block = 0U;
+				channel_data->completed = 0U;
+				callback_status = DMA_STATUS_COMPLETE;
+				invoke_callback = true;
+			} else if (channel_data->current_block >= channel_data->blocks) {
+				channel_data->current_block = 0U;
+				channel_data->busy = false;
+				callback_status = DMA_STATUS_COMPLETE;
+				invoke_callback = true;
+			} else if (channel_data->complete_callback_en) {
+				callback_status = DMA_STATUS_BLOCK;
+				invoke_callback = true;
+			}
+		} else if ((status & DMA_CHANNEL_STATUS_HALF_TC) != 0U) {
 			callback_status = DMA_STATUS_HALF_COMPLETE;
+			invoke_callback = (interrupt_mask & DMA_INTERRUPT_MASK_HALF_TC) == 0U;
 		}
 
 		if ((status & (DMA_CHANNEL_STATUS_ERROR | DMA_CHANNEL_STATUS_ABORT)) != 0U) {
 			dma_disable_channel(config->base, channel);
 			channel_data->busy = false;
-		} else if (((status & DMA_CHANNEL_STATUS_TC) != 0U) && !channel_data->cyclic) {
-			channel_data->busy = false;
+			channel_data->current_block = 0U;
 		}
 
 		callback = channel_data->callback;
 		user_data = channel_data->user_data;
 		k_spin_unlock(&channel_data->lock, key);
 
-		if ((callback != NULL) && (((callback_status >= 0) &&
-					    !((interrupt_mask & DMA_INTERRUPT_MASK_HALF_TC) != 0U &&
-					      callback_status == DMA_STATUS_HALF_COMPLETE)) ||
-					   ((callback_status < 0) &&
-					    (interrupt_mask & DMA_INTERRUPT_MASK_ERROR) == 0U))) {
+		if ((callback != NULL) && invoke_callback) {
 			callback(dev, user_data, channel, callback_status);
 		}
 	}
@@ -592,6 +711,9 @@ static DEVICE_API(dma, hpm_dma_api) = {
 	HPM_DMA_IRQ_CONFIG(n)                                                                      \
                                                                                                    \
 	static struct hpm_dma_channel_data hpm_dma_channels_##n[DT_INST_PROP(n, dma_channels)];    \
+	static dma_linked_descriptor_t hpm_dma_descriptors_##n[DT_INST_PROP(                       \
+		n, dma_channels)][CONFIG_DMA_HPMICRO_MAX_BLOCKS] __nocache                         \
+		__aligned(DMA_LINKED_DESCRIPTOR_ALIGN);                                            \
 	ATOMIC_DEFINE(hpm_dma_atomic_##n, DT_INST_PROP(n, dma_channels));                          \
                                                                                                    \
 	static struct hpm_dma_data hpm_dma_data_##n = {                                            \
@@ -613,6 +735,7 @@ static DEVICE_API(dma, hpm_dma_api) = {
 		.clock_src = DT_INST_PROP(n, clock_src),                                           \
 		.clock_div = DT_INST_CLOCKS_CELL_BY_IDX(n, 0, divider),                            \
 		.max_requests = DT_INST_PROP(n, dma_requests),                                     \
+		.descriptors = hpm_dma_descriptors_##n,                                            \
 		.irq_config_func = hpm_dma_irq_config_##n,                                         \
 	};                                                                                         \
                                                                                                    \
