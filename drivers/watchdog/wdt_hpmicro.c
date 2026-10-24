@@ -33,6 +33,7 @@ struct hpm_ewdg_config {
 struct hpm_ewdg_data {
 	wdt_callback_t callback;
 	uint32_t timeout_ms;
+	uint32_t window_min_ms;
 	uint8_t flags;
 	bool timeout_installed;
 	bool enabled;
@@ -70,9 +71,12 @@ static int hpm_ewdg_install_timeout(const struct device *dev, const struct wdt_t
 		return -ENOMEM;
 	}
 
-	if ((cfg->window.max == 0U) || (cfg->window.min != 0U)) {
-		LOG_ERR("Only a single non-window timeout is supported");
-		return -ENOTSUP;
+	if (cfg->window.max == 0U) {
+		return -EINVAL;
+	}
+
+	if ((cfg->window.min != 0U) && (cfg->window.min >= cfg->window.max)) {
+		return -EINVAL;
 	}
 
 	switch (cfg->flags & WDT_FLAG_RESET_MASK) {
@@ -80,6 +84,10 @@ static int hpm_ewdg_install_timeout(const struct device *dev, const struct wdt_t
 		if (cfg->callback == NULL) {
 			LOG_ERR("A non-reset timeout requires a callback");
 			return -EINVAL;
+		}
+		if (cfg->window.min != 0U) {
+			LOG_ERR("EWDG window mode requires a SoC reset");
+			return -ENOTSUP;
 		}
 		break;
 	case WDT_FLAG_RESET_SOC:
@@ -91,6 +99,7 @@ static int hpm_ewdg_install_timeout(const struct device *dev, const struct wdt_t
 
 	data->callback = cfg->callback;
 	data->timeout_ms = cfg->window.max;
+	data->window_min_ms = cfg->window.min;
 	data->flags = cfg->flags;
 	data->timeout_installed = true;
 
@@ -131,9 +140,39 @@ static int hpm_ewdg_configure(const struct device *dev, uint8_t options)
 							 : ewdg_low_power_mode_work_clock_normal;
 	ewdg_config.ctrl_config.timeout_interrupt_us = (uint32_t)timeout_us;
 	ewdg_config.ctrl_config.timeout_reset_us = (uint32_t)reset_us;
+
+	if (data->window_min_ms != 0U) {
+		uint64_t min_ratio_16 =
+			DIV_ROUND_UP((uint64_t)data->window_min_ms * 16U, reset_us / 1000U);
+
+		if (min_ratio_16 <= 8U) {
+			ewdg_config.ctrl_config.window_lower_limit =
+				ewdg_window_lower_timeout_period_8_div_16;
+		} else if (min_ratio_16 <= 10U) {
+			ewdg_config.ctrl_config.window_lower_limit =
+				ewdg_window_lower_timeout_period_10_div_16;
+		} else if (min_ratio_16 <= 12U) {
+			ewdg_config.ctrl_config.window_lower_limit =
+				ewdg_window_lower_timeout_period_12_div_16;
+		} else if (min_ratio_16 <= 14U) {
+			ewdg_config.ctrl_config.window_lower_limit =
+				ewdg_window_lower_timeout_period_14_div_16;
+		} else {
+			return -EINVAL;
+		}
+
+		/* An upper-limit value of zero means no limit before reset. */
+		ewdg_config.ctrl_config.enable_window_mode = true;
+		ewdg_config.ctrl_config.window_upper_limit =
+			ewdg_window_upper_timeout_period_8_div_16;
+	}
+
 	ewdg_config.int_rst_config.enable_timeout_interrupt = data->callback != NULL;
 	ewdg_config.int_rst_config.enable_timeout_reset =
 		(data->flags & WDT_FLAG_RESET_MASK) == WDT_FLAG_RESET_SOC;
+	ewdg_config.int_rst_config.enable_refresh_violation_reset =
+		(data->window_min_ms != 0U) &&
+		((data->flags & WDT_FLAG_RESET_MASK) == WDT_FLAG_RESET_SOC);
 
 	status = ewdg_init(config->base, &ewdg_config);
 
@@ -177,6 +216,7 @@ static int hpm_ewdg_disable(const struct device *dev)
 	ewdg_disable(config->base);
 	data->enabled = false;
 	data->timeout_installed = false;
+	data->window_min_ms = 0U;
 
 	return 0;
 }
