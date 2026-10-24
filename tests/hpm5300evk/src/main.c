@@ -883,38 +883,36 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_true(device_is_ready(sei));
 	zassert_ok(hpm_sei_configure_transceiver(sei, HPM_SEI_CHANNEL_0, &sei_transceiver));
 	zassert_ok(hpm_sei_configure_command(sei, HPM_SEI_CHANNEL_0, &sei_command_format));
-	zassert_ok(hpm_sei_set_command(sei, HPM_SEI_CHANNEL_0, HPM_SEI_ENDAT_COMMAND_READ_POSITION));
+	zassert_ok(
+		hpm_sei_set_command(sei, HPM_SEI_CHANNEL_0, HPM_SEI_ENDAT_COMMAND_READ_POSITION));
 	zassert_ok(hpm_sei_get_command(sei, HPM_SEI_CHANNEL_0, &sei_value));
 	zassert_equal(sei_value, HPM_SEI_ENDAT_COMMAND_READ_POSITION);
 	sei_command_invalid.mode = HPM_SEI_DATA_MODE_CRC;
-	zassert_equal(hpm_sei_configure_command(sei, HPM_SEI_CHANNEL_0, &sei_command_invalid), -EINVAL);
+	zassert_equal(hpm_sei_configure_command(sei, HPM_SEI_CHANNEL_0, &sei_command_invalid),
+		      -EINVAL);
 	zassert_equal(hpm_sei_get_command(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
 	zassert_equal(hpm_sei_set_command(sei, (enum hpm_sei_channel)2, 0U), -EINVAL);
 	zassert_ok(hpm_sei_configure_data(sei, HPM_SEI_DATA_REGISTER_2, &sei_format));
 	zassert_ok(hpm_sei_set_instruction(sei, 0U, &sei_instr));
 	zassert_ok(hpm_sei_configure_latch(sei, HPM_SEI_CHANNEL_0, 0U, 0U, &sei_latch));
-	zassert_ok(hpm_sei_configure_latch_output(sei, HPM_SEI_CHANNEL_0, 0U,
-						  &sei_latch_output));
+	zassert_ok(hpm_sei_configure_latch_output(sei, HPM_SEI_CHANNEL_0, 0U, &sei_latch_output));
 	zassert_equal(hpm_sei_configure_latch_output(sei, HPM_SEI_CHANNEL_0, 0U, NULL), -EINVAL);
 	zassert_ok(hpm_sei_configure_sample(sei, HPM_SEI_CHANNEL_0, &sei_sample));
 	zassert_ok(hpm_sei_configure_update(sei, HPM_SEI_CHANNEL_0, &sei_update));
 	zassert_ok(hpm_sei_configure_engine(sei, HPM_SEI_CHANNEL_0, &sei_engine));
 	zassert_ok(hpm_sei_configure_trigger_input(sei, HPM_SEI_CHANNEL_0, &sei_trigger_input));
 	sei_trigger_invalid.periodic_cycles = 0U;
-	zassert_equal(hpm_sei_configure_trigger_input(sei, HPM_SEI_CHANNEL_0,
-						      &sei_trigger_invalid),
+	zassert_equal(hpm_sei_configure_trigger_input(sei, HPM_SEI_CHANNEL_0, &sei_trigger_invalid),
 		      -EINVAL);
-	zassert_ok(hpm_sei_configure_trigger_input(sei, HPM_SEI_CHANNEL_0,
-						  &sei_trigger_disabled));
-	zassert_ok(hpm_sei_configure_trigger_output(sei, HPM_SEI_CHANNEL_0, 0U,
-						    &sei_trigger_output));
+	zassert_ok(hpm_sei_configure_trigger_input(sei, HPM_SEI_CHANNEL_0, &sei_trigger_disabled));
+	zassert_ok(
+		hpm_sei_configure_trigger_output(sei, HPM_SEI_CHANNEL_0, 0U, &sei_trigger_output));
 	zassert_ok(hpm_sei_set_trigger_command(sei, HPM_SEI_CHANNEL_0,
 					       HPM_SEI_TRIGGER_COMMAND_PERIODIC, 0x07U));
 	zassert_ok(hpm_sei_get_trigger_status(sei, HPM_SEI_CHANNEL_0, &sei_trigger_status));
 	zassert_equal(hpm_sei_configure_trigger_input(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
-	zassert_equal(hpm_sei_configure_trigger_output(sei, HPM_SEI_CHANNEL_0,
-						       HPM_SEI_TRIGGER_OUTPUTS,
-						       &sei_trigger_output),
+	zassert_equal(hpm_sei_configure_trigger_output(
+			      sei, HPM_SEI_CHANNEL_0, HPM_SEI_TRIGGER_OUTPUTS, &sei_trigger_output),
 		      -EINVAL);
 	zassert_equal(hpm_sei_set_trigger_command(sei, HPM_SEI_CHANNEL_0,
 						  (enum hpm_sei_trigger_command)4, 0U),
@@ -928,10 +926,10 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_sei_clear_events(sei, HPM_SEI_CHANNEL_0, HPM_SEI_EVENT_ALL));
 	zassert_equal(hpm_sei_clear_events(sei, HPM_SEI_CHANNEL_0, BIT(3)), -EINVAL);
 	zassert_equal(hpm_sei_get_events(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
-	zassert_ok(hpm_sei_set_event_callback(sei, HPM_SEI_CHANNEL_0, HPM_SEI_EVENT_ALL, NULL,
-					      NULL));
-	zassert_ok(hpm_sei_set_event_callback(sei, HPM_SEI_CHANNEL_1,
-					      HPM_SEI_EVENT_TRANSFER_ERROR, NULL, NULL));
+	zassert_ok(
+		hpm_sei_set_event_callback(sei, HPM_SEI_CHANNEL_0, HPM_SEI_EVENT_ALL, NULL, NULL));
+	zassert_ok(hpm_sei_set_event_callback(sei, HPM_SEI_CHANNEL_1, HPM_SEI_EVENT_TRANSFER_ERROR,
+					      NULL, NULL));
 	zassert_equal(hpm_sei_set_event_callback(sei, HPM_SEI_CHANNEL_0, BIT(3), NULL, NULL),
 		      -EINVAL);
 	zassert_ok(hpm_sei_enable(sei, HPM_SEI_CHANNEL_0, true));
@@ -976,12 +974,10 @@ ZTEST(hpm5300evk, test_devices_ready)
 	sei_endat_config.crc_bits = 5U;
 #endif
 #if CONFIG_SEI_HIPERFACE_HPMICRO
-	zassert_equal(hpm_sei_hiperface_configure(sei, HPM_SEI_CHANNEL_1,
-						  &sei_hiperface_config),
+	zassert_equal(hpm_sei_hiperface_configure(sei, HPM_SEI_CHANNEL_1, &sei_hiperface_config),
 		      -EBUSY);
 	sei_hiperface_config.address = 0U;
-	zassert_equal(hpm_sei_hiperface_configure(sei, HPM_SEI_CHANNEL_1,
-						  &sei_hiperface_config),
+	zassert_equal(hpm_sei_hiperface_configure(sei, HPM_SEI_CHANNEL_1, &sei_hiperface_config),
 		      -EINVAL);
 	sei_hiperface_config.address = HPM_SEI_HIPERFACE_DEFAULT_ADDRESS;
 #endif
@@ -1048,9 +1044,9 @@ ZTEST(hpm5300evk, test_devices_ready)
 		      -EINVAL);
 	sei_hiperface_config.command = HPM_SEI_HIPERFACE_DEFAULT_COMMAND;
 	zassert_equal(hpm_sei_hiperface_get_result(sei, HPM_SEI_CHANNEL_1, NULL), -EINVAL);
-	zassert_equal(hpm_sei_hiperface_get_result(sei, (enum hpm_sei_channel)2,
-						   &sei_hiperface_result),
-		      -EINVAL);
+	zassert_equal(
+		hpm_sei_hiperface_get_result(sei, (enum hpm_sei_channel)2, &sei_hiperface_result),
+		-EINVAL);
 #endif
 #if CONFIG_SEI_NIKON_HPMICRO
 	zassert_ok(hpm_sei_nikon_configure(sei, HPM_SEI_CHANNEL_1, &sei_nikon_config));
@@ -1390,49 +1386,44 @@ ZTEST(hpm5300evk, test_devices_ready)
 		hpm_trgm_configure_pos_matrix(mux_dev, HPM_TRGM_POS_CONSUMER_COUNT, &pos_matrix),
 		-EINVAL);
 
-	zassert_ok(hpm_trgm_configure_motor_route(
-		mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0, &mmc0_pos_route));
-	zassert_ok(hpm_trgm_get_pos_matrix(mux_dev, HPM_TRGM_POS_CONSUMER_QEO0,
-					   &matrix_readback));
+	zassert_ok(hpm_trgm_configure_motor_route(mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0,
+						  &mmc0_pos_route));
+	zassert_ok(hpm_trgm_get_pos_matrix(mux_dev, HPM_TRGM_POS_CONSUMER_QEO0, &matrix_readback));
 	zassert_equal(matrix_readback.source, mmc0_pos_route.source);
 	zassert_false(matrix_readback.invert);
-	zassert_ok(hpm_trgm_configure_motor_route(
-		mux_dev, HPM_TRGM_MOTOR_ROUTE_SEI_TO_MMC0, &sei_pos_route));
-	zassert_ok(hpm_trgm_get_pos_matrix(mux_dev, HPM_TRGM_POS_CONSUMER_MMC0,
-					   &matrix_readback));
+	zassert_ok(hpm_trgm_configure_motor_route(mux_dev, HPM_TRGM_MOTOR_ROUTE_SEI_TO_MMC0,
+						  &sei_pos_route));
+	zassert_ok(hpm_trgm_get_pos_matrix(mux_dev, HPM_TRGM_POS_CONSUMER_MMC0, &matrix_readback));
 	zassert_equal(matrix_readback.source, sei_pos_route.source);
 	zassert_true(matrix_readback.invert);
-	zassert_ok(hpm_trgm_configure_motor_route(
-		mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_RDC, &mmc0_trigger_route));
-	zassert_ok(hpm_trgm_get_output(mux_dev, HPM_TRGM_OUTPUT_RDC_TRIG_IN0,
-				       &output_readback));
+	zassert_ok(hpm_trgm_configure_motor_route(mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_RDC,
+						  &mmc0_trigger_route));
+	zassert_ok(hpm_trgm_get_output(mux_dev, HPM_TRGM_OUTPUT_RDC_TRIG_IN0, &output_readback));
 	zassert_equal(output_readback.source, mmc0_trigger_route.source);
 	zassert_equal(output_readback.type, HPM_TRGM_OUTPUT_BOTH_EDGE_PULSE);
-	zassert_ok(hpm_trgm_configure_motor_route(
-		mux_dev, HPM_TRGM_MOTOR_ROUTE_SYNT_TO_QEO0_SAFETY, &synt_trigger_route));
-	zassert_ok(hpm_trgm_get_output(mux_dev, HPM_TRGM_OUTPUT_QEO0_TRIG_IN1,
-				       &output_readback));
+	zassert_ok(hpm_trgm_configure_motor_route(mux_dev, HPM_TRGM_MOTOR_ROUTE_SYNT_TO_QEO0_SAFETY,
+						  &synt_trigger_route));
+	zassert_ok(hpm_trgm_get_output(mux_dev, HPM_TRGM_OUTPUT_QEO0_TRIG_IN1, &output_readback));
 	zassert_equal(output_readback.source, synt_trigger_route.source);
 	zassert_equal(output_readback.type, HPM_TRGM_OUTPUT_BOTH_EDGE_PULSE);
-	zassert_ok(hpm_trgm_configure_motor_route(
-		mux_dev, HPM_TRGM_MOTOR_ROUTE_PLB_TO_QEO1, &plb_trigger_route));
-	zassert_ok(hpm_trgm_get_output(mux_dev, HPM_TRGM_OUTPUT_QEO1_TRIG_IN1,
-				       &output_readback));
+	zassert_ok(hpm_trgm_configure_motor_route(mux_dev, HPM_TRGM_MOTOR_ROUTE_PLB_TO_QEO1,
+						  &plb_trigger_route));
+	zassert_ok(hpm_trgm_get_output(mux_dev, HPM_TRGM_OUTPUT_QEO1_TRIG_IN1, &output_readback));
 	zassert_equal(output_readback.source, plb_trigger_route.source);
 	zassert_true(output_readback.invert);
 
-	zassert_equal(hpm_trgm_configure_motor_route(
-			      mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0, &invalid_pos_route),
+	zassert_equal(hpm_trgm_configure_motor_route(mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0,
+						     &invalid_pos_route),
 		      -EINVAL);
-	zassert_equal(hpm_trgm_configure_motor_route(
-			      mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0, &invalid_pulse_pos_route),
+	zassert_equal(hpm_trgm_configure_motor_route(mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0,
+						     &invalid_pulse_pos_route),
 		      -EINVAL);
-	zassert_equal(hpm_trgm_configure_motor_route(
-			      mux_dev, HPM_TRGM_MOTOR_ROUTE_COUNT, &mmc0_pos_route),
+	zassert_equal(hpm_trgm_configure_motor_route(mux_dev, HPM_TRGM_MOTOR_ROUTE_COUNT,
+						     &mmc0_pos_route),
 		      -EINVAL);
-	zassert_equal(hpm_trgm_configure_motor_route(
-			      mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0, NULL),
-		      -EINVAL);
+	zassert_equal(
+		hpm_trgm_configure_motor_route(mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0, NULL),
+		-EINVAL);
 #endif
 #if CONFIG_UART_INTERRUPT_DRIVEN
 	zassert_ok(uart_irq_callback_user_data_set(DEVICE_DT_GET(UART_NODE), NULL, NULL));
@@ -1441,6 +1432,83 @@ ZTEST(hpm5300evk, test_devices_ready)
 	uart_irq_err_disable(DEVICE_DT_GET(UART_NODE));
 #endif
 }
+
+#if CONFIG_I2C_TARGET
+static int i2c_target_write_requested(struct i2c_target_config *config)
+{
+	ARG_UNUSED(config);
+
+	return 0;
+}
+
+static int i2c_target_read_requested(struct i2c_target_config *config, uint8_t *value)
+{
+	ARG_UNUSED(config);
+
+	*value = 0x5aU;
+	return 0;
+}
+
+static int i2c_target_write_received(struct i2c_target_config *config, uint8_t value)
+{
+	ARG_UNUSED(config);
+	ARG_UNUSED(value);
+
+	return 0;
+}
+
+static int i2c_target_read_processed(struct i2c_target_config *config, uint8_t *value)
+{
+	ARG_UNUSED(config);
+
+	*value = 0x5aU;
+	return 0;
+}
+
+static int i2c_target_stop(struct i2c_target_config *config)
+{
+	ARG_UNUSED(config);
+
+	return 0;
+}
+
+static void i2c_target_error(struct i2c_target_config *config, enum i2c_error_reason reason)
+{
+	ARG_UNUSED(config);
+	ARG_UNUSED(reason);
+}
+
+static const struct i2c_target_callbacks i2c_target_callbacks = {
+	.write_requested = i2c_target_write_requested,
+	.read_requested = i2c_target_read_requested,
+	.write_received = i2c_target_write_received,
+	.read_processed = i2c_target_read_processed,
+	.stop = i2c_target_stop,
+	.error = i2c_target_error,
+};
+
+ZTEST(hpm5300evk, test_i2c_target_register)
+{
+	const struct device *dev = DEVICE_DT_GET(I2C_NODE);
+	struct i2c_target_config target = {
+		.address = 0x55U,
+		.callbacks = &i2c_target_callbacks,
+	};
+
+	zassert_true(device_is_ready(dev));
+	zassert_ok(i2c_configure(dev, I2C_MODE_CONTROLLER | I2C_SPEED_SET(I2C_SPEED_STANDARD) |
+					      I2C_ADDR_10_BITS));
+	zassert_ok(i2c_configure(dev, I2C_MODE_CONTROLLER | I2C_SPEED_SET(I2C_SPEED_STANDARD)));
+
+	zassert_ok(i2c_target_register(dev, &target));
+	zassert_ok(i2c_target_unregister(dev, &target));
+
+	target.address = 0x155U;
+	target.flags = I2C_TARGET_FLAGS_ADDR_10_BITS;
+	zassert_ok(i2c_target_register(dev, &target));
+	zassert_ok(i2c_target_unregister(dev, &target));
+}
+#endif
 
 ZTEST(hpm5300evk, test_flash_partition_device)
 {
