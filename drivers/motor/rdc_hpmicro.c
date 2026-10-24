@@ -11,6 +11,7 @@
 #include <zephyr/device.h>
 #include <drivers/motor/hpmicro_rdc.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/irq.h>
 #include <zephyr/kernel.h>
 
 #include <hpm_common.h>
@@ -27,15 +28,35 @@ BUILD_ASSERT((int)HPM_RDC_RECTIFY_EXTERNAL_INVERTED == (int)rdc_rectify_signal_e
 BUILD_ASSERT((int)HPM_RDC_STAMP_END == (int)rdc_acc_stamp_end_of_acc);
 BUILD_ASSERT((int)HPM_RDC_STAMP_START == (int)rdc_acc_stamp_start_of_acc);
 BUILD_ASSERT((int)HPM_RDC_STAMP_CENTER == (int)rdc_acc_stamp_center_of_acc);
+BUILD_ASSERT(HPM_RDC_EVENT_ACC_VALID_I == acc_vld_i_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_ACC_VALID_Q == acc_vld_q_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_RISING_DELAY_I == rising_delay_i_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_FALLING_DELAY_I == falling_delay_i_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_RISING_DELAY_Q == rising_delay_q_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_FALLING_DELAY_Q == falling_delay_q_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_SAMPLE_RISING_I == sample_rising_i_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_SAMPLE_FALLING_I == sample_falling_i_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_SAMPLE_RISING_Q == sample_rising_q_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_SAMPLE_FALLING_Q == sample_falling_q_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_ACC_OVERFLOW_I == acc_vld_i_ovh_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_ACC_OVERFLOW_Q == acc_vld_q_ovh_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_ACC_UNDERFLOW_I == acc_vld_i_ovl_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_ACC_UNDERFLOW_Q == acc_vld_q_ovl_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_AMPLITUDE_OVERFLOW == acc_amp_ovh_stat);
+BUILD_ASSERT(HPM_RDC_EVENT_AMPLITUDE_UNDERFLOW == acc_amp_ovl_stat);
 
 struct hpm_rdc_config {
 	RDC_Type *base;
 	const struct device *clock_dev;
 	clock_control_subsys_t clock_subsys;
+	void (*irq_config_func)(const struct device *dev);
 };
 
 struct hpm_rdc_data {
 	struct k_spinlock lock;
+	uint32_t event_mask;
+	hpm_rdc_event_callback_t callback;
+	void *callback_user_data;
 };
 
 static bool hpm_rdc_channel_is_valid(enum hpm_rdc_channel channel)
@@ -297,6 +318,91 @@ static int hpm_rdc_drv_clear_extrema(const struct device *dev)
 	return 0;
 }
 
+static int hpm_rdc_drv_get_events(const struct device *dev, uint32_t *events)
+{
+	const struct hpm_rdc_config *rdc = dev->config;
+	struct hpm_rdc_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (events == NULL) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	*events = get_interrupt_status(rdc->base) & HPM_RDC_EVENT_ALL;
+	rdc->base->ADC_INT_STATE = *events;
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_rdc_drv_clear_events(const struct device *dev, uint32_t events)
+{
+	const struct hpm_rdc_config *rdc = dev->config;
+	struct hpm_rdc_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if ((events & ~HPM_RDC_EVENT_ALL) != 0U) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	rdc->base->ADC_INT_STATE = events;
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_rdc_drv_set_event_callback(const struct device *dev, uint32_t event_mask,
+					  hpm_rdc_event_callback_t callback, void *user_data)
+{
+	const struct hpm_rdc_config *rdc = dev->config;
+	struct hpm_rdc_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if ((event_mask & ~HPM_RDC_EVENT_ALL) != 0U) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	rdc_interrupt_reset_config(rdc->base, HPM_RDC_EVENT_ALL);
+	rdc_interrupt_disable(rdc->base);
+	rdc->base->ADC_INT_STATE = HPM_RDC_EVENT_ALL;
+	data->event_mask = event_mask;
+	data->callback = callback;
+	data->callback_user_data = user_data;
+	if ((callback != NULL) && (event_mask != 0U)) {
+		rdc_interrupt_config(rdc->base, event_mask);
+		rdc_interrupt_enable(rdc->base);
+	}
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static void hpm_rdc_isr(const struct device *dev)
+{
+	const struct hpm_rdc_config *rdc = dev->config;
+	struct hpm_rdc_data *data = dev->data;
+	hpm_rdc_event_callback_t callback;
+	void *user_data;
+	k_spinlock_key_t key;
+	uint32_t events;
+
+	key = k_spin_lock(&data->lock);
+	events = get_interrupt_status(rdc->base) & data->event_mask;
+	if (events != 0U) {
+		rdc->base->ADC_INT_STATE = events;
+	}
+	callback = data->callback;
+	user_data = data->callback_user_data;
+	k_spin_unlock(&data->lock, key);
+
+	if ((callback != NULL) && (events != 0U)) {
+		callback(dev, events, user_data);
+	}
+}
+
 static DEVICE_API(hpm_rdc, hpm_rdc_api) = {
 	.configure_output = hpm_rdc_drv_configure_output,
 	.configure_input = hpm_rdc_drv_configure_input,
@@ -309,24 +415,46 @@ static DEVICE_API(hpm_rdc, hpm_rdc_api) = {
 	.accumulation_enable = hpm_rdc_drv_accumulation_enable,
 	.get_result = hpm_rdc_drv_get_result,
 	.clear_extrema = hpm_rdc_drv_clear_extrema,
+	.get_events = hpm_rdc_drv_get_events,
+	.clear_events = hpm_rdc_drv_clear_events,
+	.set_event_callback = hpm_rdc_drv_set_event_callback,
 };
 
 static int hpm_rdc_init(const struct device *dev)
 {
 	const struct hpm_rdc_config *config = dev->config;
+	int ret;
 
 	if (!device_is_ready(config->clock_dev)) {
 		return -ENODEV;
 	}
 
-	return clock_control_on(config->clock_dev, config->clock_subsys);
+	ret = clock_control_on(config->clock_dev, config->clock_subsys);
+	if (ret < 0) {
+		return ret;
+	}
+
+	config->irq_config_func(dev);
+
+	return 0;
 }
 
+#define HPM_RDC_IRQ_CONFIG(n)                                                                      \
+	static void hpm_rdc_irq_config_##n(const struct device *dev)                               \
+	{                                                                                          \
+		ARG_UNUSED(dev);                                                                   \
+		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), hpm_rdc_isr,                \
+			    DEVICE_DT_INST_GET(n), 0);                                             \
+		irq_enable(DT_INST_IRQN(n));                                                       \
+	}
+
 #define HPM_RDC_INIT(n)                                                                            \
+	HPM_RDC_IRQ_CONFIG(n)                                                                      \
 	static const struct hpm_rdc_config hpm_rdc_config_##n = {                                  \
 		.base = (RDC_Type *)DT_INST_REG_ADDR(n),                                           \
 		.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),                                \
 		.clock_subsys = (clock_control_subsys_t)DT_INST_CLOCKS_CELL(n, name),              \
+		.irq_config_func = hpm_rdc_irq_config_##n,                                         \
 	};                                                                                         \
                                                                                                    \
 	static struct hpm_rdc_data hpm_rdc_data_##n;                                               \

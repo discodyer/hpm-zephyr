@@ -856,6 +856,25 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_mmc_get_status(mmc, &mmc_status));
 	zassert_ok(hpm_mmc_clear_track_status(mmc, mmc_status.track));
 	zassert_ok(hpm_mmc_clear_predictor_status(mmc, 0U, mmc_status.predictor[0]));
+	zassert_ok(hpm_mmc_set_event_callback(mmc, HPM_MMC_EVENT_SOURCE_TRACK,
+					      HPM_MMC_TRACK_EVENT_ALL, NULL, NULL));
+	zassert_ok(hpm_mmc_set_event_callback(mmc, HPM_MMC_EVENT_SOURCE_PREDICTOR0,
+					      HPM_MMC_PREDICTOR_EVENT_ALL, NULL, NULL));
+	zassert_ok(hpm_mmc_set_event_callback(mmc, HPM_MMC_EVENT_SOURCE_PREDICTOR1,
+					      HPM_MMC_PREDICTOR_STATUS_POSITION_TRIGGER, NULL,
+					      NULL));
+	zassert_ok(hpm_mmc_set_event_callback(mmc, HPM_MMC_EVENT_SOURCE_PREDICTOR0,
+					      HPM_MMC_PREDICTOR_STATUS_DELTA_POSITION_DONE, NULL,
+					      NULL));
+	zassert_equal(hpm_mmc_set_event_callback(mmc, HPM_MMC_EVENT_SOURCE_TRACK,
+						 HPM_MMC_PREDICTOR_STATUS_IDLE, NULL, NULL),
+		      -EINVAL);
+	zassert_equal(hpm_mmc_set_event_callback(
+			      mmc, (enum hpm_mmc_event_source)HPM_MMC_EVENT_SOURCE_COUNT,
+			      HPM_MMC_TRACK_STATUS_IDLE, NULL, NULL),
+		      -EINVAL);
+	zassert_ok(hpm_mmc_clear_track_status(mmc, HPM_MMC_TRACK_STATUS_IDLE));
+	zassert_ok(hpm_mmc_clear_predictor_status(mmc, 0U, HPM_MMC_PREDICTOR_STATUS_IDLE));
 	zassert_ok(hpm_mmc_enable(mmc, true));
 	zassert_ok(hpm_mmc_enable(mmc, false));
 	zassert_ok(hpm_mmc_reset(mmc));
@@ -893,6 +912,7 @@ ZTEST(hpm5300evk, test_devices_ready)
 		.amplitude_min = 0U,
 	};
 	struct hpm_rdc_result rdc_result;
+	uint32_t rdc_events;
 
 	zassert_true(device_is_ready(rdc));
 	zassert_ok(hpm_rdc_configure_output(rdc, &rdc_output));
@@ -907,6 +927,13 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_rdc_accumulation_enable(rdc, true));
 	zassert_ok(hpm_rdc_clear_extrema(rdc));
 	zassert_ok(hpm_rdc_get_result(rdc, &rdc_result));
+	zassert_ok(hpm_rdc_get_events(rdc, &rdc_events));
+	zassert_ok(hpm_rdc_clear_events(rdc, HPM_RDC_EVENT_ALL));
+	zassert_equal(hpm_rdc_clear_events(rdc, BIT(16)), -EINVAL);
+	zassert_equal(hpm_rdc_get_events(rdc, NULL), -EINVAL);
+	zassert_ok(hpm_rdc_set_event_callback(rdc, HPM_RDC_EVENT_ALL, NULL, NULL));
+	zassert_equal(hpm_rdc_set_event_callback(rdc, BIT(16), NULL, NULL), -EINVAL);
+	zassert_ok(hpm_rdc_set_event_callback(rdc, HPM_RDC_EVENT_ACC_VALID_I, NULL, NULL));
 	zassert_ok(hpm_rdc_accumulation_enable(rdc, false));
 	zassert_ok(hpm_rdc_excitation_enable(rdc, false));
 	zassert_equal(hpm_rdc_set_channel_threshold(rdc, (enum hpm_rdc_channel)2, 0), -EINVAL);

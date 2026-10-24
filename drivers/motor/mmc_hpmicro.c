@@ -11,10 +11,29 @@
 #include <zephyr/device.h>
 #include <drivers/motor/hpmicro_mmc.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/irq.h>
 #include <zephyr/kernel.h>
 
 #include <hpm_common.h>
 #include <hpm_mmc_drv.h>
+
+struct hpm_mmc_config {
+	MMC_Type *base;
+	const struct device *clock_dev;
+	clock_control_subsys_t clock_subsys;
+	void (*irq_config_func)(const struct device *dev);
+};
+
+struct hpm_mmc_event_route {
+	uint32_t event_mask;
+	hpm_mmc_event_callback_t callback;
+	void *user_data;
+};
+
+struct hpm_mmc_data {
+	struct k_spinlock lock;
+	struct hpm_mmc_event_route route[HPM_MMC_EVENT_SOURCE_COUNT];
+};
 
 BUILD_ASSERT((int)HPM_MMC_POSITION_TRIGGER_TIMESTAMP == (int)mmc_pos_update_by_timestamp);
 BUILD_ASSERT((int)HPM_MMC_POSITION_TRIGGER_INPUT0_RISING ==
@@ -30,16 +49,14 @@ BUILD_ASSERT((int)HPM_MMC_POSITION_TRIGGER_SELF_SPEED == (int)mmc_pos_update_by_
 BUILD_ASSERT((int)HPM_MMC_PREDICTOR_BY_PERIOD == (int)mmc_pred_by_period);
 BUILD_ASSERT((int)HPM_MMC_PREDICTOR_CONTINUOUS == (int)mmc_pred_continuously_repeat);
 BUILD_ASSERT((int)HPM_MMC_PREDICTOR_ONCE == (int)mmc_pred_only_once);
-
-struct hpm_mmc_config {
-	MMC_Type *base;
-	const struct device *clock_dev;
-	clock_control_subsys_t clock_subsys;
-};
-
-struct hpm_mmc_data {
-	struct k_spinlock lock;
-};
+BUILD_ASSERT(HPM_MMC_PREDICTOR_STATUS_IDLE == MMC_BR_BR_ST_IDLE_MASK);
+BUILD_ASSERT(HPM_MMC_PREDICTOR_STATUS_DELTA_POSITION_DONE == MMC_BR_BR_ST_INI_DELTA_POS_DONE_MASK);
+BUILD_ASSERT(HPM_MMC_PREDICTOR_STATUS_POSITION_TRIGGER == MMC_BR_BR_ST_POS_TRG_VLD_MASK);
+BUILD_ASSERT(HPM_MMC_PREDICTOR_STATUS_SPEED_TRIGGER == MMC_BR_BR_ST_SPEED_TRG_VLD_MASK);
+BUILD_ASSERT(HPM_MMC_PREDICTOR_STATUS_OPEN_LOOP == MMC_BR_BR_ST_OPEN_LOOP_ST_MASK);
+BUILD_ASSERT(sizeof(((struct hpm_mmc_data *)0)->route) /
+		     sizeof(((struct hpm_mmc_data *)0)->route[0]) ==
+	     HPM_MMC_EVENT_SOURCE_COUNT);
 
 static bool hpm_mmc_predictor_is_valid(uint8_t predictor)
 {
@@ -234,6 +251,17 @@ static int hpm_mmc_drv_configure_predictor_mode(const struct device *dev, uint8_
 	sdk_config.not_first_pred_trig_type = config->next_trigger_type;
 
 	key = k_spin_lock(&data->lock);
+	uint32_t routed = data->route[HPM_MMC_EVENT_SOURCE_PREDICTOR0 + predictor].event_mask;
+
+	if ((routed & HPM_MMC_PREDICTOR_STATUS_DELTA_POSITION_DONE) != 0U) {
+		sdk_config.delta_pos_done_trig_int = true;
+	}
+	if ((routed & HPM_MMC_PREDICTOR_STATUS_POSITION_TRIGGER) != 0U) {
+		sdk_config.position_trig_int = true;
+	}
+	if ((routed & HPM_MMC_PREDICTOR_STATUS_SPEED_TRIGGER) != 0U) {
+		sdk_config.speed_trig_int = true;
+	}
 	mmc_pred_config_mode(mmc->base, predictor, &sdk_config);
 	k_spin_unlock(&data->lock, key);
 
@@ -491,7 +519,7 @@ static int hpm_mmc_drv_clear_track_status(const struct device *dev, uint32_t mas
 	k_spinlock_key_t key;
 
 	key = k_spin_lock(&data->lock);
-	mmc_track_clear_status(mmc->base, mask);
+	mmc_track_clear_status(mmc->base, mask & HPM_MMC_TRACK_EVENT_ALL);
 	k_spin_unlock(&data->lock, key);
 
 	return 0;
@@ -509,10 +537,141 @@ static int hpm_mmc_drv_clear_predictor_status(const struct device *dev, uint8_t 
 	}
 
 	key = k_spin_lock(&data->lock);
-	mmc_pred_clear_status(mmc->base, predictor, mask);
+	mmc_pred_clear_status(mmc->base, predictor, mask & HPM_MMC_PREDICTOR_EVENT_ALL);
 	k_spin_unlock(&data->lock, key);
 
 	return 0;
+}
+
+static uint32_t hpm_mmc_event_mask(enum hpm_mmc_event_source source)
+{
+	switch (source) {
+	case HPM_MMC_EVENT_SOURCE_TRACK:
+		return HPM_MMC_TRACK_EVENT_ALL;
+	case HPM_MMC_EVENT_SOURCE_PREDICTOR0:
+	case HPM_MMC_EVENT_SOURCE_PREDICTOR1:
+		return HPM_MMC_PREDICTOR_EVENT_ALL;
+	default:
+		return 0U;
+	}
+}
+
+static int hpm_mmc_drv_set_event_callback(const struct device *dev,
+					  enum hpm_mmc_event_source source, uint32_t event_mask,
+					  hpm_mmc_event_callback_t callback, void *user_data)
+{
+	const struct hpm_mmc_config *mmc = dev->config;
+	struct hpm_mmc_data *data = dev->data;
+	uint32_t allowed = hpm_mmc_event_mask(source);
+	k_spinlock_key_t key;
+
+	if ((allowed == 0U) || ((event_mask & ~allowed) != 0U)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	if ((callback == NULL) || (event_mask == 0U)) {
+		data->route[source].event_mask = 0U;
+		data->route[source].callback = NULL;
+		data->route[source].user_data = NULL;
+	} else {
+		data->route[source].event_mask = event_mask;
+		data->route[source].callback = callback;
+		data->route[source].user_data = user_data;
+	}
+
+	if (source == HPM_MMC_EVENT_SOURCE_TRACK) {
+		mmc_track_enable_interrupt(mmc->base, data->route[source].event_mask);
+	} else {
+		uint8_t predictor = (source == HPM_MMC_EVENT_SOURCE_PREDICTOR0) ? 0U : 1U;
+		uint32_t sdk_mask = 0U;
+
+		if ((event_mask & HPM_MMC_PREDICTOR_STATUS_DELTA_POSITION_DONE) != 0U) {
+			sdk_mask |= mmc_pred_init_delta_pos_done_int;
+		}
+		if ((event_mask & HPM_MMC_PREDICTOR_STATUS_POSITION_TRIGGER) != 0U) {
+			sdk_mask |= mmc_pred_pos_trig_valid_int;
+		}
+		if ((event_mask & HPM_MMC_PREDICTOR_STATUS_SPEED_TRIGGER) != 0U) {
+			sdk_mask |= mmc_pred_speed_trig_valid_int;
+		}
+
+		mmc_pred_disable_interrupt(mmc->base, predictor,
+					   mmc_pred_init_delta_pos_done_int |
+						   mmc_pred_pos_trig_valid_int |
+						   mmc_pred_speed_trig_valid_int);
+		mmc_pred_enable_interrupt(mmc->base, predictor, sdk_mask);
+	}
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static uint32_t hpm_mmc_predictor_int_events(uint32_t ctrl)
+{
+	uint32_t events = 0U;
+
+	if ((ctrl & MMC_BR_BR_CTRL_INI_DELTA_POS_DONE_IE_MASK) != 0U) {
+		events |= HPM_MMC_PREDICTOR_STATUS_DELTA_POSITION_DONE;
+	}
+	if ((ctrl & MMC_BR_BR_CTRL_POS_TRG_VALID_IE_MASK) != 0U) {
+		events |= HPM_MMC_PREDICTOR_STATUS_POSITION_TRIGGER;
+	}
+	if ((ctrl & MMC_BR_BR_CTRL_SPEED_TRG_VALID_IE_MASK) != 0U) {
+		events |= HPM_MMC_PREDICTOR_STATUS_SPEED_TRIGGER;
+	}
+
+	return events;
+}
+
+static void hpm_mmc_isr(const struct device *dev)
+{
+	const struct hpm_mmc_config *mmc = dev->config;
+	struct hpm_mmc_data *data = dev->data;
+	uint32_t track_events = 0U;
+	uint32_t predictor_events[HPM_MMC_PREDICTOR_COUNT] = {0U};
+	hpm_mmc_event_callback_t callbacks[HPM_MMC_EVENT_SOURCE_COUNT] = {NULL};
+	void *user_data[HPM_MMC_EVENT_SOURCE_COUNT] = {NULL};
+	k_spinlock_key_t key;
+	uint8_t i;
+
+	key = k_spin_lock(&data->lock);
+
+	track_events =
+		mmc_track_get_status(mmc->base) & mmc->base->INT_EN & HPM_MMC_TRACK_EVENT_ALL;
+	if (track_events != 0U) {
+		mmc_track_clear_status(mmc->base, track_events);
+	}
+
+	for (i = 0U; i < HPM_MMC_PREDICTOR_COUNT; i++) {
+		enum hpm_mmc_event_source source = HPM_MMC_EVENT_SOURCE_PREDICTOR0 + i;
+		uint32_t enabled_events = hpm_mmc_predictor_int_events(mmc->base->BR[i].BR_CTRL);
+		uint32_t pending = mmc_pred_get_status(mmc->base, i) & enabled_events;
+
+		if (pending != 0U) {
+			mmc_pred_clear_status(mmc->base, i, pending);
+			predictor_events[i] = pending & data->route[source].event_mask;
+		}
+	}
+
+	track_events &= data->route[HPM_MMC_EVENT_SOURCE_TRACK].event_mask;
+	for (i = 0U; i < HPM_MMC_EVENT_SOURCE_COUNT; i++) {
+		callbacks[i] = data->route[i].callback;
+		user_data[i] = data->route[i].user_data;
+	}
+	k_spin_unlock(&data->lock, key);
+
+	if ((callbacks[HPM_MMC_EVENT_SOURCE_TRACK] != NULL) && (track_events != 0U)) {
+		callbacks[HPM_MMC_EVENT_SOURCE_TRACK](dev, track_events,
+						      user_data[HPM_MMC_EVENT_SOURCE_TRACK]);
+	}
+	for (i = 0U; i < HPM_MMC_PREDICTOR_COUNT; i++) {
+		enum hpm_mmc_event_source source = HPM_MMC_EVENT_SOURCE_PREDICTOR0 + i;
+
+		if ((callbacks[source] != NULL) && (predictor_events[i] != 0U)) {
+			callbacks[source](dev, predictor_events[i], user_data[source]);
+		}
+	}
 }
 
 static DEVICE_API(hpm_mmc, hpm_mmc_api) = {
@@ -536,6 +695,7 @@ static DEVICE_API(hpm_mmc, hpm_mmc_api) = {
 	.get_status = hpm_mmc_drv_get_status,
 	.clear_track_status = hpm_mmc_drv_clear_track_status,
 	.clear_predictor_status = hpm_mmc_drv_clear_predictor_status,
+	.set_event_callback = hpm_mmc_drv_set_event_callback,
 };
 
 static int hpm_mmc_init(const struct device *dev)
@@ -564,15 +724,27 @@ static int hpm_mmc_init(const struct device *dev)
 
 	mmc_set_sysclk_freq(config->base, clock_frequency);
 	mmc_software_reset(config->base);
+	config->irq_config_func(dev);
 
 	return 0;
 }
 
+#define HPM_MMC_IRQ_CONFIG(n)                                                                      \
+	static void hpm_mmc_irq_config_##n(const struct device *dev)                               \
+	{                                                                                          \
+		ARG_UNUSED(dev);                                                                   \
+		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), hpm_mmc_isr,                \
+			    DEVICE_DT_INST_GET(n), 0);                                             \
+		irq_enable(DT_INST_IRQN(n));                                                       \
+	}
+
 #define HPM_MMC_INIT(n)                                                                            \
+	HPM_MMC_IRQ_CONFIG(n)                                                                      \
 	static const struct hpm_mmc_config hpm_mmc_config_##n = {                                  \
 		.base = (MMC_Type *)DT_INST_REG_ADDR(n),                                           \
 		.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),                                \
 		.clock_subsys = (clock_control_subsys_t)DT_INST_CLOCKS_CELL(n, name),              \
+		.irq_config_func = hpm_mmc_irq_config_##n,                                         \
 	};                                                                                         \
                                                                                                    \
 	static struct hpm_mmc_data hpm_mmc_data_##n;                                               \

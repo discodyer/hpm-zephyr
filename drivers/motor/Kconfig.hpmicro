@@ -40,10 +40,11 @@ config MMC_HPMICRO
 	depends on HAS_HPMSDK_MMC
 	select USE_HPMSDK_MMC
 	help
-	  Enable the HPMicro motion processing unit. The initial driver exposes
-	  track and predictor configuration, position and trigger inputs,
-	  result/status access and module control. Interrupt callbacks and TRGM
-	  position routing are not exposed yet.
+	  Enable the HPMicro motion processing unit. The driver exposes track and
+	  predictor configuration, position and trigger inputs, result/status
+	  access, module control and shared-IRQ event callbacks for the track and
+	  both predictors. TRGM position routing remains the consumer's
+	  responsibility.
 
 DT_COMPAT_HPM_RDC := hpmicro,hpm-rdc
 
@@ -55,10 +56,10 @@ config RDC_HPMICRO
 	depends on HAS_HPMSDK_RDC
 	select USE_HPMSDK_RDC
 	help
-	  Enable the HPMicro resolver-to-digital converter. The initial driver
-	  covers excitation output, I/Q accumulation input, accumulation
-	  filtering, trigger output and result access. Interrupt callbacks and
-	  TRGM/DAC routing are not exposed yet.
+	  Enable the HPMicro resolver-to-digital converter. The driver covers
+	  excitation output, I/Q accumulation input, accumulation filtering,
+	  trigger output, result access and W1C interrupt event handling. TRGM or
+	  DAC routing remains the consumer's responsibility.
 
 DT_COMPAT_HPM_SYNT := hpmicro,hpm-synt
 

@@ -36,11 +36,35 @@ extern "C" {
 #define HPM_MMC_TRACK_STATUS_POSITION_TRIGGER    (1U << 9)
 #define HPM_MMC_TRACK_STATUS_SPEED_TRIGGER       (1U << 10)
 
-#define HPM_MMC_PREDICTOR_STATUS_IDLE                (1U << 0)
-#define HPM_MMC_PREDICTOR_STATUS_DELTA_POSITION_DONE (1U << 1)
-#define HPM_MMC_PREDICTOR_STATUS_POSITION_TRIGGER    (1U << 2)
-#define HPM_MMC_PREDICTOR_STATUS_SPEED_TRIGGER       (1U << 3)
-#define HPM_MMC_PREDICTOR_STATUS_OPEN_LOOP           (1U << 4)
+#define HPM_MMC_PREDICTOR_STATUS_IDLE                (1U << 5)
+#define HPM_MMC_PREDICTOR_STATUS_DELTA_POSITION_DONE (1U << 6)
+#define HPM_MMC_PREDICTOR_STATUS_POSITION_TRIGGER    (1U << 8)
+#define HPM_MMC_PREDICTOR_STATUS_SPEED_TRIGGER       (1U << 9)
+#define HPM_MMC_PREDICTOR_STATUS_OPEN_LOOP           (1U << 10)
+
+/** Event source handled by the shared MMC interrupt. */
+enum hpm_mmc_event_source {
+	HPM_MMC_EVENT_SOURCE_TRACK = 0,
+	HPM_MMC_EVENT_SOURCE_PREDICTOR0,
+	HPM_MMC_EVENT_SOURCE_PREDICTOR1,
+	HPM_MMC_EVENT_SOURCE_COUNT,
+};
+
+/** Track events that can generate an interrupt. */
+#define HPM_MMC_TRACK_EVENT_ALL                                                                    \
+	(HPM_MMC_TRACK_STATUS_SHADOW_READ_DONE | HPM_MMC_TRACK_STATUS_COEFFICIENTS_DONE |          \
+	 HPM_MMC_TRACK_STATUS_POSITION_DONE | HPM_MMC_TRACK_STATUS_OUT_OF_SYNC |                   \
+	 HPM_MMC_TRACK_STATUS_PRED1_POSITION_DONE | HPM_MMC_TRACK_STATUS_PRED0_POSITION_DONE |     \
+	 HPM_MMC_TRACK_STATUS_DELTA_POSITION_DONE | HPM_MMC_TRACK_STATUS_POSITION_TRIGGER |        \
+	 HPM_MMC_TRACK_STATUS_SPEED_TRIGGER)
+
+/** Predictor events that can generate an interrupt. */
+#define HPM_MMC_PREDICTOR_EVENT_ALL                                                                \
+	(HPM_MMC_PREDICTOR_STATUS_DELTA_POSITION_DONE |                                            \
+	 HPM_MMC_PREDICTOR_STATUS_POSITION_TRIGGER | HPM_MMC_PREDICTOR_STATUS_SPEED_TRIGGER)
+
+typedef void (*hpm_mmc_event_callback_t)(const struct device *dev, uint32_t events,
+					 void *user_data);
 
 /** Trigger used to apply new position or delta-position parameters. */
 enum hpm_mmc_position_trigger {
@@ -200,6 +224,9 @@ __subsystem struct hpm_mmc_driver_api {
 	int (*get_status)(const struct device *dev, struct hpm_mmc_status *status);
 	int (*clear_track_status)(const struct device *dev, uint32_t mask);
 	int (*clear_predictor_status)(const struct device *dev, uint8_t predictor, uint32_t mask);
+	int (*set_event_callback)(const struct device *dev, enum hpm_mmc_event_source source,
+				  uint32_t event_mask, hpm_mmc_event_callback_t callback,
+				  void *user_data);
 };
 /** @endcond */
 
@@ -327,6 +354,31 @@ static inline int hpm_mmc_clear_predictor_status(const struct device *dev, uint8
 						 uint32_t mask)
 {
 	return DEVICE_API_GET(hpm_mmc, dev)->clear_predictor_status(dev, predictor, mask);
+}
+
+/**
+ * @brief Enable event interrupts and install a callback for one MMC event source.
+ *
+ * Track and predictor sources share the MMC instance interrupt. The track
+ * source accepts HPM_MMC_TRACK_STATUS_* interrupt-capable events; predictor
+ * sources accept HPM_MMC_PREDICTOR_STATUS_* interrupt-capable events. Passing
+ * a NULL callback or zero mask disables that source's callback.
+ *
+ * @param dev MMC device.
+ * @param source Track or one of the two predictors.
+ * @param event_mask Event flags to enable.
+ * @param callback Callback invoked from interrupt context.
+ * @param user_data Callback context.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for an invalid source or event mask.
+ */
+static inline int hpm_mmc_set_event_callback(const struct device *dev,
+					     enum hpm_mmc_event_source source, uint32_t event_mask,
+					     hpm_mmc_event_callback_t callback, void *user_data)
+{
+	return DEVICE_API_GET(hpm_mmc, dev)
+		->set_event_callback(dev, source, event_mask, callback, user_data);
 }
 
 /** @} */

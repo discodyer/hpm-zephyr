@@ -107,6 +107,36 @@ struct hpm_rdc_accumulation_config {
 	uint32_t amplitude_min;
 };
 
+/** RDC interrupt status flags. */
+#define HPM_RDC_EVENT_ACC_VALID_I         (1U << 15U)
+#define HPM_RDC_EVENT_ACC_VALID_Q         (1U << 14U)
+#define HPM_RDC_EVENT_RISING_DELAY_I      (1U << 13U)
+#define HPM_RDC_EVENT_FALLING_DELAY_I     (1U << 12U)
+#define HPM_RDC_EVENT_RISING_DELAY_Q      (1U << 11U)
+#define HPM_RDC_EVENT_FALLING_DELAY_Q     (1U << 10U)
+#define HPM_RDC_EVENT_SAMPLE_RISING_I     (1U << 9U)
+#define HPM_RDC_EVENT_SAMPLE_FALLING_I    (1U << 8U)
+#define HPM_RDC_EVENT_SAMPLE_RISING_Q     (1U << 7U)
+#define HPM_RDC_EVENT_SAMPLE_FALLING_Q    (1U << 6U)
+#define HPM_RDC_EVENT_ACC_OVERFLOW_I      (1U << 5U)
+#define HPM_RDC_EVENT_ACC_OVERFLOW_Q      (1U << 4U)
+#define HPM_RDC_EVENT_ACC_UNDERFLOW_I     (1U << 3U)
+#define HPM_RDC_EVENT_ACC_UNDERFLOW_Q     (1U << 2U)
+#define HPM_RDC_EVENT_AMPLITUDE_OVERFLOW  (1U << 1U)
+#define HPM_RDC_EVENT_AMPLITUDE_UNDERFLOW (1U << 0U)
+#define HPM_RDC_EVENT_ALL                                                                          \
+	(HPM_RDC_EVENT_ACC_VALID_I | HPM_RDC_EVENT_ACC_VALID_Q | HPM_RDC_EVENT_RISING_DELAY_I |    \
+	 HPM_RDC_EVENT_FALLING_DELAY_I | HPM_RDC_EVENT_RISING_DELAY_Q |                            \
+	 HPM_RDC_EVENT_FALLING_DELAY_Q | HPM_RDC_EVENT_SAMPLE_RISING_I |                           \
+	 HPM_RDC_EVENT_SAMPLE_FALLING_I | HPM_RDC_EVENT_SAMPLE_RISING_Q |                          \
+	 HPM_RDC_EVENT_SAMPLE_FALLING_Q | HPM_RDC_EVENT_ACC_OVERFLOW_I |                           \
+	 HPM_RDC_EVENT_ACC_OVERFLOW_Q | HPM_RDC_EVENT_ACC_UNDERFLOW_I |                            \
+	 HPM_RDC_EVENT_ACC_UNDERFLOW_Q | HPM_RDC_EVENT_AMPLITUDE_OVERFLOW |                        \
+	 HPM_RDC_EVENT_AMPLITUDE_UNDERFLOW)
+
+typedef void (*hpm_rdc_event_callback_t)(const struct device *dev, uint32_t events,
+					 void *user_data);
+
 struct hpm_rdc_result {
 	uint32_t i;
 	uint32_t q;
@@ -139,6 +169,10 @@ __subsystem struct hpm_rdc_driver_api {
 	int (*accumulation_enable)(const struct device *dev, bool enable);
 	int (*get_result)(const struct device *dev, struct hpm_rdc_result *result);
 	int (*clear_extrema)(const struct device *dev);
+	int (*get_events)(const struct device *dev, uint32_t *events);
+	int (*clear_events)(const struct device *dev, uint32_t events);
+	int (*set_event_callback)(const struct device *dev, uint32_t event_mask,
+				  hpm_rdc_event_callback_t callback, void *user_data);
 };
 /** @endcond */
 
@@ -201,6 +235,54 @@ static inline int hpm_rdc_get_result(const struct device *dev, struct hpm_rdc_re
 static inline int hpm_rdc_clear_extrema(const struct device *dev)
 {
 	return DEVICE_API_GET(hpm_rdc, dev)->clear_extrema(dev);
+}
+
+/**
+ * @brief Read and clear pending RDC event flags.
+ *
+ * @param dev RDC device.
+ * @param events Output combination of HPM_RDC_EVENT_* flags.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL if @p events is NULL.
+ */
+static inline int hpm_rdc_get_events(const struct device *dev, uint32_t *events)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->get_events(dev, events);
+}
+
+/**
+ * @brief Clear selected RDC event flags.
+ *
+ * @param dev RDC device.
+ * @param events Combination of HPM_RDC_EVENT_* flags.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for unknown event bits.
+ */
+static inline int hpm_rdc_clear_events(const struct device *dev, uint32_t events)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->clear_events(dev, events);
+}
+
+/**
+ * @brief Enable RDC event interrupts and install a callback.
+ *
+ * Passing a NULL callback or zero mask disables all RDC interrupts.
+ *
+ * @param dev RDC device.
+ * @param event_mask Combination of HPM_RDC_EVENT_* flags.
+ * @param callback Callback invoked from interrupt context.
+ * @param user_data Callback context.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for unknown event bits.
+ */
+static inline int hpm_rdc_set_event_callback(const struct device *dev, uint32_t event_mask,
+					     hpm_rdc_event_callback_t callback, void *user_data)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)
+		->set_event_callback(dev, event_mask, callback, user_data);
 }
 
 /** @} */
