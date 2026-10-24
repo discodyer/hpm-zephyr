@@ -57,7 +57,7 @@ static int hpm_spi_configure(const struct device *dev, const struct spi_config *
 		return -ENOTSUP;
 	}
 
-	if ((spi_cfg->operation & (SPI_HALF_DUPLEX | SPI_FRAME_FORMAT_TI)) != 0U) {
+	if ((spi_cfg->operation & SPI_FRAME_FORMAT_TI) != 0U) {
 		return -ENOTSUP;
 	}
 
@@ -128,6 +128,7 @@ static int hpm_spi_configure(const struct device *dev, const struct spi_config *
 						   ? spi_sclk_sampling_even_clk_edges
 						   : spi_sclk_sampling_odd_clk_edges;
 	format_config.common_config.lsb = (spi_cfg->operation & SPI_TRANSFER_LSB) != 0U;
+	format_config.common_config.mosi_bidir = (spi_cfg->operation & SPI_HALF_DUPLEX) != 0U;
 	spi_format_init(config->base, &format_config);
 
 	((struct hpm_spi_data *)dev->data)->ctx.config = spi_cfg;
@@ -311,6 +312,11 @@ static int hpm_spi_transceive(const struct device *dev, const struct spi_config 
 	}
 
 	if ((tx_len == 0U) && (rx_len == 0U)) {
+		goto out;
+	}
+
+	if (((spi_cfg->operation & SPI_HALF_DUPLEX) != 0U) && (tx_len != 0U) && (rx_len != 0U)) {
+		ret = -ENOTSUP;
 		goto out;
 	}
 
