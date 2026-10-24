@@ -7,6 +7,7 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
@@ -37,6 +38,10 @@ struct hpm_qeiv2_config {
 	uint16_t filter_length;
 	enum hpm_qeiv2_mode mode;
 	bool z_calibration;
+	struct hpm_qeiv2_sincos_config sincos;
+	struct hpm_qeiv2_home_config home;
+	struct hpm_qeiv2_fault_config fault;
+	struct hpm_qeiv2_watchdog_config watchdog;
 	void (*irq_config_func)(const struct device *dev);
 };
 
@@ -46,11 +51,18 @@ struct hpm_qeiv2_data {
 	int32_t revolutions;
 	uint32_t angle_raw;
 	uint32_t latched_events;
-	uint32_t event_mask;
+	uint32_t callback_event_mask;
+	uint32_t interrupt_route_mask;
 	hpm_qeiv2_event_callback_t callback;
 	void *callback_user_data;
 	bool compare_source_valid;
 	enum hpm_qeiv2_compare_source compare_source;
+	enum hpm_qeiv2_mode active_mode;
+	uint32_t active_counts_per_revolution;
+	uint32_t pulse_count[HPM_QEIV2_SPEED_CHANNEL_COUNT];
+	uint32_t speed_window_cycles[HPM_QEIV2_SPEED_CHANNEL_COUNT];
+	uint32_t clock_rate;
+	bool speed_config_valid[HPM_QEIV2_SPEED_CHANNEL_COUNT];
 };
 
 BUILD_ASSERT((uint32_t)HPM_QEIV2_EVENT_WATCHDOG == QEIV2_EVENT_WDOG_FLAG_MASK);
@@ -72,6 +84,18 @@ BUILD_ASSERT((int)HPM_QEIV2_MODE_ABZ == (int)qeiv2_work_mode_abz);
 BUILD_ASSERT((int)HPM_QEIV2_MODE_PULSE_DIRECTION == (int)qeiv2_work_mode_pd);
 BUILD_ASSERT((int)HPM_QEIV2_MODE_UP_DOWN == (int)qeiv2_work_mode_ud);
 BUILD_ASSERT((int)HPM_QEIV2_MODE_UVW == (int)qeiv2_work_mode_uvw);
+BUILD_ASSERT((int)HPM_QEIV2_MODE_SINGLE == (int)qeiv2_work_mode_single);
+BUILD_ASSERT((int)HPM_QEIV2_MODE_SINE == (int)qeiv2_work_mode_sin);
+BUILD_ASSERT((int)HPM_QEIV2_MODE_SIN_COS == (int)qeiv2_work_mode_sincos);
+
+static int hpm_qeiv2_drv_configure_sincos(const struct device *dev,
+					  const struct hpm_qeiv2_sincos_config *config);
+static int hpm_qeiv2_drv_configure_watchdog(const struct device *dev,
+					    const struct hpm_qeiv2_watchdog_config *config);
+static int hpm_qeiv2_drv_configure_home(const struct device *dev,
+					const struct hpm_qeiv2_home_config *config);
+static int hpm_qeiv2_drv_configure_fault(const struct device *dev,
+					 const struct hpm_qeiv2_fault_config *config);
 
 static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2_mode_config *mode)
 {
@@ -82,7 +106,11 @@ static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2
 	k_spinlock_key_t key;
 	hpm_stat_t status = status_success;
 
-	if ((mode == NULL) || ((unsigned int)mode->mode > HPM_QEIV2_MODE_UVW) ||
+	if ((mode == NULL) ||
+	    ((mode->mode != HPM_QEIV2_MODE_ABZ) && (mode->mode != HPM_QEIV2_MODE_PULSE_DIRECTION) &&
+	     (mode->mode != HPM_QEIV2_MODE_UP_DOWN) && (mode->mode != HPM_QEIV2_MODE_UVW) &&
+	     (mode->mode != HPM_QEIV2_MODE_SINGLE) && (mode->mode != HPM_QEIV2_MODE_SINE) &&
+	     (mode->mode != HPM_QEIV2_MODE_SIN_COS)) ||
 	    (mode->counts_per_revolution <= 1U) ||
 	    (mode->phase_index >= mode->counts_per_revolution) ||
 	    (mode->z_calibration && (mode->mode != HPM_QEIV2_MODE_ABZ)) ||
@@ -91,7 +119,10 @@ static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2
 	}
 
 	sdk_config.work_mode = (qeiv2_work_mode_t)mode->mode;
-	sdk_config.spd_tmr_content_sel = qeiv2_spd_tmr_as_spd_tm;
+	sdk_config.spd_tmr_content_sel =
+		((mode->mode == HPM_QEIV2_MODE_SINE) || (mode->mode == HPM_QEIV2_MODE_SIN_COS))
+			? qeiv2_spd_tmr_as_pos_angle
+			: qeiv2_spd_tmr_as_spd_tm;
 	sdk_config.z_count_inc_mode = mode->z_calibration ? qeiv2_z_count_inc_on_z_input_assert
 							  : qeiv2_z_count_inc_on_phase_count_max;
 	sdk_config.phcnt_max = mode->counts_per_revolution;
@@ -119,6 +150,12 @@ static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2
 		qeiv2_get_uvw_position_defconfig(&uvw_config);
 		status = qeiv2_config_uvw_position(config->base, &uvw_config);
 		break;
+	case HPM_QEIV2_MODE_SINGLE:
+		qeiv2_config_abz_uvw_signal_edge(config->base, true, false, false, true, true);
+		break;
+	case HPM_QEIV2_MODE_SINE:
+	case HPM_QEIV2_MODE_SIN_COS:
+		break;
 	default:
 		status = status_invalid_argument;
 		break;
@@ -126,8 +163,9 @@ static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2
 
 	if (status != status_success) {
 		data->compare_source_valid = false;
-		if (data->callback != NULL) {
-			qeiv2_enable_irq(config->base, data->event_mask);
+		if ((data->callback != NULL) || (data->interrupt_route_mask != 0U)) {
+			qeiv2_enable_irq(config->base,
+					 data->callback_event_mask | data->interrupt_route_mask);
 		}
 		k_spin_unlock(&data->lock, key);
 		return -EIO;
@@ -147,8 +185,11 @@ static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2
 	data->angle_raw = 0U;
 	data->latched_events = 0U;
 	data->compare_source_valid = false;
-	if (data->callback != NULL) {
-		qeiv2_enable_irq(config->base, data->event_mask);
+	data->active_mode = mode->mode;
+	data->active_counts_per_revolution = mode->counts_per_revolution;
+	if ((data->callback != NULL) || (data->interrupt_route_mask != 0U)) {
+		qeiv2_enable_irq(config->base,
+				 data->callback_event_mask | data->interrupt_route_mask);
 	}
 	k_spin_unlock(&data->lock, key);
 
@@ -212,6 +253,7 @@ static int hpm_qeiv2_channel_get(const struct device *dev, enum sensor_channel c
 static int hpm_qeiv2_init(const struct device *dev)
 {
 	const struct hpm_qeiv2_config *config = dev->config;
+	struct hpm_qeiv2_data *data = dev->data;
 	int ret;
 
 	if (!device_is_ready(config->clock_dev)) {
@@ -221,6 +263,11 @@ static int hpm_qeiv2_init(const struct device *dev)
 	if (clock_set_source_divider(config->clock_name, config->clock_src, config->clock_div) !=
 	    status_success) {
 		return -EINVAL;
+	}
+
+	ret = clock_control_get_rate(config->clock_dev, config->clock_subsys, &data->clock_rate);
+	if (ret < 0) {
+		return ret;
 	}
 
 	ret = pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
@@ -244,6 +291,28 @@ static int hpm_qeiv2_init(const struct device *dev)
 		return ret;
 	}
 
+	if ((config->mode == HPM_QEIV2_MODE_SINE) || (config->mode == HPM_QEIV2_MODE_SIN_COS)) {
+		ret = hpm_qeiv2_drv_configure_sincos(dev, &config->sincos);
+		if (ret < 0) {
+			return ret;
+		}
+	}
+
+	ret = hpm_qeiv2_drv_configure_home(dev, &config->home);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = hpm_qeiv2_drv_configure_fault(dev, &config->fault);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = hpm_qeiv2_drv_configure_watchdog(dev, &config->watchdog);
+	if (ret < 0) {
+		return ret;
+	}
+
 	config->irq_config_func(dev);
 
 	return 0;
@@ -253,6 +322,7 @@ static int hpm_qeiv2_drv_configure_speed(const struct device *dev, uint8_t chann
 					 uint32_t pulse_count, uint32_t cycle_count)
 {
 	const struct hpm_qeiv2_config *config = dev->config;
+	struct hpm_qeiv2_data *data = dev->data;
 
 	if ((channel >= HPM_QEIV2_SPEED_CHANNEL_COUNT) || (pulse_count == 0U) ||
 	    (cycle_count == 0U)) {
@@ -270,6 +340,10 @@ static int hpm_qeiv2_drv_configure_speed(const struct device *dev, uint8_t chann
 		break;
 	}
 
+	data->pulse_count[channel] = pulse_count;
+	data->speed_window_cycles[channel] = cycle_count;
+	data->speed_config_valid[channel] = true;
+
 	return 0;
 }
 
@@ -282,6 +356,7 @@ static int hpm_qeiv2_drv_get_speed_snapshot(const struct device *dev, uint8_t ch
 		return -EINVAL;
 	}
 
+	memset(snapshot, 0, sizeof(*snapshot));
 	switch (channel) {
 	case 0U:
 		snapshot->pulse_based_cycles = qeiv2_get_pulse0_cycle_snap0(config->base);
@@ -292,6 +367,7 @@ static int hpm_qeiv2_drv_get_speed_snapshot(const struct device *dev, uint8_t ch
 		snapshot->duration_based_cycles = qeiv2_get_cycle0_pulse0cycle_snap0(config->base);
 		snapshot->duration_based_cycles_previous =
 			qeiv2_get_cycle0_pulse0cycle_snap1(config->base);
+		snapshot->reverse = qeiv2_get_current_phase_dir(config->base);
 		break;
 	case 1U:
 		snapshot->pulse_based_cycles = qeiv2_get_pulse1_cycle_snap0(config->base);
@@ -302,8 +378,251 @@ static int hpm_qeiv2_drv_get_speed_snapshot(const struct device *dev, uint8_t ch
 		snapshot->duration_based_cycles = qeiv2_get_cycle1_pulse1cycle_snap0(config->base);
 		snapshot->duration_based_cycles_previous =
 			qeiv2_get_cycle1_pulse1cycle_snap1(config->base);
+		snapshot->reverse = qeiv2_get_current_phase_dir(config->base);
 		break;
 	}
+
+	return 0;
+}
+
+static int hpm_qeiv2_drv_speed_to_rpm(const struct device *dev, uint8_t channel,
+				      enum hpm_qeiv2_speed_source source,
+				      const struct hpm_qeiv2_speed_snapshot *snapshot,
+				      struct sensor_value *rpm)
+{
+	struct hpm_qeiv2_data *data = dev->data;
+	uint32_t counts_per_revolution;
+	uint32_t pulse_count;
+	uint32_t speed_window_cycles;
+	uint32_t clock_rate;
+	uint64_t numerator;
+	uint64_t denominator;
+	uint64_t pulses;
+	uint64_t cycles;
+	k_spinlock_key_t key;
+	int64_t rpm_milli;
+	int ret;
+
+	if ((channel >= HPM_QEIV2_SPEED_CHANNEL_COUNT) || (snapshot == NULL) || (rpm == NULL) ||
+	    ((source != HPM_QEIV2_SPEED_SOURCE_PULSE) &&
+	     (source != HPM_QEIV2_SPEED_SOURCE_DURATION))) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	if (!data->speed_config_valid[channel] || (data->clock_rate == 0U)) {
+		k_spin_unlock(&data->lock, key);
+		return -EINVAL;
+	}
+
+	counts_per_revolution = data->active_counts_per_revolution;
+	pulse_count = data->pulse_count[channel];
+	speed_window_cycles = data->speed_window_cycles[channel];
+	clock_rate = data->clock_rate;
+	k_spin_unlock(&data->lock, key);
+
+	if (source == HPM_QEIV2_SPEED_SOURCE_PULSE) {
+		pulses = pulse_count;
+		cycles = snapshot->pulse_based_cycles;
+	} else {
+		pulses = snapshot->duration_based_pulses;
+		cycles = snapshot->duration_based_cycles;
+	}
+
+	if ((pulses == 0U) || (cycles == 0U)) {
+		return -EDOM;
+	}
+
+	/* Duration snapshots must reach the configured window. */
+	if ((source == HPM_QEIV2_SPEED_SOURCE_DURATION) && (cycles < speed_window_cycles)) {
+		return -EDOM;
+	}
+
+	if (pulses > UINT64_MAX / 60U) {
+		return -ERANGE;
+	}
+	numerator = pulses * 60U;
+	if (numerator > UINT64_MAX / clock_rate) {
+		return -ERANGE;
+	}
+	numerator *= clock_rate;
+	if (numerator > UINT64_MAX / 1000U) {
+		return -ERANGE;
+	}
+	numerator *= 1000U;
+
+	denominator = (uint64_t)counts_per_revolution * cycles;
+	if ((denominator == 0U) || ((numerator / denominator) > INT32_MAX)) {
+		return -ERANGE;
+	}
+
+	rpm_milli = (int64_t)(numerator / denominator);
+	if (snapshot->reverse) {
+		rpm_milli = -rpm_milli;
+	}
+
+	ret = sensor_value_from_milli(rpm, rpm_milli);
+	return ret;
+}
+
+static int hpm_qeiv2_drv_configure_sincos(const struct device *dev,
+					  const struct hpm_qeiv2_sincos_config *config)
+{
+	const struct hpm_qeiv2_config *qeiv2 = dev->config;
+	struct hpm_qeiv2_data *data = dev->data;
+	qeiv2_adc_config_t sdk_x;
+	qeiv2_adc_config_t sdk_y;
+	k_spinlock_key_t key;
+
+	if ((config == NULL) || (config->x.adc > 1U) || (config->y.adc > 1U) ||
+	    (config->x.channel > qeiv2_adc_chn_opamp0) ||
+	    (config->y.channel > qeiv2_adc_chn_opamp0) ||
+	    (config->xy_delay > QEIV2_CAL_CFG_XY_DELAY_MASK)) {
+		return -EINVAL;
+	}
+
+	if ((data->active_mode != HPM_QEIV2_MODE_SINE) &&
+	    (data->active_mode != HPM_QEIV2_MODE_SIN_COS)) {
+		return -ENOTSUP;
+	}
+
+	if (config->enable_y != (data->active_mode == HPM_QEIV2_MODE_SIN_COS)) {
+		return -EINVAL;
+	}
+
+	sdk_x.adc_select = config->x.adc;
+	sdk_x.adc_channel = config->x.channel;
+	sdk_x.param0 = config->x.param0;
+	sdk_x.param1 = config->x.param1;
+	sdk_x.offset = config->x.offset;
+	sdk_y.adc_select = config->y.adc;
+	sdk_y.adc_channel = config->y.channel;
+	sdk_y.param0 = config->y.param0;
+	sdk_y.param1 = config->y.param1;
+	sdk_y.offset = config->y.offset;
+
+	key = k_spin_lock(&data->lock);
+	qeiv2_config_adcx(qeiv2->base, &sdk_x, true);
+	qeiv2_config_adcy(qeiv2->base, &sdk_y, config->enable_y);
+	qeiv2_set_adc_xy_delay(qeiv2->base, config->xy_delay);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_qeiv2_drv_configure_watchdog(const struct device *dev,
+					    const struct hpm_qeiv2_watchdog_config *config)
+{
+	const struct hpm_qeiv2_config *qeiv2 = dev->config;
+	struct hpm_qeiv2_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if ((config == NULL) || (config->clear_threshold > 7U) ||
+	    (config->timeout > QEIV2_WDGCFG_WDGTO_MASK) ||
+	    (config->enable && (config->timeout == 0U))) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	qeiv2_config_wdog(qeiv2->base, config->timeout, config->clear_threshold, config->enable);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_qeiv2_drv_configure_home(const struct device *dev,
+					const struct hpm_qeiv2_home_config *config)
+{
+	const struct hpm_qeiv2_config *qeiv2 = dev->config;
+	struct hpm_qeiv2_data *data = dev->data;
+	qeiv2_h_phase_config_t sdk_config;
+	k_spinlock_key_t key;
+
+	if (config == NULL) {
+		return -EINVAL;
+	}
+
+	sdk_config.h_rise_dir_forward = config->rising_forward;
+	sdk_config.h_rise_dir_reverse = config->rising_reverse;
+	sdk_config.h_fall_dir_forward = config->falling_forward;
+	sdk_config.h_fall_dir_reverse = config->falling_reverse;
+	sdk_config.h2_rise_dir_forward = config->rising_forward_home2;
+	sdk_config.h2_rise_dir_reverse = config->rising_reverse_home2;
+	sdk_config.h2_fall_dir_forward = config->falling_forward_home2;
+	sdk_config.h2_fall_dir_reverse = config->falling_reverse_home2;
+
+	key = k_spin_lock(&data->lock);
+	qeiv2_config_h_phase(qeiv2->base, &sdk_config);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_qeiv2_drv_configure_fault(const struct device *dev,
+					 const struct hpm_qeiv2_fault_config *config)
+{
+	const struct hpm_qeiv2_config *qeiv2 = dev->config;
+	struct hpm_qeiv2_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (config == NULL) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	qeiv2_pause_pos_counter_on_fault(qeiv2->base, config->pause_position);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_qeiv2_drv_set_event_route(const struct device *dev, enum hpm_qeiv2_event_route route,
+					 uint32_t event_mask, bool enable)
+{
+	const struct hpm_qeiv2_config *qeiv2 = dev->config;
+	struct hpm_qeiv2_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (((event_mask & ~HPM_QEIV2_EVENT_ALL) != 0U) ||
+	    ((unsigned int)route > HPM_QEIV2_EVENT_ROUTE_READ)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	switch (route) {
+	case HPM_QEIV2_EVENT_ROUTE_INTERRUPT:
+		if (enable) {
+			data->interrupt_route_mask |= event_mask;
+		} else {
+			data->interrupt_route_mask &= ~event_mask;
+		}
+		qeiv2_disable_irq(qeiv2->base, event_mask);
+		qeiv2_enable_irq(qeiv2->base,
+				 data->callback_event_mask | data->interrupt_route_mask);
+		break;
+	case HPM_QEIV2_EVENT_ROUTE_DMA:
+		if (enable) {
+			qeiv2_enable_dma_request(qeiv2->base, event_mask);
+		} else {
+			qeiv2_disable_dma_request(qeiv2->base, event_mask);
+		}
+		break;
+	case HPM_QEIV2_EVENT_ROUTE_TRIGGER:
+		if (enable) {
+			qeiv2_enable_trig_out_trigger_event(qeiv2->base, event_mask);
+		} else {
+			qeiv2_disable_trig_out_trigger_event(qeiv2->base, event_mask);
+		}
+		break;
+	case HPM_QEIV2_EVENT_ROUTE_READ:
+		if (enable) {
+			qeiv2_enable_load_read_trigger_event(qeiv2->base, event_mask);
+		} else {
+			qeiv2_disable_load_read_trigger_event(qeiv2->base, event_mask);
+		}
+		break;
+	}
+	k_spin_unlock(&data->lock, key);
 
 	return 0;
 }
@@ -430,13 +749,13 @@ static int hpm_qeiv2_drv_set_event_callback(const struct device *dev, uint32_t e
 	if ((callback == NULL) || (event_mask == 0U)) {
 		data->callback = NULL;
 		data->callback_user_data = NULL;
-		data->event_mask = 0U;
+		data->callback_event_mask = 0U;
 	} else {
 		data->callback = callback;
 		data->callback_user_data = user_data;
-		data->event_mask = event_mask;
-		qeiv2_enable_irq(config->base, event_mask);
+		data->callback_event_mask = event_mask;
 	}
+	qeiv2_enable_irq(config->base, data->callback_event_mask | data->interrupt_route_mask);
 	k_spin_unlock(&data->lock, key);
 
 	return 0;
@@ -450,9 +769,11 @@ static void hpm_qeiv2_isr(const struct device *dev)
 	void *user_data;
 	k_spinlock_key_t key;
 	uint32_t events;
+	uint32_t callback_events;
 
 	key = k_spin_lock(&data->lock);
-	events = qeiv2_get_status(config->base) & data->event_mask;
+	events = qeiv2_get_status(config->base) &
+		 (data->callback_event_mask | data->interrupt_route_mask);
 	if (events == 0U) {
 		k_spin_unlock(&data->lock, key);
 		return;
@@ -462,10 +783,11 @@ static void hpm_qeiv2_isr(const struct device *dev)
 	data->latched_events |= events;
 	callback = data->callback;
 	user_data = data->callback_user_data;
+	callback_events = events & data->callback_event_mask;
 	k_spin_unlock(&data->lock, key);
 
-	if (callback != NULL) {
-		callback(dev, events, user_data);
+	if ((callback != NULL) && (callback_events != 0U)) {
+		callback(dev, callback_events, user_data);
 	}
 }
 
@@ -478,6 +800,12 @@ static DEVICE_API(hpm_qeiv2, hpm_qeiv2_api) = {
 	.configure_mode = hpm_qeiv2_drv_configure_mode,
 	.configure_speed = hpm_qeiv2_drv_configure_speed,
 	.get_speed_snapshot = hpm_qeiv2_drv_get_speed_snapshot,
+	.speed_to_rpm = hpm_qeiv2_drv_speed_to_rpm,
+	.configure_sincos = hpm_qeiv2_drv_configure_sincos,
+	.configure_watchdog = hpm_qeiv2_drv_configure_watchdog,
+	.configure_home = hpm_qeiv2_drv_configure_home,
+	.configure_fault = hpm_qeiv2_drv_configure_fault,
+	.set_event_route = hpm_qeiv2_drv_set_event_route,
 	.configure_compare = hpm_qeiv2_drv_configure_compare,
 	.get_events = hpm_qeiv2_drv_get_events,
 	.clear_events = hpm_qeiv2_drv_clear_events,
@@ -504,6 +832,10 @@ static DEVICE_API(hpm_qeiv2, hpm_qeiv2_api) = {
 	BUILD_ASSERT(!DT_INST_PROP(n, z_calibration) ||                                            \
 			     (DT_INST_ENUM_IDX(n, mode) == HPM_QEIV2_MODE_ABZ),                    \
 		     "z-calibration requires ABZ mode");                                           \
+	BUILD_ASSERT(((DT_INST_ENUM_IDX(n, mode) != HPM_QEIV2_MODE_SINE) &&                        \
+		      (DT_INST_ENUM_IDX(n, mode) != HPM_QEIV2_MODE_SIN_COS)) ||                    \
+			     !DT_INST_PROP(n, z_calibration),                                      \
+		     "z-calibration is not supported by sine modes");                              \
                                                                                                    \
 	PINCTRL_DT_INST_DEFINE(n);                                                                 \
                                                                                                    \
@@ -522,6 +854,57 @@ static DEVICE_API(hpm_qeiv2, hpm_qeiv2_api) = {
 		.filter_length = DT_INST_PROP_OR(n, filter_length, 0),                             \
 		.mode = (enum hpm_qeiv2_mode)DT_INST_ENUM_IDX(n, mode),                            \
 		.z_calibration = DT_INST_PROP(n, z_calibration),                                   \
+		.sincos =                                                                          \
+			{                                                                          \
+				.x =                                                               \
+					{                                                          \
+						.adc = DT_INST_PROP_OR(n, sincos_x_adc, 0),        \
+						.channel =                                         \
+							DT_INST_PROP_OR(n, sincos_x_channel, 0),   \
+						.param0 = DT_INST_PROP(n, sincos_x_param0),        \
+						.param1 = DT_INST_PROP(n, sincos_x_param1),        \
+						.offset = DT_INST_PROP(n, sincos_x_offset),        \
+					},                                                         \
+				.y =                                                               \
+					{                                                          \
+						.adc = DT_INST_PROP_OR(n, sincos_y_adc, 0),        \
+						.channel =                                         \
+							DT_INST_PROP_OR(n, sincos_y_channel, 0),   \
+						.param0 = DT_INST_PROP(n, sincos_y_param0),        \
+						.param1 = DT_INST_PROP(n, sincos_y_param1),        \
+						.offset = DT_INST_PROP(n, sincos_y_offset),        \
+					},                                                         \
+				.enable_y = HPM_QEIV2_MODE_SIN_COS ==                              \
+					    (enum hpm_qeiv2_mode)DT_INST_ENUM_IDX(n, mode),        \
+				.xy_delay = DT_INST_PROP(n, sincos_xy_delay),                      \
+			},                                                                         \
+		.home =                                                                            \
+			{                                                                          \
+				.rising_forward = DT_INST_PROP_OR(n, home_rising_forward, false),  \
+				.rising_reverse = DT_INST_PROP_OR(n, home_rising_reverse, false),  \
+				.falling_forward =                                                 \
+					DT_INST_PROP_OR(n, home_falling_forward, false),           \
+				.falling_reverse =                                                 \
+					DT_INST_PROP_OR(n, home_falling_reverse, false),           \
+				.rising_forward_home2 =                                            \
+					DT_INST_PROP_OR(n, home2_rising_forward, false),           \
+				.rising_reverse_home2 =                                            \
+					DT_INST_PROP_OR(n, home2_rising_reverse, false),           \
+				.falling_forward_home2 =                                           \
+					DT_INST_PROP_OR(n, home2_falling_forward, false),          \
+				.falling_reverse_home2 =                                           \
+					DT_INST_PROP_OR(n, home2_falling_reverse, false),          \
+			},                                                                         \
+		.fault =                                                                           \
+			{                                                                          \
+				.pause_position = DT_INST_PROP_OR(n, fault_pause_position, false), \
+			},                                                                         \
+		.watchdog =                                                                        \
+			{                                                                          \
+				.enable = DT_INST_PROP(n, watchdog_timeout) != 0U,                 \
+				.timeout = DT_INST_PROP(n, watchdog_timeout),                      \
+				.clear_threshold = DT_INST_PROP(n, watchdog_clear_threshold),      \
+			},                                                                         \
 		.irq_config_func = hpm_qeiv2_irq_config_##n,                                       \
 	};                                                                                         \
                                                                                                    \

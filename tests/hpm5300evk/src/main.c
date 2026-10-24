@@ -392,8 +392,30 @@ ZTEST(hpm5300evk, test_devices_ready)
 		.value = 0x40000000U,
 		.ignore_direction = true,
 	};
+	const struct hpm_qeiv2_sincos_config qei_sincos = {
+		.x = {.adc = 0U, .channel = 4U, .param0 = 0x4000, .offset = 0x80000000U},
+		.y = {.adc = 1U, .channel = 5U, .param1 = 0x4000, .offset = 0x80000000U},
+		.enable_y = true,
+		.xy_delay = 64U,
+	};
+	const struct hpm_qeiv2_home_config qei_home = {
+		.rising_forward = true,
+		.falling_reverse = true,
+		.rising_forward_home2 = true,
+	};
+	const struct hpm_qeiv2_fault_config qei_fault = {
+		.pause_position = true,
+	};
+	struct hpm_qeiv2_watchdog_config qei_watchdog = {
+		.enable = true,
+		.timeout = 1000000U,
+		.clear_threshold = 2U,
+	};
+	struct hpm_qeiv2_sincos_config qei_sincos_invalid = qei_sincos;
 	struct hpm_qeiv2_speed_snapshot qei_speed;
+	struct sensor_value qei_rpm;
 	struct sensor_value qei_value;
+	uint32_t qei_clock_rate;
 	uint32_t qei_events;
 
 	zassert_true(device_is_ready(qei));
@@ -419,6 +441,57 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(hpm_qeiv2_configure_mode(qei, &qei_mode), -EINVAL);
 	qei_mode.z_calibration_ignore_ab = false;
 	zassert_equal(hpm_qeiv2_configure_mode(qei, NULL), -EINVAL);
+	qei_mode.mode = HPM_QEIV2_MODE_SINGLE;
+	zassert_ok(hpm_qeiv2_configure_mode(qei, &qei_mode));
+	qei_mode.mode = HPM_QEIV2_MODE_SIN_COS;
+	zassert_ok(hpm_qeiv2_configure_mode(qei, &qei_mode));
+	zassert_ok(hpm_qeiv2_configure_sincos(qei, &qei_sincos));
+	qei_sincos_invalid.enable_y = false;
+	zassert_equal(hpm_qeiv2_configure_sincos(qei, &qei_sincos_invalid), -EINVAL);
+	qei_sincos_invalid = qei_sincos;
+	qei_sincos_invalid.x.adc = 2U;
+	zassert_equal(hpm_qeiv2_configure_sincos(qei, &qei_sincos_invalid), -EINVAL);
+	qei_sincos_invalid = qei_sincos;
+	qei_sincos_invalid.y.channel = 16U;
+	zassert_equal(hpm_qeiv2_configure_sincos(qei, &qei_sincos_invalid), -EINVAL);
+	zassert_equal(hpm_qeiv2_configure_sincos(qei, NULL), -EINVAL);
+	qei_mode.mode = HPM_QEIV2_MODE_SINE;
+	zassert_ok(hpm_qeiv2_configure_mode(qei, &qei_mode));
+	qei_sincos_invalid = qei_sincos;
+	qei_sincos_invalid.enable_y = false;
+	zassert_ok(hpm_qeiv2_configure_sincos(qei, &qei_sincos_invalid));
+	zassert_equal(hpm_qeiv2_configure_sincos(qei, &qei_sincos), -EINVAL);
+	qei_mode.mode = HPM_QEIV2_MODE_ABZ;
+	zassert_ok(hpm_qeiv2_configure_mode(qei, &qei_mode));
+	zassert_equal(hpm_qeiv2_configure_sincos(qei, &qei_sincos), -ENOTSUP);
+	zassert_ok(hpm_qeiv2_configure_home(qei, &qei_home));
+	zassert_equal(hpm_qeiv2_configure_home(qei, NULL), -EINVAL);
+	zassert_ok(hpm_qeiv2_configure_fault(qei, &qei_fault));
+	zassert_equal(hpm_qeiv2_configure_fault(qei, NULL), -EINVAL);
+	zassert_ok(hpm_qeiv2_configure_watchdog(qei, &qei_watchdog));
+	qei_watchdog.clear_threshold = 8U;
+	zassert_equal(hpm_qeiv2_configure_watchdog(qei, &qei_watchdog), -EINVAL);
+	qei_watchdog.clear_threshold = 2U;
+	qei_watchdog.timeout = 0U;
+	zassert_equal(hpm_qeiv2_configure_watchdog(qei, &qei_watchdog), -EINVAL);
+	qei_watchdog.enable = false;
+	zassert_ok(hpm_qeiv2_configure_watchdog(qei, &qei_watchdog));
+	zassert_equal(hpm_qeiv2_configure_watchdog(qei, NULL), -EINVAL);
+	zassert_ok(hpm_qeiv2_set_event_route(qei, HPM_QEIV2_EVENT_ROUTE_INTERRUPT,
+					     HPM_QEIV2_EVENT_WATCHDOG, true));
+	zassert_ok(hpm_qeiv2_set_event_route(qei, HPM_QEIV2_EVENT_ROUTE_DMA, HPM_QEIV2_EVENT_HOME,
+					     true));
+	zassert_ok(hpm_qeiv2_set_event_route(qei, HPM_QEIV2_EVENT_ROUTE_TRIGGER,
+					     HPM_QEIV2_EVENT_Z_PHASE, true));
+	zassert_ok(hpm_qeiv2_set_event_route(qei, HPM_QEIV2_EVENT_ROUTE_READ,
+					     HPM_QEIV2_EVENT_POSITION_COMPARE, true));
+	zassert_ok(hpm_qeiv2_set_event_route(qei, HPM_QEIV2_EVENT_ROUTE_INTERRUPT,
+					     HPM_QEIV2_EVENT_WATCHDOG, false));
+	zassert_equal(hpm_qeiv2_set_event_route(qei, (enum hpm_qeiv2_event_route)4,
+						HPM_QEIV2_EVENT_HOME, true),
+		      -EINVAL);
+	zassert_equal(hpm_qeiv2_set_event_route(qei, HPM_QEIV2_EVENT_ROUTE_DMA, BIT(0), true),
+		      -EINVAL);
 	zassert_ok(sensor_sample_fetch_chan(qei, SENSOR_CHAN_ENCODER_COUNT));
 	zassert_ok(sensor_channel_get(qei, SENSOR_CHAN_ENCODER_COUNT, &qei_value));
 	zassert_ok(hpm_qeiv2_configure_speed(qei, 0U, 64U, 2500000U));
@@ -429,6 +502,43 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(hpm_qeiv2_configure_speed(qei, 0U, 1U, 0U), -EINVAL);
 	zassert_ok(hpm_qeiv2_get_speed_snapshot(qei, 0U, &qei_speed));
 	zassert_equal(hpm_qeiv2_get_speed_snapshot(qei, 1U, NULL), -EINVAL);
+	zassert_ok(clock_control_get_rate(DEVICE_DT_GET(DT_CLOCKS_CTLR(QEI0_NODE)),
+					  (clock_control_subsys_t)DT_CLOCKS_CELL(QEI0_NODE, name),
+					  &qei_clock_rate));
+	zassert_ok(hpm_qeiv2_configure_speed(qei, 0U, 4096U, 1000000U));
+	memset(&qei_speed, 0, sizeof(qei_speed));
+	qei_speed.pulse_based_cycles = qei_clock_rate;
+	zassert_ok(hpm_qeiv2_speed_to_rpm(qei, 0U, HPM_QEIV2_SPEED_SOURCE_PULSE, &qei_speed,
+					  &qei_rpm));
+	zassert_equal(qei_rpm.val1, 60);
+	zassert_equal(qei_rpm.val2, 0);
+	qei_speed.reverse = true;
+	zassert_ok(hpm_qeiv2_speed_to_rpm(qei, 0U, HPM_QEIV2_SPEED_SOURCE_PULSE, &qei_speed,
+					  &qei_rpm));
+	zassert_equal(qei_rpm.val1, -60);
+	zassert_equal(qei_rpm.val2, 0);
+	qei_speed.duration_based_pulses = 4096U;
+	qei_speed.duration_based_cycles = qei_clock_rate;
+	zassert_ok(hpm_qeiv2_speed_to_rpm(qei, 0U, HPM_QEIV2_SPEED_SOURCE_DURATION, &qei_speed,
+					  &qei_rpm));
+	zassert_equal(qei_rpm.val1, -60);
+	zassert_equal(qei_rpm.val2, 0);
+	qei_speed.duration_based_cycles--;
+	zassert_equal(hpm_qeiv2_speed_to_rpm(qei, 0U, HPM_QEIV2_SPEED_SOURCE_DURATION, &qei_speed,
+					     &qei_rpm),
+		      -EDOM);
+	qei_speed.pulse_based_cycles = 0U;
+	zassert_equal(
+		hpm_qeiv2_speed_to_rpm(qei, 0U, HPM_QEIV2_SPEED_SOURCE_PULSE, &qei_speed, &qei_rpm),
+		-EDOM);
+	zassert_equal(hpm_qeiv2_speed_to_rpm(qei, 0U, (enum hpm_qeiv2_speed_source)2, &qei_speed,
+					     &qei_rpm),
+		      -EINVAL);
+	zassert_equal(hpm_qeiv2_speed_to_rpm(qei, 0U, HPM_QEIV2_SPEED_SOURCE_PULSE, NULL, &qei_rpm),
+		      -EINVAL);
+	zassert_equal(
+		hpm_qeiv2_speed_to_rpm(qei, 0U, HPM_QEIV2_SPEED_SOURCE_PULSE, &qei_speed, NULL),
+		-EINVAL);
 	zassert_ok(hpm_qeiv2_configure_compare(qei, 0U, &qei_compare));
 	zassert_equal(hpm_qeiv2_configure_compare(qei, 1U, &qei_compare_conflict), -ENOTSUP);
 	zassert_ok(hpm_qeiv2_configure_mode(qei, &qei_mode));

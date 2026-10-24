@@ -4,10 +4,11 @@
 description: |
   HPMicro QEIV2 quadrature encoder interface.
 
-  The driver covers square-wave ABZ quadrature, pulse/direction, up/down and
-  UVW decoding. The phase counter wraps at counts-per-revolution and the
-  controller's angle output is exposed through the generic sensor rotation
-  channel. Sine/cosine ADC modes are not supported.
+  The driver covers square-wave ABZ quadrature, pulse/direction, up/down,
+  single-phase, UVW and ADC sine/cosine decoding. The phase counter wraps at
+  counts-per-revolution and the controller's angle output is exposed through
+  the generic sensor rotation channel. ADC sampling and TRGM routing remain
+  owned by the ADC and TRGM drivers.
 
 compatible: "hpmicro,hpm-qeiv2"
 
@@ -42,9 +43,13 @@ properties:
       - "pulse-direction"
       - "up-down"
       - "uvw"
+      - "single"
+      - "sine"
+      - "sine-cosine"
     description: |
-      Square-wave input decoding mode. UVW uses A/U, B/V and Z/W and installs
-      the six default UVW position codes from the vendor driver.
+      Input decoding mode. UVW uses A/U, B/V and Z/W and installs the six
+      default UVW position codes from the vendor driver. The sine modes require
+      the corresponding sincos-* properties and external ADC/TRGM setup.
 
   counts-per-revolution:
     type: int
@@ -73,3 +78,122 @@ properties:
     description: |
       Digital delay-filter length applied to the A and B inputs. Zero disables
       the filter.
+
+  sincos-xy-delay:
+    type: int
+    default: 0
+    min: 0
+    max: 16777215
+    description: |
+      ADC X/Y sampling delay in QEIV2 clock cycles. ADC sampling, the sample
+      trigger and the TRGM ADC matrix are not configured by this driver.
+
+  sincos-x-adc:
+    type: int
+    default: 0
+    min: 0
+    max: 1
+    description: ADC instance feeding the X channel.
+
+  sincos-x-channel:
+    type: int
+    default: 0
+    min: 0
+    max: 15
+    description: ADC channel feeding the X channel.
+
+  sincos-x-param0:
+    type: int
+    default: 16384
+    description: Q14 correction coefficient for the X channel.
+
+  sincos-x-param1:
+    type: int
+    default: 0
+    description: Q14 cross-axis correction coefficient for the X channel.
+
+  sincos-x-offset:
+    type: int
+    default: -2147483648
+    description: ADC value subtracted from the X sample before decoding.
+
+  sincos-y-adc:
+    type: int
+    default: 0
+    min: 0
+    max: 1
+    description: ADC instance feeding the Y channel.
+
+  sincos-y-channel:
+    type: int
+    default: 0
+    min: 0
+    max: 15
+    description: ADC channel feeding the Y channel.
+
+  sincos-y-param0:
+    type: int
+    default: 0
+    description: Q14 cross-axis correction coefficient for the Y channel.
+
+  sincos-y-param1:
+    type: int
+    default: 16384
+    description: Q14 correction coefficient for the Y channel.
+
+  sincos-y-offset:
+    type: int
+    default: -2147483648
+    description: ADC value subtracted from the Y sample before decoding.
+
+  watchdog-timeout:
+    type: int
+    default: 0
+    min: 0
+    max: 268435455
+    description: Stall watchdog timeout in QEIV2 clock cycles; zero disables it.
+
+  watchdog-clear-threshold:
+    type: int
+    default: 0
+    min: 0
+    max: 7
+    description: |
+      Minimum phase-counter change that clears the watchdog. Zero clears on
+      every phase-counter change.
+
+  home-rising-forward:
+    type: boolean
+    description: Set the HOME flag on H0 rising edges while rotating forward.
+
+  home-rising-reverse:
+    type: boolean
+    description: Set the HOME flag on H0 rising edges while rotating reverse.
+
+  home-falling-forward:
+    type: boolean
+    description: Set the HOME flag on H0 falling edges while rotating forward.
+
+  home-falling-reverse:
+    type: boolean
+    description: Set the HOME flag on H0 falling edges while rotating reverse.
+
+  home2-rising-forward:
+    type: boolean
+    description: Set the HOME2 flag on H1 rising edges while rotating forward.
+
+  home2-rising-reverse:
+    type: boolean
+    description: Set the HOME2 flag on H1 rising edges while rotating reverse.
+
+  home2-falling-forward:
+    type: boolean
+    description: Set the HOME2 flag on H1 falling edges while rotating forward.
+
+  home2-falling-reverse:
+    type: boolean
+    description: Set the HOME2 flag on H1 falling edges while rotating reverse.
+
+  fault-pause-position:
+    type: boolean
+    description: Suppress valid position output while the fault input is asserted.

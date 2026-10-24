@@ -37,6 +37,38 @@ enum hpm_qeiv2_mode {
 	HPM_QEIV2_MODE_UP_DOWN,
 	/** Three-phase U/V/W input on A/B/Z. */
 	HPM_QEIV2_MODE_UVW,
+	/** Single-phase pulse input on A. */
+	HPM_QEIV2_MODE_SINGLE,
+	/** Single sine input on ADC X; requires hpm_qeiv2_configure_sincos(). */
+	HPM_QEIV2_MODE_SINE,
+	/** Orthogonal sine/cosine input on ADC X/Y. */
+	HPM_QEIV2_MODE_SIN_COS,
+};
+
+/** ADC input selection for sine/cosine decoding. */
+struct hpm_qeiv2_adc_config {
+	/** ADC instance index. */
+	uint8_t adc;
+	/** ADC channel index in the QEIV2 ADC channel namespace. */
+	uint8_t channel;
+	/** Q14 correction coefficient for the selected ADC input. */
+	int16_t param0;
+	/** Q14 correction coefficient for the other ADC input. */
+	int16_t param1;
+	/** Value subtracted from the unsigned ADC sample. */
+	uint32_t offset;
+};
+
+/** Sine/cosine decoder configuration. */
+struct hpm_qeiv2_sincos_config {
+	/** X-axis ADC source. */
+	struct hpm_qeiv2_adc_config x;
+	/** Y-axis ADC source. */
+	struct hpm_qeiv2_adc_config y;
+	/** Enable the Y input; must match the configured decoder mode. */
+	bool enable_y;
+	/** ADC X/Y sampling delay in QEIV2 clock cycles. */
+	uint32_t xy_delay;
 };
 
 /** Runtime decoder configuration. */
@@ -99,6 +131,58 @@ struct hpm_qeiv2_compare_config {
 	uint32_t z_value;
 };
 
+/** Edge and direction conditions that set the HOME flags. */
+struct hpm_qeiv2_home_config {
+	/** Match H0 rising edge while rotating forward. */
+	bool rising_forward;
+	/** Match H0 rising edge while rotating reverse. */
+	bool rising_reverse;
+	/** Match H0 falling edge while rotating forward. */
+	bool falling_forward;
+	/** Match H0 falling edge while rotating reverse. */
+	bool falling_reverse;
+	/** Match H1 rising edge while rotating forward. */
+	bool rising_forward_home2;
+	/** Match H1 rising edge while rotating reverse. */
+	bool rising_reverse_home2;
+	/** Match H1 falling edge while rotating forward. */
+	bool falling_forward_home2;
+	/** Match H1 falling edge while rotating reverse. */
+	bool falling_reverse_home2;
+};
+
+/** Fault input behavior. */
+struct hpm_qeiv2_fault_config {
+	/** Suppress valid position output while the fault input is asserted. */
+	bool pause_position;
+};
+
+/** Watchdog configuration. */
+struct hpm_qeiv2_watchdog_config {
+	/** Enable the stall watchdog. */
+	bool enable;
+	/** Timeout in QEIV2 clock cycles. */
+	uint32_t timeout;
+	/** Minimum phase-counter change that clears the watchdog; zero clears on any change. */
+	uint8_t clear_threshold;
+};
+
+/** QEIV2 event routing targets. */
+enum hpm_qeiv2_event_route {
+	HPM_QEIV2_EVENT_ROUTE_INTERRUPT,
+	HPM_QEIV2_EVENT_ROUTE_DMA,
+	HPM_QEIV2_EVENT_ROUTE_TRIGGER,
+	HPM_QEIV2_EVENT_ROUTE_READ,
+};
+
+/** Speed snapshot source used for RPM conversion. */
+enum hpm_qeiv2_speed_source {
+	/** Use pulse_based_cycles. */
+	HPM_QEIV2_SPEED_SOURCE_PULSE,
+	/** Use duration_based_pulses and duration_based_cycles. */
+	HPM_QEIV2_SPEED_SOURCE_DURATION,
+};
+
 /** Raw snapshots produced by the pulse-count and duration-based speed counters. */
 struct hpm_qeiv2_speed_snapshot {
 	/** Cycles elapsed for the configured pulse count (latest sample). */
@@ -113,6 +197,8 @@ struct hpm_qeiv2_speed_snapshot {
 	uint32_t duration_based_cycles;
 	/** Cycles observed for the configured cycle count (previous sample). */
 	uint32_t duration_based_cycles_previous;
+	/** Current encoder direction when the snapshot was read. */
+	bool reverse;
 };
 
 /**
@@ -134,6 +220,19 @@ __subsystem struct hpm_qeiv2_driver_api {
 			       uint32_t cycle_count);
 	int (*get_speed_snapshot)(const struct device *dev, uint8_t channel,
 				  struct hpm_qeiv2_speed_snapshot *snapshot);
+	int (*speed_to_rpm)(const struct device *dev, uint8_t channel,
+			    enum hpm_qeiv2_speed_source source,
+			    const struct hpm_qeiv2_speed_snapshot *snapshot,
+			    struct sensor_value *rpm);
+	int (*configure_sincos)(const struct device *dev,
+				const struct hpm_qeiv2_sincos_config *config);
+	int (*configure_watchdog)(const struct device *dev,
+				  const struct hpm_qeiv2_watchdog_config *config);
+	int (*configure_home)(const struct device *dev, const struct hpm_qeiv2_home_config *config);
+	int (*configure_fault)(const struct device *dev,
+			       const struct hpm_qeiv2_fault_config *config);
+	int (*set_event_route)(const struct device *dev, enum hpm_qeiv2_event_route route,
+			       uint32_t event_mask, bool enable);
 	int (*configure_compare)(const struct device *dev, uint8_t channel,
 				 const struct hpm_qeiv2_compare_config *config);
 	int (*get_events)(const struct device *dev, uint32_t *events);
@@ -150,7 +249,8 @@ DEVICE_API_EXTENDS(hpm_qeiv2, sensor, sensor_api);
  *
  * The driver resets the position state, clears pending events and invalidates
  * comparator source selection. In UVW mode the six default position codes are
- * installed using the SDK defaults. Sine/cosine ADC modes are not supported.
+ * installed using the SDK defaults. Sine modes additionally require
+ * hpm_qeiv2_configure_sincos() before the decoder can produce a position.
  *
  * @param dev QEIV2 device.
  * @param config Decoder configuration.
@@ -200,6 +300,119 @@ static inline int hpm_qeiv2_get_speed_snapshot(const struct device *dev, uint8_t
 					       struct hpm_qeiv2_speed_snapshot *snapshot)
 {
 	return DEVICE_API_GET(hpm_qeiv2, dev)->get_speed_snapshot(dev, channel, snapshot);
+}
+
+/**
+ * @brief Convert a hardware speed snapshot to revolutions per minute.
+ *
+ * The result is signed according to the encoder direction observed when the
+ * snapshot was read. A zero measurement window means that no complete sample
+ * is available yet. The configured pulse count and counts-per-revolution must
+ * use the same pulse/count unit.
+ *
+ * @param dev QEIV2 device.
+ * @param channel Speed channel, from 0 through 1.
+ * @param source Hardware speed measurement path to use.
+ * @param snapshot Snapshot returned by hpm_qeiv2_get_speed_snapshot().
+ * @param rpm Output speed in revolutions per minute.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for an invalid argument or a channel without speed setup.
+ * @retval -EDOM if no complete measurement window has been captured.
+ * @retval -ERANGE if the result cannot be represented.
+ */
+static inline int hpm_qeiv2_speed_to_rpm(const struct device *dev, uint8_t channel,
+					 enum hpm_qeiv2_speed_source source,
+					 const struct hpm_qeiv2_speed_snapshot *snapshot,
+					 struct sensor_value *rpm)
+{
+	return DEVICE_API_GET(hpm_qeiv2, dev)->speed_to_rpm(dev, channel, source, snapshot, rpm);
+}
+
+/**
+ * @brief Configure sine/cosine ADC input and correction.
+ *
+ * This configures only the QEIV2 ADC source selectors, offset, correction and
+ * X/Y delay. ADC sampling, TRGM ADC matrix routing and the sample trigger must
+ * be configured by their owning drivers.
+ *
+ * @param dev QEIV2 device.
+ * @param config ADC source and correction configuration.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for an invalid configuration.
+ * @retval -ENOTSUP if the current decoder mode is not a sine mode.
+ */
+static inline int hpm_qeiv2_configure_sincos(const struct device *dev,
+					     const struct hpm_qeiv2_sincos_config *config)
+{
+	return DEVICE_API_GET(hpm_qeiv2, dev)->configure_sincos(dev, config);
+}
+
+/**
+ * @brief Configure the stall watchdog.
+ *
+ * @param dev QEIV2 device.
+ * @param config Watchdog configuration.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for an invalid timeout, clear threshold or enabled zero timeout.
+ */
+static inline int hpm_qeiv2_configure_watchdog(const struct device *dev,
+					       const struct hpm_qeiv2_watchdog_config *config)
+{
+	return DEVICE_API_GET(hpm_qeiv2, dev)->configure_watchdog(dev, config);
+}
+
+/**
+ * @brief Configure HOME0/HOME1 edge and direction matching.
+ *
+ * @param dev QEIV2 device.
+ * @param config HOME configuration.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL if @p config is NULL.
+ */
+static inline int hpm_qeiv2_configure_home(const struct device *dev,
+					   const struct hpm_qeiv2_home_config *config)
+{
+	return DEVICE_API_GET(hpm_qeiv2, dev)->configure_home(dev, config);
+}
+
+/**
+ * @brief Configure fault input behavior.
+ *
+ * @param dev QEIV2 device.
+ * @param config Fault configuration.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL if @p config is NULL.
+ */
+static inline int hpm_qeiv2_configure_fault(const struct device *dev,
+					    const struct hpm_qeiv2_fault_config *config)
+{
+	return DEVICE_API_GET(hpm_qeiv2, dev)->configure_fault(dev, config);
+}
+
+/**
+ * @brief Route QEIV2 events to interrupt, DMA, trigger or read outputs.
+ *
+ * Masked events are enabled or disabled atomically. Event flags are not
+ * cleared by this operation. Interrupt routing coexists with the callback API.
+ *
+ * @param dev QEIV2 device.
+ * @param route Routing target.
+ * @param event_mask Combination of HPM_QEIV2_EVENT_* flags.
+ * @param enable True to enable, false to disable.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for an invalid route or event mask.
+ */
+static inline int hpm_qeiv2_set_event_route(const struct device *dev,
+					    enum hpm_qeiv2_event_route route, uint32_t event_mask,
+					    bool enable)
+{
+	return DEVICE_API_GET(hpm_qeiv2, dev)->set_event_route(dev, route, event_mask, enable);
 }
 
 /**
@@ -253,7 +466,8 @@ static inline int hpm_qeiv2_clear_events(const struct device *dev, uint32_t even
 /**
  * @brief Enable an event interrupt and install a callback.
  *
- * Passing a NULL callback or a zero mask disables all QEIV2 interrupts.
+ * Passing a NULL callback or a zero mask removes the callback. Interrupts
+ * requested through hpm_qeiv2_set_event_route() remain enabled.
  * The callback runs in interrupt context.
  *
  * @param dev QEIV2 device.
