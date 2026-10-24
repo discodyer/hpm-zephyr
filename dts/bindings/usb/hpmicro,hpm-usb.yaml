@@ -29,3 +29,9 @@ properties:
     type: int
     required: true
     description: Number of bidirectional USB endpoints.
+
+  hpmicro,power-control-active-high:
+    type: boolean
+    description: |
+      Select active-high polarity for the USB0 power-control output. The
+      HPM5300EVK uses an active-high USB0_PWR signal.

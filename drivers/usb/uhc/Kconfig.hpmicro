@@ -1,0 +1,52 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+config UHC_HPMICRO
+	bool "HPMicro USB host controller driver"
+	default y if HPMICRO_USB_ROLE_HOST
+	depends on DT_HAS_HPMICRO_HPM_USB_ENABLED
+	depends on HPMICRO_USB_ROLE_HOST
+	depends on UHC_DRIVER
+	depends on CLOCK_CONTROL
+	depends on PINCTRL
+	depends on HAS_HPMSDK_USB
+	depends on ARCH_HAS_NOCACHE_MEMORY_SUPPORT
+	select USE_HPMSDK_USB
+	select EVENTS
+	select NOCACHE_MEMORY
+	select UHC_BUF_FORCE_NOCACHE
+	help
+	  Zephyr UHC driver for the HPMicro USB0 controller. Host transfers use
+	  Zephyr's native EHCI queue-head/qTD engine; the unmodified SDK HAL is
+	  used only for PHY and controller bring-up.
+
+if UHC_HPMICRO
+
+config UHC_HPMICRO_THREAD_STACK_SIZE
+	int "HPMicro UHC driver thread stack size"
+	default 2048
+	help
+	  Stack size for the HPMicro UHC port event thread.
+
+config UHC_HPMICRO_THREAD_PRIORITY
+	int "HPMicro UHC driver thread priority"
+	default 8
+	help
+	  Priority for the HPMicro UHC port event thread.
+
+config UHC_HPMICRO_QH_COUNT
+	int "Number of EHCI queue heads"
+	range 2 32
+	default 8
+	help
+	  Number of queue heads available to host transfers.
+
+config UHC_HPMICRO_QTD_COUNT
+	int "Number of EHCI transfer descriptors"
+	range 8 128
+	default 24
+	help
+	  Number of qTDs available to host transfers. Each qTD carries at most
+	  4 KiB of transfer data.
+
+endif # UHC_HPMICRO

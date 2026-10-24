@@ -1,0 +1,22 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_USB := hpmicro,hpm-usb
+
+choice HPMICRO_USB_ROLE
+	prompt "HPMicro USB0 role"
+	default HPMICRO_USB_ROLE_DEVICE
+	depends on DT_HAS_HPMICRO_HPM_USB_ENABLED
+	help
+	  HPM USB0 is a single OTG controller with one interrupt. Select the
+	  role compiled into this image. Runtime dual-role switching is not yet
+	  supported because the Zephyr host and device stacks have independent
+	  lifetimes.
+
+config HPMICRO_USB_ROLE_DEVICE
+	bool "Device"
+
+config HPMICRO_USB_ROLE_HOST
+	bool "Host"
+
+endchoice

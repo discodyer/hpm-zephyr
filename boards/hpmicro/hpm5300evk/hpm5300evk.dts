@@ -59,6 +59,12 @@
 	pinctrl-names = "default";
 };
 
+&usb0 {
+	hpmicro,power-control-active-high;
+	pinctrl-0 = <&py00_usb0_id &py01_usb0_oc &py02_usb0_pwr>;
+	pinctrl-names = "default";
+};
+
 &gpioa {
 	status = "okay";
 };

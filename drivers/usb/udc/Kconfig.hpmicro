@@ -1,12 +1,11 @@
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-DT_COMPAT_HPM_USB := hpmicro,hpm-usb
-
 config UDC_HPMICRO
 	bool "HPMicro USB device controller driver"
-	default y
+	default y if HPMICRO_USB_ROLE_DEVICE
 	depends on DT_HAS_HPMICRO_HPM_USB_ENABLED
+	depends on HPMICRO_USB_ROLE_DEVICE
 	depends on UDC_DRIVER
 	depends on ARCH_HAS_NOCACHE_MEMORY_SUPPORT
 	depends on CLOCK_CONTROL
