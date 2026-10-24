@@ -19,6 +19,17 @@ properties:
   interrupts:
     required: true
 
+  interrupt-names:
+    required: true
+    min-len: 2
+    max-len: 2
+    enum:
+      - "channel0"
+      - "channel1"
+    description: |
+      SEI channel interrupt names. The two entries must be "channel0" and
+      "channel1" in the same order as the interrupts property.
+
   clocks:
     required: true
 

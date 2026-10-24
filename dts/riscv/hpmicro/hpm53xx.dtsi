@@ -739,6 +739,7 @@
 			compatible = "hpmicro,hpm-sei";
 			reg = <0xf032c000 0x4000>;
 			interrupts = <42 1>, <47 1>;
+			interrupt-names = "channel0", "channel1";
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_MOT0 CLK_SRC_OSC24M 1>;
 			clock-names = "sei";

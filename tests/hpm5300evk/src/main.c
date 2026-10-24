@@ -772,7 +772,19 @@ ZTEST(hpm5300evk, test_devices_ready)
 		.data_base_register = HPM_SEI_DATA_REGISTER_0,
 		.command_data_register = HPM_SEI_DATA_REGISTER_1,
 	};
+	const struct hpm_sei_trigger_input_config sei_trigger_input = {
+		.input0_enable = true,
+		.input0_select = 1U,
+		.periodic_enable = true,
+		.periodic_cycles = 12000U,
+	};
+	const struct hpm_sei_trigger_output_config sei_trigger_output = {
+		.enable = true,
+		.latch = 3U,
+	};
+	struct hpm_sei_trigger_status sei_trigger_status;
 	uint32_t sei_value;
+	uint32_t sei_events;
 	struct hpm_sei_status sei_status;
 
 	zassert_true(device_is_ready(sei));
@@ -783,10 +795,35 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_sei_configure_sample(sei, HPM_SEI_CHANNEL_0, &sei_sample));
 	zassert_ok(hpm_sei_configure_update(sei, HPM_SEI_CHANNEL_0, &sei_update));
 	zassert_ok(hpm_sei_configure_engine(sei, HPM_SEI_CHANNEL_0, &sei_engine));
+	zassert_ok(hpm_sei_configure_trigger_input(sei, HPM_SEI_CHANNEL_0, &sei_trigger_input));
+	zassert_ok(hpm_sei_configure_trigger_output(sei, HPM_SEI_CHANNEL_0, 0U,
+						    &sei_trigger_output));
+	zassert_ok(hpm_sei_set_trigger_command(sei, HPM_SEI_CHANNEL_0,
+					       HPM_SEI_TRIGGER_COMMAND_PERIODIC, 0x07U));
+	zassert_ok(hpm_sei_get_trigger_status(sei, HPM_SEI_CHANNEL_0, &sei_trigger_status));
+	zassert_equal(hpm_sei_configure_trigger_input(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
+	zassert_equal(hpm_sei_configure_trigger_output(sei, HPM_SEI_CHANNEL_0,
+						       HPM_SEI_TRIGGER_OUTPUTS,
+						       &sei_trigger_output),
+		      -EINVAL);
+	zassert_equal(hpm_sei_set_trigger_command(sei, HPM_SEI_CHANNEL_0,
+						  (enum hpm_sei_trigger_command)4, 0U),
+		      -EINVAL);
+	zassert_equal(hpm_sei_get_trigger_status(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
 	zassert_ok(hpm_sei_set_data(sei, HPM_SEI_DATA_REGISTER_2, 0x123U));
 	zassert_ok(hpm_sei_get_data(sei, HPM_SEI_DATA_REGISTER_2, &sei_value));
 	zassert_equal(sei_value, 0x123U);
 	zassert_ok(hpm_sei_get_status(sei, HPM_SEI_CHANNEL_0, &sei_status));
+	zassert_ok(hpm_sei_get_events(sei, HPM_SEI_CHANNEL_0, &sei_events));
+	zassert_ok(hpm_sei_clear_events(sei, HPM_SEI_CHANNEL_0, HPM_SEI_EVENT_ALL));
+	zassert_equal(hpm_sei_clear_events(sei, HPM_SEI_CHANNEL_0, BIT(3)), -EINVAL);
+	zassert_equal(hpm_sei_get_events(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
+	zassert_ok(hpm_sei_set_event_callback(sei, HPM_SEI_CHANNEL_0, HPM_SEI_EVENT_ALL, NULL,
+					      NULL));
+	zassert_ok(hpm_sei_set_event_callback(sei, HPM_SEI_CHANNEL_1,
+					      HPM_SEI_EVENT_TRANSFER_ERROR, NULL, NULL));
+	zassert_equal(hpm_sei_set_event_callback(sei, HPM_SEI_CHANNEL_0, BIT(3), NULL, NULL),
+		      -EINVAL);
 	zassert_ok(hpm_sei_enable(sei, HPM_SEI_CHANNEL_0, true));
 	zassert_ok(hpm_sei_enable(sei, HPM_SEI_CHANNEL_0, false));
 #endif

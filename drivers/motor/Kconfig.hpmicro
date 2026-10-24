@@ -27,8 +27,9 @@ config SEI_HPMICRO
 	select USE_HPMSDK_SEI
 	help
 	  Enable the HPMicro serial encoder interface. This is a protocol-neutral
-	  execution layer for transceiver, instruction, latch, SAMPLE/UPDATE and
-	  engine configuration. Encoder protocols are implemented by consumers.
+	  execution layer for transceiver, instruction, latch, SAMPLE/UPDATE,
+	  engine, trigger and interrupt configuration. Encoder protocols are
+	  implemented by consumers.
 
 DT_COMPAT_HPM_MMC := hpmicro,hpm-mmc
 

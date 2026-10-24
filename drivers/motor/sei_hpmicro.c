@@ -11,6 +11,7 @@
 #include <zephyr/device.h>
 #include <drivers/motor/hpmicro_sei.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/irq.h>
 #include <zephyr/kernel.h>
 
 #include <hpm_common.h>
@@ -32,16 +33,35 @@ BUILD_ASSERT((int)HPM_SEI_TRANSITION_HIGH_MATCH == (int)sei_state_tran_condition
 BUILD_ASSERT((int)HPM_SEI_TRANSITION_LOW_DISMATCH == (int)sei_state_tran_condition_low_dismatch);
 BUILD_ASSERT((int)HPM_SEI_TRANSITION_RISE_ENTRY == (int)sei_state_tran_condition_rise_entry);
 BUILD_ASSERT((int)HPM_SEI_TRANSITION_FALL_LEAVE == (int)sei_state_tran_condition_fall_leave);
+BUILD_ASSERT(HPM_SEI_EVENT_ALL ==
+	     (SEI_CTRL_IRQ_INT_FLAG_STALL_MASK | SEI_CTRL_IRQ_INT_FLAG_EXCEPT_MASK |
+	      SEI_CTRL_IRQ_INT_FLAG_WDOG_MASK | SEI_CTRL_IRQ_INT_FLAG_PTR0_ST_MASK |
+	      SEI_CTRL_IRQ_INT_FLAG_PTR1_ST_MASK | SEI_CTRL_IRQ_INT_FLAG_INSTR0_ST_MASK |
+	      SEI_CTRL_IRQ_INT_FLAG_INSTR1_ST_MASK | SEI_CTRL_IRQ_INT_FLAG_PTR0_END_MASK |
+	      SEI_CTRL_IRQ_INT_FLAG_PTR1_END_MASK | SEI_CTRL_IRQ_INT_FLAG_INSTR0_END_MASK |
+	      SEI_CTRL_IRQ_INT_FLAG_INSTR1_END_MASK | SEI_CTRL_IRQ_INT_FLAG_TRX_ERR_MASK |
+	      SEI_CTRL_IRQ_INT_FLAG_TIMEOUT_MASK | SEI_CTRL_IRQ_INT_FLAG_LATCH0_MASK |
+	      SEI_CTRL_IRQ_INT_FLAG_LATCH1_MASK | SEI_CTRL_IRQ_INT_FLAG_LATCH2_MASK |
+	      SEI_CTRL_IRQ_INT_FLAG_LATCH3_MASK | SEI_CTRL_IRQ_INT_FLAG_SMP_ERR_MASK |
+	      SEI_CTRL_IRQ_INT_FLAG_TRIGER0_MASK | SEI_CTRL_IRQ_INT_FLAG_TRIGER1_MASK |
+	      SEI_CTRL_IRQ_INT_FLAG_TRIGER2_MASK | SEI_CTRL_IRQ_INT_FLAG_TRIGER3_MASK |
+	      SEI_CTRL_IRQ_INT_FLAG_TRG_ERR0_MASK | SEI_CTRL_IRQ_INT_FLAG_TRG_ERR1_MASK |
+	      SEI_CTRL_IRQ_INT_FLAG_TRG_ERR2_MASK | SEI_CTRL_IRQ_INT_FLAG_TRG_ERR3_MASK));
 
 struct hpm_sei_config {
 	SEI_Type *base;
 	const struct device *clock_dev;
 	clock_control_subsys_t clock_subsys;
+	void (*irq_config_func)(const struct device *dev);
 };
 
 struct hpm_sei_data {
 	struct k_spinlock lock;
 	uint32_t clock_frequency;
+	enum hpm_sei_mode mode[HPM_SEI_CHANNEL_1 + 1U];
+	uint32_t event_mask[HPM_SEI_CHANNEL_1 + 1U];
+	hpm_sei_event_callback_t callback[HPM_SEI_CHANNEL_1 + 1U];
+	void *user_data[HPM_SEI_CHANNEL_1 + 1U];
 };
 
 static bool hpm_sei_channel_is_valid(enum hpm_sei_channel channel)
@@ -130,6 +150,9 @@ static int hpm_sei_drv_configure_transceiver(const struct device *dev, enum hpm_
 
 	key = k_spin_lock(&data->lock);
 	status = sei_transceiver_config_init(sei->base, channel, &xcvr);
+	if (status == status_success) {
+		data->mode[channel] = config->mode;
+	}
 	k_spin_unlock(&data->lock, key);
 
 	return status == status_success ? 0 : -EIO;
@@ -224,11 +247,133 @@ static int hpm_sei_drv_configure_latch(const struct device *dev, enum hpm_sei_ch
 	sdk_config.timeout_cfg = (sei_state_tran_condition_t)config->timeout_cfg;
 
 	key = k_spin_lock(&data->lock);
+#if defined(HPM_IP_FEATURE_SEI_ERRATA_E00047) && HPM_IP_FEATURE_SEI_ERRATA_E00047
+	if (!config->disable_rx_check ||
+	    ((data->mode[channel] == HPM_SEI_MODE_SYNC_SLAVE) && !config->disable_clock_check)) {
+		k_spin_unlock(&data->lock, key);
+		return -ENOTSUP;
+	}
+#endif
 	status = sei_state_transition_config_init(sei->base, channel, latch, transition,
 						  &sdk_config);
 	k_spin_unlock(&data->lock, key);
 
 	return status == status_success ? 0 : -EIO;
+}
+
+static int
+hpm_sei_drv_configure_trigger_input(const struct device *dev, enum hpm_sei_channel channel,
+				    const struct hpm_sei_trigger_input_config *config)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	sei_trigger_input_config_t sdk_config = {0};
+	k_spinlock_key_t key;
+	hpm_stat_t status;
+
+	if (!hpm_sei_channel_is_valid(channel) || (config == NULL) ||
+	    (config->input0_select > 7U) || (config->input1_select > 7U) ||
+	    (config->periodic_sync_select > 7U) || (config->periodic_cycles == 0U) ||
+	    (config->periodic_cycles == UINT32_MAX)) {
+		return -EINVAL;
+	}
+
+	sdk_config.trig_in0_enable = config->input0_enable;
+	sdk_config.trig_in0_select = config->input0_select;
+	sdk_config.trig_in1_enable = config->input1_enable;
+	sdk_config.trig_in1_select = config->input1_select;
+	sdk_config.trig_period_enable = config->periodic_enable;
+	sdk_config.trig_period_arming_mode = config->periodic_arm_on_trigger
+						     ? sei_arming_wait_trigger
+						     : sei_arming_direct_exec;
+	sdk_config.trig_period_sync_enable = config->periodic_sync;
+	sdk_config.trig_period_sync_select = config->periodic_sync_select;
+	sdk_config.trig_period_time = config->periodic_cycles;
+	/* errata E00048: the pinned HAL applies the required baud-rate workaround. */
+
+	key = k_spin_lock(&data->lock);
+	status = sei_trigger_input_config_init(sei->base, channel, &sdk_config);
+	k_spin_unlock(&data->lock, key);
+
+	return status == status_success ? 0 : -EIO;
+}
+
+static int
+hpm_sei_drv_configure_trigger_output(const struct device *dev, enum hpm_sei_channel channel,
+				     uint8_t output,
+				     const struct hpm_sei_trigger_output_config *config)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	sei_trigger_output_config_t sdk_config = {0};
+	k_spinlock_key_t key;
+	hpm_stat_t status;
+
+	if (!hpm_sei_channel_is_valid(channel) || (output >= HPM_SEI_TRIGGER_OUTPUTS) ||
+	    (config == NULL) || (config->latch >= HPM_SEI_LATCH_COUNT)) {
+		return -EINVAL;
+	}
+
+	/* The SDK field name is misleading: it selects the OUTx field, not a latch. */
+	sdk_config.src_latch_select = output;
+	sdk_config.trig_out_enable = config->enable;
+	sdk_config.trig_out_select = config->latch;
+
+	key = k_spin_lock(&data->lock);
+	status = sei_trigger_output_config_init(sei->base, channel, &sdk_config);
+	k_spin_unlock(&data->lock, key);
+
+	return status == status_success ? 0 : -EIO;
+}
+
+static int hpm_sei_drv_set_trigger_command(const struct device *dev,
+					   enum hpm_sei_channel channel,
+					   enum hpm_sei_trigger_command source, uint32_t command)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (!hpm_sei_channel_is_valid(channel) ||
+	    (source > HPM_SEI_TRIGGER_COMMAND_SOFTWARE)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	sei_set_trig_input_command_value(sei->base, channel, (sei_trig_in_type_t)source, command);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_sei_drv_get_trigger_status(const struct device *dev,
+					  enum hpm_sei_channel channel,
+					  struct hpm_sei_trigger_status *status)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	uint32_t value;
+	k_spinlock_key_t key;
+	uint8_t source;
+
+	if (!hpm_sei_channel_is_valid(channel) || (status == NULL)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	value = sei->base->CTRL[channel].TRG.PRD_STS;
+	status->periodic_triggered = SEI_CTRL_TRG_PRD_STS_TRIGERED_GET(value) != 0U;
+	status->periodic_armed = SEI_CTRL_TRG_PRD_STS_ARMED_GET(value) != 0U;
+	status->periodic_count =
+		SEI_CTRL_TRG_PRD_CNT_PERIOD_CNT_GET(sei->base->CTRL[channel].TRG.PRD_CNT);
+	for (source = 0U; source <= HPM_SEI_TRIGGER_COMMAND_SOFTWARE; source++) {
+		status->trigger_time[source] =
+			SEI_CTRL_TRG_TABLE_TIME_TRIGGER0_TIME_GET(
+				sei->base->CTRL[channel].TRG_TABLE.TIME[source]);
+	}
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
 }
 
 static int hpm_sei_drv_configure_sample(const struct device *dev, enum hpm_sei_channel channel,
@@ -416,19 +561,122 @@ static int hpm_sei_drv_get_status(const struct device *dev, enum hpm_sei_channel
 				  struct hpm_sei_status *status)
 {
 	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
 
 	if (!hpm_sei_channel_is_valid(channel) || (status == NULL)) {
 		return -EINVAL;
 	}
 
+	key = k_spin_lock(&data->lock);
 	status->irq_status = sei->base->CTRL[channel].IRQ.INT_STS;
+	status->irq_enable = sei->base->CTRL[channel].IRQ.INT_EN;
 	status->sample_valid = sei->base->CTRL[channel].POS.SMP_VAL;
 	status->update_status = sei->base->CTRL[channel].POS.UPD_STS;
 	status->sample_occurred =
 		SEI_CTRL_POS_SMP_STS_OCCUR_GET(sei->base->CTRL[channel].POS.SMP_STS) != 0U;
 	status->update_error = SEI_CTRL_POS_UPD_STS_UPD_ERR_GET(status->update_status) != 0U;
+	k_spin_unlock(&data->lock, key);
 
 	return 0;
+}
+
+static int hpm_sei_drv_get_events(const struct device *dev, enum hpm_sei_channel channel,
+				  uint32_t *events)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (!hpm_sei_channel_is_valid(channel) || (events == NULL)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	*events = sei_get_irq_flag(sei->base, channel) & HPM_SEI_EVENT_ALL;
+	if (*events != 0U) {
+		sei_clear_irq_flag(sei->base, channel, *events);
+	}
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_sei_drv_clear_events(const struct device *dev, enum hpm_sei_channel channel,
+				    uint32_t events)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (!hpm_sei_channel_is_valid(channel) || ((events & ~HPM_SEI_EVENT_ALL) != 0U)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	sei_clear_irq_flag(sei->base, channel, events);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_sei_drv_set_event_callback(const struct device *dev,
+					  enum hpm_sei_channel channel, uint32_t event_mask,
+					  hpm_sei_event_callback_t callback, void *user_data)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (!hpm_sei_channel_is_valid(channel) || ((event_mask & ~HPM_SEI_EVENT_ALL) != 0U)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	sei_set_irq_enable(sei->base, channel, HPM_SEI_EVENT_ALL, false);
+	sei_clear_irq_flag(sei->base, channel, HPM_SEI_EVENT_ALL);
+	data->event_mask[channel] = event_mask;
+	data->callback[channel] = callback;
+	data->user_data[channel] = user_data;
+	if ((callback != NULL) && (event_mask != 0U)) {
+		sei_set_irq_enable(sei->base, channel, event_mask, true);
+	}
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static void hpm_sei_isr(const struct device *dev, enum hpm_sei_channel channel)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	hpm_sei_event_callback_t callback;
+	void *user_data;
+	k_spinlock_key_t key;
+	uint32_t events;
+
+	key = k_spin_lock(&data->lock);
+	events = sei_get_irq_flag(sei->base, channel) & data->event_mask[channel];
+	if (events != 0U) {
+		sei_clear_irq_flag(sei->base, channel, events);
+	}
+	callback = data->callback[channel];
+	user_data = data->user_data[channel];
+	k_spin_unlock(&data->lock, key);
+
+	if ((callback != NULL) && (events != 0U)) {
+		callback(dev, channel, events, user_data);
+	}
+}
+
+static void hpm_sei_isr_0(const struct device *dev)
+{
+	hpm_sei_isr(dev, HPM_SEI_CHANNEL_0);
+}
+
+static void hpm_sei_isr_1(const struct device *dev)
+{
+	hpm_sei_isr(dev, HPM_SEI_CHANNEL_1);
 }
 
 static DEVICE_API(hpm_sei, hpm_sei_api) = {
@@ -439,11 +687,18 @@ static DEVICE_API(hpm_sei, hpm_sei_api) = {
 	.configure_sample = hpm_sei_drv_configure_sample,
 	.configure_update = hpm_sei_drv_configure_update,
 	.configure_engine = hpm_sei_drv_configure_engine,
+	.configure_trigger_input = hpm_sei_drv_configure_trigger_input,
+	.configure_trigger_output = hpm_sei_drv_configure_trigger_output,
+	.set_trigger_command = hpm_sei_drv_set_trigger_command,
+	.get_trigger_status = hpm_sei_drv_get_trigger_status,
 	.enable = hpm_sei_drv_enable,
 	.software_trigger = hpm_sei_drv_software_trigger,
 	.get_data = hpm_sei_drv_get_data,
 	.set_data = hpm_sei_drv_set_data,
 	.get_status = hpm_sei_drv_get_status,
+	.get_events = hpm_sei_drv_get_events,
+	.clear_events = hpm_sei_drv_clear_events,
+	.set_event_callback = hpm_sei_drv_set_event_callback,
 };
 
 static int hpm_sei_init(const struct device *dev)
@@ -467,14 +722,39 @@ static int hpm_sei_init(const struct device *dev)
 		return ret;
 	}
 
-	return data->clock_frequency == 0U ? -EINVAL : 0;
+	if (data->clock_frequency == 0U) {
+		return -EINVAL;
+	}
+
+	config->irq_config_func(dev);
+
+	return 0;
 }
 
+#define HPM_SEI_IRQ_CONFIG(n)                                                                      \
+	static void hpm_sei_irq_config_##n(const struct device *dev)                               \
+	{                                                                                          \
+		ARG_UNUSED(dev);                                                                   \
+		IRQ_CONNECT(DT_INST_IRQN_BY_NAME(n, channel0),                                    \
+			    DT_INST_IRQ_BY_NAME(n, channel0, priority),                            \
+			    hpm_sei_isr_0, DEVICE_DT_INST_GET(n), 0);                              \
+		IRQ_CONNECT(DT_INST_IRQN_BY_NAME(n, channel1),                                    \
+			    DT_INST_IRQ_BY_NAME(n, channel1, priority),                            \
+			    hpm_sei_isr_1, DEVICE_DT_INST_GET(n), 0);                              \
+		irq_enable(DT_INST_IRQN_BY_NAME(n, channel0));                                     \
+		irq_enable(DT_INST_IRQN_BY_NAME(n, channel1));                                     \
+	}
+
 #define HPM_SEI_INIT(n)                                                                            \
+	BUILD_ASSERT(DT_INST_NUM_IRQS(n) == 2, "SEI requires one IRQ per channel");                 \
+	BUILD_ASSERT(DT_INST_IRQ_HAS_NAME(n, channel0) && DT_INST_IRQ_HAS_NAME(n, channel1),        \
+		     "SEI interrupts must be named channel0 and channel1");                            \
+	HPM_SEI_IRQ_CONFIG(n)                                                                      \
 	static const struct hpm_sei_config hpm_sei_config_##n = {                                  \
 		.base = (SEI_Type *)DT_INST_REG_ADDR(n),                                           \
 		.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),                                \
 		.clock_subsys = (clock_control_subsys_t)DT_INST_CLOCKS_CELL(n, name),              \
+		.irq_config_func = hpm_sei_irq_config_##n,                                         \
 	};                                                                                         \
                                                                                                    \
 	static struct hpm_sei_data hpm_sei_data_##n;                                               \
