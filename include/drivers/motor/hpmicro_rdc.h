@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include <zephyr/device.h>
+#include <zephyr/sys/util.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -151,6 +152,96 @@ struct hpm_rdc_result {
 	uint32_t interrupt_status;
 };
 
+/** Number of fractional bits in an RDC phase angle. */
+#define HPM_RDC_ANGLE_FRACTION_BITS 16U
+/** One full electrical revolution in RDC phase-angle units. */
+#define HPM_RDC_ANGLE_FULL_REVOLUTION (1U << HPM_RDC_ANGLE_FRACTION_BITS)
+/** Quarter electrical revolution in RDC phase-angle units. */
+#define HPM_RDC_ANGLE_QUARTER_REVOLUTION (HPM_RDC_ANGLE_FULL_REVOLUTION / 4U)
+/** Half electrical revolution in RDC phase-angle units. */
+#define HPM_RDC_ANGLE_HALF_REVOLUTION (HPM_RDC_ANGLE_FULL_REVOLUTION / 2U)
+
+/**
+ * @brief Convert accumulated resolver I/Q values to an electrical phase.
+ *
+ * The result is an unsigned Q16.16 phase in one electrical revolution using
+ * atan2(I, Q) + 90 degrees. Integer CORDIC is used, so no FPU or libm is
+ * required. This helper is also useful for consumers that snapshot I/Q values
+ * through hpm_rdc_get_result(). The maximum measured error over the complete
+ * input range is under four Q16.16 least-significant bits.
+ *
+ * @param i_value Accumulated I-axis value interpreted as a signed integer.
+ * @param q_value Accumulated Q-axis value interpreted as a signed integer.
+ * @param angle Output phase in Q16.16 electrical revolutions.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL if @p angle is NULL.
+ * @retval -ENODATA if both values are zero.
+ */
+static inline int hpm_rdc_angle_from_iq(int32_t i_value, int32_t q_value,
+					uint32_t *angle)
+{
+	static const uint16_t atan_q16[] = {
+		8192U, 4836U, 2555U, 1297U, 651U, 326U, 163U, 81U,
+		41U,   20U,   10U,   5U,    3U,   1U,   1U,
+	};
+	int64_t x;
+	int64_t y;
+	int64_t z = 0;
+	int64_t phase;
+	uint8_t iteration;
+
+	if (angle == NULL) {
+		return -EINVAL;
+	}
+	if ((i_value == 0) && (q_value == 0)) {
+		return -ENODATA;
+	}
+
+	x = (q_value < 0) ? -(int64_t)q_value : (int64_t)q_value;
+	y = (i_value < 0) ? -(int64_t)i_value : (int64_t)i_value;
+
+	/* Normalize small vectors so CORDIC has enough working precision. */
+	while ((x < (INT64_C(1) << 30)) && (y < (INT64_C(1) << 30))) {
+		x <<= 1;
+		y <<= 1;
+	}
+
+	for (iteration = 0U; iteration < ARRAY_SIZE(atan_q16); iteration++) {
+		int64_t x_shift = x >> iteration;
+		int64_t y_shift = y >> iteration;
+
+		if (y > 0) {
+			x += y_shift;
+			y -= x_shift;
+			z += atan_q16[iteration];
+		} else if (y < 0) {
+			x -= y_shift;
+			y += x_shift;
+			z -= atan_q16[iteration];
+		}
+	}
+
+	if (q_value >= 0) {
+		if (i_value < 0) {
+			z = -z;
+		}
+	} else if (i_value >= 0) {
+		z = HPM_RDC_ANGLE_HALF_REVOLUTION - z;
+	} else {
+		z += HPM_RDC_ANGLE_HALF_REVOLUTION;
+	}
+
+	phase = z + HPM_RDC_ANGLE_QUARTER_REVOLUTION;
+	phase %= HPM_RDC_ANGLE_FULL_REVOLUTION;
+	if (phase < 0) {
+		phase += HPM_RDC_ANGLE_FULL_REVOLUTION;
+	}
+	*angle = (uint32_t)phase;
+
+	return 0;
+}
+
 /** @cond INTERNAL_HIDDEN */
 __subsystem struct hpm_rdc_driver_api {
 	int (*configure_output)(const struct device *dev,
@@ -168,6 +259,7 @@ __subsystem struct hpm_rdc_driver_api {
 	int (*software_trigger)(const struct device *dev);
 	int (*accumulation_enable)(const struct device *dev, bool enable);
 	int (*get_result)(const struct device *dev, struct hpm_rdc_result *result);
+	int (*get_angle)(const struct device *dev, uint32_t *angle);
 	int (*clear_extrema)(const struct device *dev);
 	int (*get_events)(const struct device *dev, uint32_t *events);
 	int (*clear_events)(const struct device *dev, uint32_t events);
@@ -230,6 +322,25 @@ static inline int hpm_rdc_accumulation_enable(const struct device *dev, bool ena
 static inline int hpm_rdc_get_result(const struct device *dev, struct hpm_rdc_result *result)
 {
 	return DEVICE_API_GET(hpm_rdc, dev)->get_result(dev, result);
+}
+
+/**
+ * @brief Read the resolver angle from the latest accumulated I/Q values.
+ *
+ * The result is an unsigned Q16.16 phase in one electrical revolution. The
+ * calculation uses integer CORDIC and does not require an FPU or libm. A zero
+ * I/Q vector is reported as -ENODATA.
+ *
+ * @param dev RDC device.
+ * @param angle Output phase in 16.16 fixed point.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL if @p angle is NULL.
+ * @retval -ENODATA if both accumulated values are zero.
+ */
+static inline int hpm_rdc_get_angle(const struct device *dev, uint32_t *angle)
+{
+	return DEVICE_API_GET(hpm_rdc, dev)->get_angle(dev, angle);
 }
 
 static inline int hpm_rdc_clear_extrema(const struct device *dev)

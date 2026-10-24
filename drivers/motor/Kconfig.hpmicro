@@ -59,8 +59,9 @@ config RDC_HPMICRO
 	help
 	  Enable the HPMicro resolver-to-digital converter. The driver covers
 	  excitation output, I/Q accumulation input, accumulation filtering,
-	  trigger output, result access and W1C interrupt event handling. TRGM or
-	  DAC routing remains the consumer's responsibility.
+	  trigger output, result access, integer-CORDIC phase calculation and
+	  W1C interrupt event handling. TRGM or DAC routing remains the
+	  consumer's responsibility.
 
 DT_COMPAT_HPM_SYNT := hpmicro,hpm-synt
 

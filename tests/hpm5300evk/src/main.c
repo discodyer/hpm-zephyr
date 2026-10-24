@@ -950,6 +950,7 @@ ZTEST(hpm5300evk, test_devices_ready)
 	};
 	struct hpm_rdc_result rdc_result;
 	uint32_t rdc_events;
+	uint32_t rdc_angle;
 
 	zassert_true(device_is_ready(rdc));
 	zassert_ok(hpm_rdc_configure_output(rdc, &rdc_output));
@@ -964,6 +965,10 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_rdc_accumulation_enable(rdc, true));
 	zassert_ok(hpm_rdc_clear_extrema(rdc));
 	zassert_ok(hpm_rdc_get_result(rdc, &rdc_result));
+	if (hpm_rdc_get_angle(rdc, &rdc_angle) == 0) {
+		zassert_true(rdc_angle < HPM_RDC_ANGLE_FULL_REVOLUTION);
+	}
+	zassert_equal(hpm_rdc_get_angle(rdc, NULL), -EINVAL);
 	zassert_ok(hpm_rdc_get_events(rdc, &rdc_events));
 	zassert_ok(hpm_rdc_clear_events(rdc, HPM_RDC_EVENT_ALL));
 	zassert_equal(hpm_rdc_clear_events(rdc, BIT(16)), -EINVAL);

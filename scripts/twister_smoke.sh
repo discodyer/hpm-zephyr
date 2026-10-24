@@ -17,4 +17,10 @@ ZEPHYR_EXTRA_MODULES=$MODULE_DIR HPM_SDK_DIR=$HPM_SDK_DIR west twister \
 	-O "$OUT_DIR" \
 	"$@"
 
+ZEPHYR_EXTRA_MODULES=$MODULE_DIR HPM_SDK_DIR=$HPM_SDK_DIR west twister \
+	-T "$MODULE_DIR/tests/motor_math" \
+	-p native_sim \
+	-O "$OUT_DIR/motor_math" \
+	"$@"
+
 printf 'HPM5300 Twister build-only tests passed\n'

@@ -302,6 +302,26 @@ static int hpm_rdc_drv_get_result(const struct device *dev, struct hpm_rdc_resul
 	return 0;
 }
 
+static int hpm_rdc_drv_get_angle(const struct device *dev, uint32_t *angle)
+{
+	const struct hpm_rdc_config *rdc = dev->config;
+	struct hpm_rdc_data *data = dev->data;
+	int32_t i_value;
+	int32_t q_value;
+	k_spinlock_key_t key;
+
+	if (angle == NULL) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	i_value = (int32_t)rdc_get_acc_avl(rdc->base, rdc_acc_chn_i);
+	q_value = (int32_t)rdc_get_acc_avl(rdc->base, rdc_acc_chn_q);
+	k_spin_unlock(&data->lock, key);
+
+	return hpm_rdc_angle_from_iq(i_value, q_value, angle);
+}
+
 static int hpm_rdc_drv_clear_extrema(const struct device *dev)
 {
 	const struct hpm_rdc_config *rdc = dev->config;
@@ -414,6 +434,7 @@ static DEVICE_API(hpm_rdc, hpm_rdc_api) = {
 	.software_trigger = hpm_rdc_drv_software_trigger,
 	.accumulation_enable = hpm_rdc_drv_accumulation_enable,
 	.get_result = hpm_rdc_drv_get_result,
+	.get_angle = hpm_rdc_drv_get_angle,
 	.clear_extrema = hpm_rdc_drv_clear_extrema,
 	.get_events = hpm_rdc_drv_get_events,
 	.clear_events = hpm_rdc_drv_clear_events,
