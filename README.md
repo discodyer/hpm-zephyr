@@ -40,7 +40,8 @@ and initialization execute from RAM while XIP is active.
 
 Build-only validation is complete for both boards, including the Twister
 smoke test. No console, timer, GPIO, flash erase/program, boot, or runner
-behavior has been validated on real hardware.
+behavior has been validated on real hardware. USB device enumeration and class
+traffic are also unvalidated.
 
 The module can be validated without adding it to the west manifest:
 
@@ -80,7 +81,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Implemented (build-only) | Four hardware alarm channels, top/reload callback, absolute and relative alarms, guard period; capture and output compare are separate consumers |
 | Watchdog | EWDG0-1, PEWDG | `watchdog` | Implemented (build-only) | Single timeout/channel, 32 kHz counter clock, SoC reset, early timeout callback, sleep/debug pause options; window and CPU-core reset unsupported |
 | RTC | None | N/A | Not applicable | HPM5300/HPM5361 has no independent RTC block; use a board-level external RTC if wall-clock time is required |
-| USB HS OTG | 1 | UDC/UHC | Missing | Native Zephyr UDC/UHC driver not implemented; CherryUSB not adopted |
+| USB HS OTG | 1 | UDC/UHC | Device-only UDC implemented (build-only) | Zephyr UDC driver reuses the unmodified SDK qTD/qDHD engine and covers HS/FS endpoints, SETUP tripwire, reset/suspend/resume, VBUS events, remote wakeup and test modes. qHD/qTD storage is in Andes PMA non-cacheable RAM. UHC/host mode, USB classes and hardware enumeration remain unvalidated; CherryUSB/TinyUSB are not adopted |
 | MBX | MBX0A/B | `mbox` | Implemented (build-only) | One 32-bit word-message channel per endpoint, interrupt-driven receive callbacks and clock gating; separate 4-word FIFO, signalling-only mode and shared-memory IPC protocol not exposed |
 | GPIOM | 1 | `hpm_gpiom` | Implemented core (build-only) | GPIO0/FGPIO0 ownership, per-controller input visibility, lock and lock-state queries for GPIOA/B/X/Y; permission/security controls and migration of existing board pin ownership are not automated |
 | TRGM | 1 | `mux` + custom extension | Implemented core (build-only) | One mux control per TRGM output with runtime source selection and readback; input filters, output inversion and edge-pulse conversion, eight DMA request routes, the ADC/DAC/position matrices, and named motor-control routes for SYNT/MMC/SEI/RDC/QEO/PLB inter-IP connections. The route helper validates fixed SDK mux indices at build time and leaves endpoint register configuration to the owning drivers. Interrupt routing is available through output 133/134 plus the existing output API, but no TRGM-specific IRQ callback is claimed because the block has no independent status/clear register |
@@ -103,8 +104,9 @@ Implemented drivers are build-only until hardware validation is completed;
 missing drivers are not built or enabled. The SoC startup, PLIC, PLICSW, machine
 timer and cache paths are native Zephyr/SoC integration rather than HPM driver
 classes. No third-party module is currently selected for the remaining standard
-Zephyr APIs; USB and motor-control features still need a separate design
-decision before adding any third-party stack.
+Zephyr APIs. USB device mode uses Zephyr's native device-next stack plus the
+unmodified SDK controller engine; USB host/UHC and motor-control integration
+still need separate design decisions before adding any third-party stack.
 
 The detailed, workspace-level matrix and task queue are maintained in
 `docs/agent/tasks.md`.

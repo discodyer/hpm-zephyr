@@ -491,7 +491,6 @@
 			clocks = <&clk CLOCK_USB0 CLK_SRC_OSC24M 1>;
 			clock-names = "usb";
 			clock-name = <CLOCK_USB0>;
-			clock-src = <CLK_SRC_OSC24M>;
 			maximum-speed = "high-speed";
 			num-bidir-endpoints = <16>;
 			status = "disabled";

@@ -25,11 +25,6 @@ properties:
     required: true
     description: HPM SDK clock resource identifier
 
-  clock-src:
-    type: int
-    required: true
-    description: USB clock source selector
-
   num-bidir-endpoints:
     type: int
     required: true

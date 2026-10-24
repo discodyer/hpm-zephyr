@@ -1,0 +1,46 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_USB := hpmicro,hpm-usb
+
+config UDC_HPMICRO
+	bool "HPMicro USB device controller driver"
+	default y
+	depends on DT_HAS_HPMICRO_HPM_USB_ENABLED
+	depends on UDC_DRIVER
+	depends on ARCH_HAS_NOCACHE_MEMORY_SUPPORT
+	depends on CLOCK_CONTROL
+	select EVENTS
+	select NOCACHE_MEMORY
+	select PINCTRL
+	select USE_HPMSDK_USB
+	select UDC_DRIVER_HAS_HIGH_SPEED_SUPPORT
+	help
+	  Zephyr UDC driver for the HPMicro USB0 controller. This driver uses
+	  the unmodified HPM SDK device-mode qTD/dQHD implementation and supports
+	  the HPM5361 high-speed and full-speed device modes.
+
+if UDC_HPMICRO
+
+config UDC_HPMICRO_STACK_SIZE
+	int "HPMicro UDC driver thread stack size"
+	default 2048
+	help
+	  Stack size for the HPMicro UDC deferred event thread.
+
+config UDC_HPMICRO_THREAD_PRIORITY
+	int "HPMicro UDC driver thread priority"
+	default 8
+	help
+	  Priority for the HPMicro UDC deferred event thread.
+
+config UDC_HPMICRO_VBUS_INTERNAL
+	bool "Use the internal VBUS comparator"
+	depends on SOC_HPM5361
+	help
+	  Override the USB PHY VBUS and session-valid inputs with the controller's
+	  internal VBUS comparator. Enable this only on boards, or package variants,
+	  without a bonded-out USB VBUS pin. HPM5300EVK keeps the external VBUS
+	  input and must leave this option disabled.
+
+endif # UDC_HPMICRO
