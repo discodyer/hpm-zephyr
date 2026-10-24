@@ -235,6 +235,40 @@ static int hpm_qeo_drv_get_wave_output(const struct device *dev, uint8_t channel
 	return 0;
 }
 
+static int hpm_qeo_drv_configure_wave_vd_vq(
+	const struct device *dev,
+	const struct hpm_qeo_wave_vd_vq_config config[HPM_QEO_WAVE_CHANNEL_COUNT])
+{
+	const struct hpm_qeo_config *qeo = dev->config;
+	struct hpm_qeo_data *data = dev->data;
+	k_spinlock_key_t key;
+	uint8_t channel;
+
+	if (config == NULL) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	for (channel = 0U; channel < HPM_QEO_WAVE_CHANNEL_COUNT; channel++) {
+		uint32_t enable = BIT(QEO_WAVE_MODE_EN_WAVE0_VD_VQ_INJECT_SHIFT + channel);
+
+		if (config[channel].enable) {
+			qeo->base->WAVE.MODE |= enable;
+		} else {
+			qeo->base->WAVE.MODE &= ~enable;
+		}
+
+		qeo->base->WAVE.VD_VQ_INJECT[channel] =
+			QEO_WAVE_VD_VQ_INJECT_VD_VAL_SET((uint16_t)config[channel].vd) |
+			QEO_WAVE_VD_VQ_INJECT_VQ_VAL_SET((uint16_t)config[channel].vq);
+	}
+
+	qeo->base->WAVE.VD_VQ_LOAD = QEO_WAVE_VD_VQ_LOAD_LOAD_MASK;
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
 static bool hpm_qeo_pwm_phase_output_is_valid(const struct hpm_qeo_pwm_phase_output_table *output)
 {
 	uint8_t channel;
@@ -487,6 +521,7 @@ static DEVICE_API(hpm_qeo, hpm_qeo_api) = {
 	.configure_abz = hpm_qeo_drv_configure_abz,
 	.configure_wave = hpm_qeo_drv_configure_wave,
 	.get_wave_output = hpm_qeo_drv_get_wave_output,
+	.configure_wave_vd_vq = hpm_qeo_drv_configure_wave_vd_vq,
 	.configure_pwm = hpm_qeo_drv_configure_pwm,
 	.set_pwm_phase_table = hpm_qeo_drv_set_pwm_phase_table,
 	.select_pwm_phase_table = hpm_qeo_drv_select_pwm_phase_table,

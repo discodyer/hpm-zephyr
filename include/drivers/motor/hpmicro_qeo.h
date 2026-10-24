@@ -133,6 +133,16 @@ struct hpm_qeo_wave_config {
 	struct hpm_qeo_wave_channel_config channel[HPM_QEO_WAVE_CHANNEL_COUNT];
 };
 
+/** Per-channel inverse-Park VD/VQ injection values. */
+struct hpm_qeo_wave_vd_vq_config {
+	/** Enable injection for this wave channel. */
+	bool enable;
+	/** Signed D-axis injection value. */
+	int16_t vd;
+	/** Signed Q-axis injection value. */
+	int16_t vq;
+};
+
 /** QEO PWM FORCE output value. */
 enum hpm_qeo_pwm_force_output {
 	/** Leave the output controlled by the PWM peripheral. */
@@ -197,6 +207,9 @@ __subsystem struct hpm_qeo_driver_api {
 	int (*configure_abz)(const struct device *dev, const struct hpm_qeo_abz_config *config);
 	int (*configure_wave)(const struct device *dev, const struct hpm_qeo_wave_config *config);
 	int (*get_wave_output)(const struct device *dev, uint8_t channel, uint16_t *value);
+	int (*configure_wave_vd_vq)(
+		const struct device *dev,
+		const struct hpm_qeo_wave_vd_vq_config config[HPM_QEO_WAVE_CHANNEL_COUNT]);
 	int (*configure_pwm)(const struct device *dev, const struct hpm_qeo_pwm_config *config);
 	int (*set_pwm_phase_table)(const struct device *dev, enum hpm_qeo_pwm_phase_table table,
 				   uint8_t index,
@@ -232,8 +245,8 @@ static inline int hpm_qeo_configure_abz(const struct device *dev,
 /**
  * @brief Configure QEO wave output.
  *
- * This configures all three wave channels. VD/VQ injection is intentionally not
- * exposed because the pinned SDK helper writes the VQ value into both fields.
+ * This configures all three wave channels. VD/VQ injection is configured
+ * separately with hpm_qeo_configure_wave_vd_vq().
  *
  * @param dev QEO device.
  * @param config Wave configuration.
@@ -261,6 +274,27 @@ static inline int hpm_qeo_get_wave_output(const struct device *dev, uint8_t chan
 					  uint16_t *value)
 {
 	return DEVICE_API_GET(hpm_qeo, dev)->get_wave_output(dev, channel, value);
+}
+
+/**
+ * @brief Configure inverse-Park VD/VQ injection for all three wave channels.
+ *
+ * The values are staged for all three channels and loaded together with the
+ * hardware VD_VQ_LOAD operation. This implementation writes the VD_VAL and
+ * VQ_VAL fields directly because the pinned SDK helper incorrectly writes the
+ * VQ value into both fields.
+ *
+ * @param dev QEO device.
+ * @param config Per-channel enable and signed VD/VQ values.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL if @p config is NULL.
+ */
+static inline int hpm_qeo_configure_wave_vd_vq(
+	const struct device *dev,
+	const struct hpm_qeo_wave_vd_vq_config config[HPM_QEO_WAVE_CHANNEL_COUNT])
+{
+	return DEVICE_API_GET(hpm_qeo, dev)->configure_wave_vd_vq(dev, config);
 }
 
 /**

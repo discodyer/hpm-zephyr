@@ -524,6 +524,11 @@ ZTEST(hpm5300evk, test_devices_ready)
 				},
 			},
 	};
+	const struct hpm_qeo_wave_vd_vq_config qeo_vd_vq_config[HPM_QEO_WAVE_CHANNEL_COUNT] = {
+		{.enable = true, .vd = 0x1234, .vq = -0x1234},
+		{.enable = true, .vd = -0x2345, .vq = 0x2345},
+		{.enable = false, .vd = 0x3456, .vq = -0x3456},
+	};
 	struct hpm_qeo_pwm_config qeo_pwm_config = {
 		.lines = 4U,
 		.phase_count = 4U,
@@ -587,6 +592,8 @@ ZTEST(hpm5300evk, test_devices_ready)
 	qeo_wave_config.channel[1].mid_point_shift = 16.0;
 	zassert_equal(hpm_qeo_configure_wave(qeo, &qeo_wave_config), -EINVAL);
 
+	zassert_ok(hpm_qeo_configure_wave_vd_vq(qeo, qeo_vd_vq_config));
+	zassert_equal(hpm_qeo_configure_wave_vd_vq(qeo, NULL), -EINVAL);
 	zassert_ok(hpm_qeo_configure_pwm(qeo, &qeo_pwm_config));
 	qeo_pwm_config.phase_count = HPM_QEO_PWM_PHASE_COUNT + 1U;
 	zassert_equal(hpm_qeo_configure_pwm(qeo, &qeo_pwm_config), -EINVAL);
