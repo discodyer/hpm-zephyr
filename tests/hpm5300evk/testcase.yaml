@@ -36,3 +36,14 @@ tests:
     extra_args:
       - EXTRA_DTC_OVERLAY_FILE=peripherals.overlay
       - EXTRA_CONF_FILE=peripherals.conf
+
+  boards.hpmicro.hpm5300evk.sei_without_synt:
+    tags:
+      - hpmicro
+      - drivers
+    platform_allow:
+      - hpm5300evk/hpm5361
+    build_only: true
+    extra_args:
+      - EXTRA_DTC_OVERLAY_FILE=sei_no_synt.overlay
+      - EXTRA_CONF_FILE=sei_no_synt.conf

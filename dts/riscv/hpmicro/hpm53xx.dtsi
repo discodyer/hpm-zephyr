@@ -743,6 +743,7 @@
 			interrupt-parent = <&plic>;
 			clocks = <&clk CLOCK_MOT0 CLK_SRC_OSC24M 1>;
 			clock-names = "sei";
+			synt = <&synt>;
 			status = "disabled";
 		};
 

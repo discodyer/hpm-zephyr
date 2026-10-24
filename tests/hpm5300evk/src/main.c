@@ -19,6 +19,7 @@
 #include <zephyr/drivers/mbox.h>
 #include <drivers/motor/hpmicro_qeo.h>
 #include <drivers/motor/hpmicro_sei.h>
+#include <drivers/motor/hpmicro_sei_ssi.h>
 #include <drivers/motor/hpmicro_mmc.h>
 #include <drivers/motor/hpmicro_rdc.h>
 #include <drivers/motor/hpmicro_synt.h>
@@ -782,7 +783,25 @@ ZTEST(hpm5300evk, test_devices_ready)
 		.enable = true,
 		.latch = 3U,
 	};
+	const struct hpm_sei_latch_output_config sei_latch_output = {
+		.enable = true,
+		.output_select = 0U,
+	};
 	struct hpm_sei_trigger_status sei_trigger_status;
+#if CONFIG_SEI_SSI_HPMICRO
+	struct hpm_sei_ssi_config sei_ssi_config = {
+		.baudrate = 1000000U,
+		.multi_turn_bits = 12U,
+		.single_turn_bits = 12U,
+		.poll_period_us = 200000U,
+	};
+	struct hpm_sei_ssi_result sei_ssi_result;
+#endif
+	struct hpm_sei_timing sei_timing;
+#if CONFIG_SYNT_HPMICRO
+	enum hpm_sei_timestamp_source sei_timestamp_source;
+#endif
+	uint32_t sei_clock_hz;
 	uint32_t sei_value;
 	uint32_t sei_events;
 	struct hpm_sei_status sei_status;
@@ -792,6 +811,9 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_sei_configure_data(sei, HPM_SEI_DATA_REGISTER_2, &sei_format));
 	zassert_ok(hpm_sei_set_instruction(sei, 0U, &sei_instr));
 	zassert_ok(hpm_sei_configure_latch(sei, HPM_SEI_CHANNEL_0, 0U, 0U, &sei_latch));
+	zassert_ok(hpm_sei_configure_latch_output(sei, HPM_SEI_CHANNEL_0, 0U,
+						  &sei_latch_output));
+	zassert_equal(hpm_sei_configure_latch_output(sei, HPM_SEI_CHANNEL_0, 0U, NULL), -EINVAL);
 	zassert_ok(hpm_sei_configure_sample(sei, HPM_SEI_CHANNEL_0, &sei_sample));
 	zassert_ok(hpm_sei_configure_update(sei, HPM_SEI_CHANNEL_0, &sei_update));
 	zassert_ok(hpm_sei_configure_engine(sei, HPM_SEI_CHANNEL_0, &sei_engine));
@@ -825,7 +847,35 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(hpm_sei_set_event_callback(sei, HPM_SEI_CHANNEL_0, BIT(3), NULL, NULL),
 		      -EINVAL);
 	zassert_ok(hpm_sei_enable(sei, HPM_SEI_CHANNEL_0, true));
+	zassert_equal(hpm_sei_rewind(sei, HPM_SEI_CHANNEL_0, BIT(2) | BIT(3)), -EBUSY);
 	zassert_ok(hpm_sei_enable(sei, HPM_SEI_CHANNEL_0, false));
+	zassert_ok(hpm_sei_rewind(sei, HPM_SEI_CHANNEL_0, BIT(2) | BIT(3)));
+	zassert_ok(hpm_sei_get_clock_frequency(sei, &sei_clock_hz));
+	zassert_true(sei_clock_hz > 0U);
+	zassert_ok(hpm_sei_get_timing(sei, HPM_SEI_CHANNEL_0, &sei_timing));
+	zassert_true(sei_timing.ck0_point > 0U);
+	zassert_true(sei_timing.ck1_point > 0U);
+	zassert_ok(hpm_sei_set_data_points(sei, HPM_SEI_CHANNEL_0, sei_timing.ck0_point,
+					   sei_timing.ck1_point));
+	zassert_equal(hpm_sei_set_data_points(sei, HPM_SEI_CHANNEL_0, 0U, 1U), -EINVAL);
+	zassert_ok(hpm_sei_get_latch_time(sei, HPM_SEI_CHANNEL_0, 0U, &sei_value));
+	zassert_equal(
+		hpm_sei_get_latch_time(sei, HPM_SEI_CHANNEL_0, HPM_SEI_LATCH_COUNT, &sei_value),
+		-EINVAL);
+#if CONFIG_SYNT_HPMICRO
+	zassert_ok(hpm_sei_set_timestamp_source(sei, HPM_SEI_TIMESTAMP_SOURCE_SYNT));
+	zassert_ok(hpm_sei_get_timestamp_source(sei, &sei_timestamp_source));
+	zassert_equal(sei_timestamp_source, HPM_SEI_TIMESTAMP_SOURCE_SYNT);
+#endif
+#if CONFIG_SEI_SSI_HPMICRO
+	zassert_ok(hpm_sei_ssi_configure(sei, HPM_SEI_CHANNEL_0, &sei_ssi_config));
+	zassert_equal(hpm_sei_ssi_configure(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
+	sei_ssi_config.multi_turn_bits = 0U;
+	zassert_equal(hpm_sei_ssi_configure(sei, HPM_SEI_CHANNEL_0, &sei_ssi_config), -EINVAL);
+	zassert_equal(hpm_sei_ssi_get_result(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
+	zassert_equal(hpm_sei_ssi_get_result(sei, (enum hpm_sei_channel)2, &sei_ssi_result),
+		      -EINVAL);
+#endif
 #endif
 #if DT_NODE_HAS_STATUS(MMC0_NODE, okay)
 	const struct device *mmc = DEVICE_DT_GET(MMC0_NODE);
@@ -980,7 +1030,7 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_rdc_excitation_enable(rdc, false));
 	zassert_equal(hpm_rdc_set_channel_threshold(rdc, (enum hpm_rdc_channel)2, 0), -EINVAL);
 #endif
-#if DT_NODE_HAS_STATUS(SYNT_NODE, okay)
+#if DT_NODE_HAS_STATUS(SYNT_NODE, okay) && CONFIG_SYNT_HPMICRO
 	const struct device *synt = DEVICE_DT_GET(SYNT_NODE);
 	uint32_t synt_value;
 

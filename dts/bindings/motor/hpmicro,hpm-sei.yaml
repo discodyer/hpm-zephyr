@@ -35,3 +35,9 @@ properties:
 
   clock-names:
     required: true
+
+  synt:
+    type: phandle
+    description: |
+      Synchronization timer that provides the shared motor timestamp. SEI
+      captures this timestamp in LATCH0/LATCH1 for SAMPLE/UPDATE.

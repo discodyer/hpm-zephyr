@@ -10,12 +10,14 @@
 
 #include <zephyr/device.h>
 #include <drivers/motor/hpmicro_sei.h>
+#include <drivers/motor/hpmicro_synt.h>
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/irq.h>
 #include <zephyr/kernel.h>
 
 #include <hpm_common.h>
 #include <hpm_sei_drv.h>
+#include <hpm_synt_drv.h>
 
 BUILD_ASSERT((int)HPM_SEI_MODE_SYNC_MASTER == (int)sei_synchronous_master_mode);
 BUILD_ASSERT((int)HPM_SEI_MODE_SYNC_SLAVE == (int)sei_synchronous_slave_mode);
@@ -51,6 +53,7 @@ BUILD_ASSERT(HPM_SEI_EVENT_ALL ==
 struct hpm_sei_config {
 	SEI_Type *base;
 	const struct device *clock_dev;
+	const struct device *timestamp_dev;
 	clock_control_subsys_t clock_subsys;
 	void (*irq_config_func)(const struct device *dev);
 };
@@ -58,6 +61,7 @@ struct hpm_sei_config {
 struct hpm_sei_data {
 	struct k_spinlock lock;
 	uint32_t clock_frequency;
+	enum hpm_sei_timestamp_source timestamp_source;
 	enum hpm_sei_mode mode[HPM_SEI_CHANNEL_1 + 1U];
 	uint32_t event_mask[HPM_SEI_CHANNEL_1 + 1U];
 	hpm_sei_event_callback_t callback[HPM_SEI_CHANNEL_1 + 1U];
@@ -256,6 +260,32 @@ static int hpm_sei_drv_configure_latch(const struct device *dev, enum hpm_sei_ch
 #endif
 	status = sei_state_transition_config_init(sei->base, channel, latch, transition,
 						  &sdk_config);
+	k_spin_unlock(&data->lock, key);
+
+	return status == status_success ? 0 : -EIO;
+}
+
+static int hpm_sei_drv_configure_latch_output(
+	const struct device *dev, enum hpm_sei_channel channel, uint8_t latch,
+	const struct hpm_sei_latch_output_config *config)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	sei_state_transition_latch_config_t sdk_config = {0};
+	k_spinlock_key_t key;
+	hpm_stat_t status;
+
+	if (!hpm_sei_channel_is_valid(channel) || (latch >= HPM_SEI_LATCH_COUNT) ||
+	    (config == NULL) || (config->output_select >= HPM_SEI_TRANSITION_COUNT)) {
+		return -EINVAL;
+	}
+
+	sdk_config.enable = config->enable;
+	sdk_config.output_select = config->output_select;
+	sdk_config.delay = config->delay;
+
+	key = k_spin_lock(&data->lock);
+	status = sei_state_transition_latch_config_init(sei->base, channel, latch, &sdk_config);
 	k_spin_unlock(&data->lock, key);
 
 	return status == status_success ? 0 : -EIO;
@@ -557,6 +587,163 @@ static int hpm_sei_drv_set_data(const struct device *dev, enum hpm_sei_data_regi
 	return 0;
 }
 
+static int hpm_sei_drv_get_clock_frequency(const struct device *dev, uint32_t *frequency)
+{
+	const struct hpm_sei_data *data = dev->data;
+
+	if (frequency == NULL) {
+		return -EINVAL;
+	}
+
+	*frequency = data->clock_frequency;
+
+	return 0;
+}
+
+static int hpm_sei_drv_get_timing(const struct device *dev, enum hpm_sei_channel channel,
+				  struct hpm_sei_timing *timing)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (!hpm_sei_channel_is_valid(channel) || (timing == NULL)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	timing->rx_point = SEI_CTRL_XCVR_DATA_CFG_RXD_POINT_GET(
+		sei->base->CTRL[channel].XCVR.DATA_CFG);
+	timing->tx_point = SEI_CTRL_XCVR_DATA_CFG_TXD_POINT_GET(
+		sei->base->CTRL[channel].XCVR.DATA_CFG);
+	timing->ck0_point = sei_get_xcvr_ck0_point(sei->base, channel);
+	timing->ck1_point = sei_get_xcvr_ck1_point(sei->base, channel);
+	timing->baud_div = sei_get_xcvr_baud_div(sei->base, channel);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_sei_drv_set_data_points(const struct device *dev, enum hpm_sei_channel channel,
+				       uint16_t rx_point, uint16_t tx_point)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (!hpm_sei_channel_is_valid(channel) || (rx_point == 0U) || (tx_point == 0U)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	sei_set_xcvr_rx_point(sei->base, channel, rx_point);
+	sei_set_xcvr_tx_point(sei->base, channel, tx_point);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_sei_drv_rewind(const struct device *dev, enum hpm_sei_channel channel,
+			      uint32_t data_register_mask)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+	uint8_t register_index;
+
+	if (!hpm_sei_channel_is_valid(channel) ||
+	    (data_register_mask & ~BIT_MASK(HPM_SEI_DATA_REGISTERS)) != 0U) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	if ((sei->base->CTRL[channel].ENGINE.CTRL & SEI_CTRL_ENGINE_CTRL_ENABLE_MASK) != 0U) {
+		k_spin_unlock(&data->lock, key);
+		return -EBUSY;
+	}
+	sei_set_engine_rewind(sei->base, channel);
+	sei_set_command_rewind(sei->base, channel);
+	for (register_index = 0U; register_index < HPM_SEI_DATA_REGISTERS; register_index++) {
+		if ((data_register_mask & BIT(register_index)) != 0U) {
+			sei_set_data_rewind(sei->base, register_index);
+		}
+	}
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_sei_drv_get_latch_time(const struct device *dev, enum hpm_sei_channel channel,
+				      uint8_t latch, uint32_t *time)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (!hpm_sei_channel_is_valid(channel) || (latch >= HPM_SEI_LATCH_COUNT) ||
+	    (time == NULL)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	*time = sei_get_latch_time(sei->base, channel, latch);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_sei_drv_set_timestamp_source(const struct device *dev,
+					    enum hpm_sei_timestamp_source source)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+	int ret;
+
+	if (source > HPM_SEI_TIMESTAMP_SOURCE_SYNT) {
+		return -EINVAL;
+	}
+	if ((source == HPM_SEI_TIMESTAMP_SOURCE_SYNT) &&
+	    (!IS_ENABLED(CONFIG_SYNT_HPMICRO) || (sei->timestamp_dev == NULL) ||
+	     !device_is_ready(sei->timestamp_dev))) {
+		return -ENODEV;
+	}
+
+	key = k_spin_lock(&data->lock);
+	ret = 0;
+#if defined(CONFIG_SYNT_HPMICRO)
+	if (((source == HPM_SEI_TIMESTAMP_SOURCE_SYNT) ||
+	     (data->timestamp_source == HPM_SEI_TIMESTAMP_SOURCE_SYNT)) &&
+	    (sei->timestamp_dev != NULL)) {
+		ret = hpm_synt_timestamp_enable(sei->timestamp_dev,
+						source == HPM_SEI_TIMESTAMP_SOURCE_SYNT);
+	}
+#endif
+	if (ret == 0) {
+		data->timestamp_source = source;
+	}
+	k_spin_unlock(&data->lock, key);
+
+	return ret;
+}
+
+static int hpm_sei_drv_get_timestamp_source(const struct device *dev,
+					    enum hpm_sei_timestamp_source *source)
+{
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (source == NULL) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	*source = data->timestamp_source;
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
 static int hpm_sei_drv_get_status(const struct device *dev, enum hpm_sei_channel channel,
 				  struct hpm_sei_status *status)
 {
@@ -684,6 +871,7 @@ static DEVICE_API(hpm_sei, hpm_sei_api) = {
 	.configure_data = hpm_sei_drv_configure_data,
 	.set_instruction = hpm_sei_drv_set_instruction,
 	.configure_latch = hpm_sei_drv_configure_latch,
+	.configure_latch_output = hpm_sei_drv_configure_latch_output,
 	.configure_sample = hpm_sei_drv_configure_sample,
 	.configure_update = hpm_sei_drv_configure_update,
 	.configure_engine = hpm_sei_drv_configure_engine,
@@ -695,6 +883,13 @@ static DEVICE_API(hpm_sei, hpm_sei_api) = {
 	.software_trigger = hpm_sei_drv_software_trigger,
 	.get_data = hpm_sei_drv_get_data,
 	.set_data = hpm_sei_drv_set_data,
+	.get_clock_frequency = hpm_sei_drv_get_clock_frequency,
+	.get_timing = hpm_sei_drv_get_timing,
+	.set_data_points = hpm_sei_drv_set_data_points,
+	.rewind = hpm_sei_drv_rewind,
+	.get_latch_time = hpm_sei_drv_get_latch_time,
+	.set_timestamp_source = hpm_sei_drv_set_timestamp_source,
+	.get_timestamp_source = hpm_sei_drv_get_timestamp_source,
 	.get_status = hpm_sei_drv_get_status,
 	.get_events = hpm_sei_drv_get_events,
 	.clear_events = hpm_sei_drv_clear_events,
@@ -745,6 +940,14 @@ static int hpm_sei_init(const struct device *dev)
 		irq_enable(DT_INST_IRQN_BY_NAME(n, channel1));                                     \
 	}
 
+#if defined(CONFIG_SYNT_HPMICRO)
+#define HPM_SEI_TIMESTAMP_DEV(n)                                                                   \
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(n, synt), (DEVICE_DT_GET(DT_INST_PHANDLE(n, synt))),     \
+		    (NULL))
+#else
+#define HPM_SEI_TIMESTAMP_DEV(n) NULL
+#endif
+
 #define HPM_SEI_INIT(n)                                                                            \
 	BUILD_ASSERT(DT_INST_NUM_IRQS(n) == 2, "SEI requires one IRQ per channel");                 \
 	BUILD_ASSERT(DT_INST_IRQ_HAS_NAME(n, channel0) && DT_INST_IRQ_HAS_NAME(n, channel1),        \
@@ -753,6 +956,7 @@ static int hpm_sei_init(const struct device *dev)
 	static const struct hpm_sei_config hpm_sei_config_##n = {                                  \
 		.base = (SEI_Type *)DT_INST_REG_ADDR(n),                                           \
 		.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),                                \
+		.timestamp_dev = HPM_SEI_TIMESTAMP_DEV(n),                                         \
 		.clock_subsys = (clock_control_subsys_t)DT_INST_CLOCKS_CELL(n, name),              \
 		.irq_config_func = hpm_sei_irq_config_##n,                                         \
 	};                                                                                         \

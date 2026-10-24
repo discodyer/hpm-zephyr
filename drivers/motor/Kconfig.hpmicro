@@ -31,6 +31,17 @@ config SEI_HPMICRO
 	  engine, trigger and interrupt configuration. Encoder protocols are
 	  implemented by consumers.
 
+config SEI_SSI_HPMICRO
+	bool "HPMicro SSI encoder protocol consumer"
+	default y
+	depends on SEI_HPMICRO
+	depends on SYNT_HPMICRO
+	help
+	  Enable the synchronous SSI master protocol consumer on top of the
+	  protocol-neutral HPMicro SEI driver. It configures the standard SSI
+	  command program, SAMPLE/UPDATE mapping, latches and periodic trigger,
+	  then decodes multi-turn and single-turn position data.
+
 DT_COMPAT_HPM_MMC := hpmicro,hpm-mmc
 
 config MMC_HPMICRO

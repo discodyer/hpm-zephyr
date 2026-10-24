@@ -172,6 +172,12 @@ struct hpm_sei_trigger_output_config {
 	 HPM_SEI_EVENT_TRIGGER1_ERROR | HPM_SEI_EVENT_TRIGGER2_ERROR |                            \
 	 HPM_SEI_EVENT_TRIGGER3_ERROR)
 
+/** Timestamp source used for SEI latch captures. */
+enum hpm_sei_timestamp_source {
+	HPM_SEI_TIMESTAMP_SOURCE_NONE = 0,
+	HPM_SEI_TIMESTAMP_SOURCE_SYNT,
+};
+
 typedef void (*hpm_sei_event_callback_t)(const struct device *dev, enum hpm_sei_channel channel,
 					 uint32_t events, void *user_data);
 
@@ -250,6 +256,30 @@ struct hpm_sei_latch_transition {
 	enum hpm_sei_transition_condition timeout_cfg;
 };
 
+/** Output routing for one SEI latch. */
+struct hpm_sei_latch_output_config {
+	/** Enable the latch output. */
+	bool enable;
+	/** State transition that produces the output, from 0 through 3. */
+	uint8_t output_select;
+	/** Output delay in SEI clock cycles. */
+	uint16_t delay;
+};
+
+/** Transceiver timing observed from the hardware. */
+struct hpm_sei_timing {
+	/** Receive sampling point in SEI clock cycles. */
+	uint16_t rx_point;
+	/** Transmit sampling point in SEI clock cycles. */
+	uint16_t tx_point;
+	/** CK0 point in SEI clock cycles. */
+	uint16_t ck0_point;
+	/** CK1 point in SEI clock cycles. */
+	uint16_t ck1_point;
+	/** Hardware baud-divider field, which is the divider minus one. */
+	uint16_t baud_div;
+};
+
 struct hpm_sei_trigger_status {
 	/** Current periodic-trigger counter value. */
 	uint32_t periodic_count;
@@ -323,6 +353,9 @@ __subsystem struct hpm_sei_driver_api {
 	int (*configure_latch)(const struct device *dev, enum hpm_sei_channel channel,
 			       uint8_t latch, uint8_t transition,
 			       const struct hpm_sei_latch_transition *config);
+	int (*configure_latch_output)(const struct device *dev, enum hpm_sei_channel channel,
+				      uint8_t latch,
+				      const struct hpm_sei_latch_output_config *config);
 	int (*configure_sample)(const struct device *dev, enum hpm_sei_channel channel,
 				const struct hpm_sei_sample_config *config);
 	int (*configure_update)(const struct device *dev, enum hpm_sei_channel channel,
@@ -344,6 +377,18 @@ __subsystem struct hpm_sei_driver_api {
 			uint32_t *value);
 	int (*set_data)(const struct device *dev, enum hpm_sei_data_register register_index,
 			uint32_t value);
+	int (*get_clock_frequency)(const struct device *dev, uint32_t *frequency);
+	int (*get_timing)(const struct device *dev, enum hpm_sei_channel channel,
+			  struct hpm_sei_timing *timing);
+	int (*set_data_points)(const struct device *dev, enum hpm_sei_channel channel,
+			       uint16_t rx_point, uint16_t tx_point);
+	int (*rewind)(const struct device *dev, enum hpm_sei_channel channel,
+		      uint32_t data_register_mask);
+	int (*get_latch_time)(const struct device *dev, enum hpm_sei_channel channel, uint8_t latch,
+			      uint32_t *time);
+	int (*set_timestamp_source)(const struct device *dev, enum hpm_sei_timestamp_source source);
+	int (*get_timestamp_source)(const struct device *dev,
+				    enum hpm_sei_timestamp_source *source);
 	int (*get_status)(const struct device *dev, enum hpm_sei_channel channel,
 			  struct hpm_sei_status *status);
 	int (*get_events)(const struct device *dev, enum hpm_sei_channel channel, uint32_t *events);
@@ -380,6 +425,14 @@ static inline int hpm_sei_configure_latch(const struct device *dev, enum hpm_sei
 {
 	return DEVICE_API_GET(hpm_sei, dev)
 		->configure_latch(dev, channel, latch, transition, config);
+}
+
+/** Configure one latch's output source, enable and delay. */
+static inline int hpm_sei_configure_latch_output(
+	const struct device *dev, enum hpm_sei_channel channel, uint8_t latch,
+	const struct hpm_sei_latch_output_config *config)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->configure_latch_output(dev, channel, latch, config);
 }
 
 static inline int hpm_sei_configure_sample(const struct device *dev, enum hpm_sei_channel channel,
@@ -455,6 +508,59 @@ static inline int hpm_sei_set_data(const struct device *dev,
 				   enum hpm_sei_data_register register_index, uint32_t value)
 {
 	return DEVICE_API_GET(hpm_sei, dev)->set_data(dev, register_index, value);
+}
+
+/** Read the SEI module clock frequency captured at driver initialization. */
+static inline int hpm_sei_get_clock_frequency(const struct device *dev, uint32_t *frequency)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->get_clock_frequency(dev, frequency);
+}
+
+/** Read the configured SEI transceiver timing points and baud divider. */
+static inline int hpm_sei_get_timing(const struct device *dev, enum hpm_sei_channel channel,
+				     struct hpm_sei_timing *timing)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->get_timing(dev, channel, timing);
+}
+
+/** Set the receive and transmit sampling points for one channel. */
+static inline int hpm_sei_set_data_points(const struct device *dev,
+					  enum hpm_sei_channel channel, uint16_t rx_point,
+					  uint16_t tx_point)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->set_data_points(dev, channel, rx_point, tx_point);
+}
+
+/**
+ * Rewind the engine, command pointer and selected data-register pointers.
+ *
+ * @retval -EBUSY if the SEI engine is still enabled.
+ */
+static inline int hpm_sei_rewind(const struct device *dev, enum hpm_sei_channel channel,
+				 uint32_t data_register_mask)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->rewind(dev, channel, data_register_mask);
+}
+
+/** Read the timestamp captured by one SEI latch. */
+static inline int hpm_sei_get_latch_time(const struct device *dev, enum hpm_sei_channel channel,
+					 uint8_t latch, uint32_t *time)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->get_latch_time(dev, channel, latch, time);
+}
+
+/** Select and enable the timestamp source used by SEI latch captures. */
+static inline int hpm_sei_set_timestamp_source(const struct device *dev,
+					       enum hpm_sei_timestamp_source source)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->set_timestamp_source(dev, source);
+}
+
+/** Read the timestamp source selected for SEI latch captures. */
+static inline int hpm_sei_get_timestamp_source(const struct device *dev,
+					       enum hpm_sei_timestamp_source *source)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->get_timestamp_source(dev, source);
 }
 
 static inline int hpm_sei_get_status(const struct device *dev, enum hpm_sei_channel channel,
