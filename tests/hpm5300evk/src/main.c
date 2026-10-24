@@ -21,6 +21,7 @@
 #include <drivers/motor/hpmicro_sei.h>
 #include <drivers/motor/hpmicro_sei_bissc.h>
 #include <drivers/motor/hpmicro_sei_endat.h>
+#include <drivers/motor/hpmicro_sei_hiperface.h>
 #include <drivers/motor/hpmicro_sei_ssi.h>
 #include <drivers/motor/hpmicro_sei_tamagawa.h>
 #include <drivers/motor/hpmicro_mmc.h>
@@ -835,6 +836,16 @@ ZTEST(hpm5300evk, test_devices_ready)
 	};
 	struct hpm_sei_endat_result sei_endat_result;
 #endif
+#if CONFIG_SEI_HIPERFACE_HPMICRO
+	struct hpm_sei_hiperface_config sei_hiperface_config = {
+		.baudrate = 9600U,
+		.address = HPM_SEI_HIPERFACE_DEFAULT_ADDRESS,
+		.command = HPM_SEI_HIPERFACE_DEFAULT_COMMAND,
+		.poll_period_us = 20000U,
+		.watchdog_time = 0xfffeU,
+	};
+	struct hpm_sei_hiperface_result sei_hiperface_result;
+#endif
 #if CONFIG_SEI_BISSC_HPMICRO
 	struct hpm_sei_bissc_config sei_bissc_config = {
 		.baudrate = 1000000U,
@@ -952,6 +963,16 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(hpm_sei_endat_configure(sei, HPM_SEI_CHANNEL_1, &sei_endat_config), -EINVAL);
 	sei_endat_config.crc_bits = 5U;
 #endif
+#if CONFIG_SEI_HIPERFACE_HPMICRO
+	zassert_equal(hpm_sei_hiperface_configure(sei, HPM_SEI_CHANNEL_1,
+						  &sei_hiperface_config),
+		      -EBUSY);
+	sei_hiperface_config.address = 0U;
+	zassert_equal(hpm_sei_hiperface_configure(sei, HPM_SEI_CHANNEL_1,
+						  &sei_hiperface_config),
+		      -EINVAL);
+	sei_hiperface_config.address = HPM_SEI_HIPERFACE_DEFAULT_ADDRESS;
+#endif
 	zassert_ok(hpm_sei_ssi_deconfigure(sei, HPM_SEI_CHANNEL_0));
 	zassert_equal(hpm_sei_ssi_configure(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
 	sei_ssi_config.multi_turn_bits = 0U;
@@ -996,6 +1017,21 @@ ZTEST(hpm5300evk, test_devices_ready)
 	sei_endat_config.mode_command = HPM_SEI_ENDAT_COMMAND_READ_POSITION;
 	zassert_equal(hpm_sei_endat_get_result(sei, HPM_SEI_CHANNEL_1, NULL), -EINVAL);
 	zassert_equal(hpm_sei_endat_get_result(sei, (enum hpm_sei_channel)2, &sei_endat_result),
+		      -EINVAL);
+#endif
+#if CONFIG_SEI_HIPERFACE_HPMICRO
+	zassert_ok(hpm_sei_hiperface_configure(sei, HPM_SEI_CHANNEL_1, &sei_hiperface_config));
+	zassert_equal(hpm_sei_hiperface_configure(sei, HPM_SEI_CHANNEL_0, &sei_hiperface_config),
+		      -EBUSY);
+	zassert_ok(hpm_sei_hiperface_deconfigure(sei, HPM_SEI_CHANNEL_1));
+	zassert_equal(hpm_sei_hiperface_configure(sei, HPM_SEI_CHANNEL_1, NULL), -EINVAL);
+	sei_hiperface_config.command = 0U;
+	zassert_equal(hpm_sei_hiperface_configure(sei, HPM_SEI_CHANNEL_1, &sei_hiperface_config),
+		      -EINVAL);
+	sei_hiperface_config.command = HPM_SEI_HIPERFACE_DEFAULT_COMMAND;
+	zassert_equal(hpm_sei_hiperface_get_result(sei, HPM_SEI_CHANNEL_1, NULL), -EINVAL);
+	zassert_equal(hpm_sei_hiperface_get_result(sei, (enum hpm_sei_channel)2,
+						   &sei_hiperface_result),
 		      -EINVAL);
 #endif
 #endif

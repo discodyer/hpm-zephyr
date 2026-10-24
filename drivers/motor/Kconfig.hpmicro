@@ -78,6 +78,20 @@ config SEI_ENDAT_HPMICRO
 	  mapping, periodic polling and watchdog recovery, then reports position,
 	  error status, CRC and timestamps.
 
+config SEI_HIPERFACE_HPMICRO
+	bool "HPMicro HIPERFACE encoder protocol consumer"
+	default y
+	depends on SEI_HPMICRO
+	depends on SYNT_HPMICRO
+	help
+	  Enable the asynchronous HIPERFACE master protocol consumer on top of the
+	  protocol-neutral HPMicro SEI driver. It programs the 8E1 request,
+	  software checksum, encoder echo validation and standard 32-bit position
+	  response handling, with periodic polling and watchdog recovery. HPM5361
+	  E00025 makes the SEI hardware parity path unreliable; the current
+	  implementation is build-only until a CRC-based parity workaround or an
+	  external UART path is validated.
+
 DT_COMPAT_HPM_MMC := hpmicro,hpm-mmc
 
 config MMC_HPMICRO
