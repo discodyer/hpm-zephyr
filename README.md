@@ -159,6 +159,46 @@ vendor HAL source. Devicetree still controls which instances a board enables.
 The optional `CONFIG_HPM_SDK_BUILD_ALL_DRIVERS=y` compiles every HAL source
 listed for the selected SoC for build-only regression testing.
 
+The tested Zephyr and HPM SDK revisions, plus hashes of the selected SoC HAL
+list and vendor driver source manifest, are recorded in
+`modules/hpm_sdk/baseline.env`. Verify a checkout with:
+
+```sh
+HPM_SDK_DIR="$PWD/hpm_sdk" ZEPHYR_BASE="$PWD/zephyr" \
+  ./hpm-zephyr/scripts/hpm_sdk_baseline.py
+```
+
+### HPM SDK upgrade checklist
+
+Do not update only the manifest SHA. Treat an SDK upgrade as an integration
+change and perform these steps in order:
+
+1. Check out the candidate tag and resolve it to a full commit SHA. Keep the
+   vendor tree unmodified.
+2. Compare the candidate `soc/HPM5300/HPM5361/soc_modules.list` and
+   `drivers/CMakeLists.txt` with the pinned versions. Add or remove
+   `HAS_HPMSDK_*`/`USE_HPMSDK_*` symbols only when the vendor capability or
+   source mapping actually changed; update `SOC_HPM5361` capability selects to
+   match the new SoC list.
+3. Regenerate the package pinctrl DTSIs and run the pinctrl consistency check.
+4. Run the normal and all-HAL builds. Review the final map for unexpected
+   vendor objects and any duplicate or undefined symbols.
+5. Update the HPM SDK SHA in the west manifest and regenerate
+   `modules/hpm_sdk/baseline.env` with `--write` only after the review passes.
+6. Record the tested Zephyr revision and validation result in
+   `docs/agent/tasks.md`, then freeze a release manifest with
+   `west manifest --freeze`.
+
+Run the baseline unit tests after changing the checker or its baseline format:
+
+```sh
+python3 -m unittest scripts/tests/test_hpm_sdk_baseline.py
+```
+
+The baseline check intentionally fails when either the SDK or Zephyr revision
+changes. This makes an upgrade review explicit instead of allowing a floating
+workspace to pass silently.
+
 The SoC DTSI describes the major HPM5361 instance set, including UART0-7,
 I2C0-3, SPI0-3, MCAN0-3, PWM0-1, ADC0-1, DAC0-1, ACMP, OPAMP0-1, GPTMR0-3,
 EWDG0-1, HDMA, USB0, GPIOA/B/X/Y, PGPIO, PUART, PTMR and PEWDG. Instances whose

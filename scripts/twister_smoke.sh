@@ -23,4 +23,6 @@ ZEPHYR_EXTRA_MODULES=$MODULE_DIR HPM_SDK_DIR=$HPM_SDK_DIR west twister \
 	-O "$OUT_DIR/motor_math" \
 	"$@"
 
+python3 -m unittest "$MODULE_DIR/scripts/tests/test_hpm_sdk_baseline.py"
+
 printf 'HPM5300 Twister build-only tests passed\n'

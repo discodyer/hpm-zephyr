@@ -7,6 +7,7 @@
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +33,8 @@ REQUIRED = (
     "dts/riscv/hpmicro/hpm5361-ieg-pinctrl.dtsi",
     "scripts/generate_hpm5361_pinctrl.py",
     "scripts/check_pinctrl.py",
+    "scripts/hpm_sdk_baseline.py",
+    "modules/hpm_sdk/baseline.env",
 )
 
 PACKAGE_MODELS = {
@@ -42,14 +45,15 @@ PACKAGE_MODELS = {
 
 
 def _kconfig_symbols(text: str, prefix: str) -> set[str]:
-    return set(re.findall(rf"^config {re.escape(prefix)}([A-Za-z0-9_]+)$", text, re.MULTILINE))
+    return set(
+        re.findall(rf"^config {re.escape(prefix)}([A-Za-z0-9_]+)$", text, re.MULTILINE)
+    )
 
 
 def _check_sdk_mapping(root: Path) -> list[str]:
     errors = []
     sdk_dir = os.environ.get("HPM_SDK_DIR")
     kconfig = (root / "modules/hpm_sdk/Kconfig").read_text(encoding="utf-8")
-    capabilities = _kconfig_symbols(kconfig, "HAS_HPMSDK_")
     selections = _kconfig_symbols(kconfig, "USE_HPMSDK_")
 
     missing_dependencies = [
@@ -62,7 +66,9 @@ def _check_sdk_mapping(root: Path) -> list[str]:
         )
     ]
     if missing_dependencies:
-        errors.append("USE symbols without HAS dependency: " + ", ".join(missing_dependencies))
+        errors.append(
+            "USE symbols without HAS dependency: " + ", ".join(missing_dependencies)
+        )
 
     if not sdk_dir:
         return errors
@@ -81,18 +87,26 @@ def _check_sdk_mapping(root: Path) -> list[str]:
         )
     )
     soc_kconfig = (root / "soc/hpmicro/hpm5300/Kconfig.soc").read_text(encoding="utf-8")
-    hpm5361 = re.search(r"^config SOC_HPM5361\n(?:.*\n)*?(?=^config |\Z)", soc_kconfig, re.MULTILINE)
+    hpm5361 = re.search(
+        r"^config SOC_HPM5361\n(?:.*\n)*?(?=^config |\Z)", soc_kconfig, re.MULTILINE
+    )
     if not hpm5361:
         errors.append("SOC_HPM5361 is not defined in Kconfig.soc")
         return errors
 
-    selected = set(re.findall(r"^\tselect HAS_HPMSDK_([A-Za-z0-9_]+)$", hpm5361.group(0), re.MULTILINE))
+    selected = set(
+        re.findall(
+            r"^\tselect HAS_HPMSDK_([A-Za-z0-9_]+)$", hpm5361.group(0), re.MULTILINE
+        )
+    )
     expected = sdk_capabilities | {"XPI"}
     if selected != expected:
         missing = sorted(expected - selected)
         extra = sorted(selected - expected)
         if missing:
-            errors.append("HPM5361 does not select SDK capabilities: " + ", ".join(missing))
+            errors.append(
+                "HPM5361 does not select SDK capabilities: " + ", ".join(missing)
+            )
         if extra:
             errors.append("HPM5361 selects unknown capabilities: " + ", ".join(extra))
 
@@ -122,8 +136,9 @@ def main() -> int:
         return 1
 
     if (ROOT / "soc" / "hpmicro" / "hpm5300" / "soc.yml").exists():
-        print("duplicate SoC discovery file: soc/hpmicro/hpm5300/soc.yml",
-              file=sys.stderr)
+        print(
+            "duplicate SoC discovery file: soc/hpmicro/hpm5300/soc.yml", file=sys.stderr
+        )
         return 1
 
     module_yml = (ROOT / "zephyr/module.yml").read_text(encoding="utf-8")
@@ -153,6 +168,18 @@ def main() -> int:
         for error in errors:
             print(error, file=sys.stderr)
         return 1
+
+    sdk_dir = os.environ.get("HPM_SDK_DIR")
+    zephyr_dir = os.environ.get("ZEPHYR_BASE")
+    if sdk_dir and zephyr_dir:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/hpm_sdk_baseline.py")],
+            cwd=ROOT,
+            env=os.environ,
+            check=False,
+        )
+        if result.returncode != 0:
+            return result.returncode
 
     print("hpm-zephyr module layout and SDK capability mapping: OK")
     return 0
