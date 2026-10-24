@@ -14,9 +14,14 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 
 #include <hpm_clock_drv.h>
 #include <hpm_spi_drv.h>
+
+LOG_MODULE_REGISTER(spi_hpmicro, CONFIG_SPI_LOG_LEVEL);
+
+#include "spi_context.h"
 
 #define HPM_SPI_MAX_WORD_SIZE 32U
 #define HPM_SPI_FIFO_DEPTH    8U
@@ -32,7 +37,7 @@ struct hpm_spi_config {
 };
 
 struct hpm_spi_data {
-	struct k_mutex lock;
+	struct spi_context ctx;
 };
 
 static int hpm_spi_configure(const struct device *dev, const struct spi_config *spi_cfg)
@@ -64,25 +69,18 @@ static int hpm_spi_configure(const struct device *dev, const struct spi_config *
 		return -EINVAL;
 	}
 
-	if ((spi_cfg->operation & SPI_HOLD_ON_CS) != 0U) {
-		return -ENOTSUP;
-	}
+	if (spi_cs_is_gpio(spi_cfg)) {
+		if (!gpio_is_ready_dt(&spi_cfg->cs.gpio)) {
+			return -ENODEV;
+		}
+	} else {
+		if ((spi_cfg->operation & (SPI_CS_ACTIVE_HIGH | SPI_HOLD_ON_CS)) != 0U) {
+			return -ENOTSUP;
+		}
 
-	if ((spi_cfg->operation & SPI_LOCK_ON) != 0U) {
-		return -ENOTSUP;
-	}
-
-	if ((spi_cfg->operation & SPI_CS_ACTIVE_HIGH) != 0U) {
-		return -ENOTSUP;
-	}
-
-	if (spi_cfg->cs.cs_is_gpio) {
-		return -ENOTSUP;
-	}
-
-	if ((spi_cfg->peripheral > 3U) || (spi_cfg->cs.setup_ns != 0U) ||
-	    (spi_cfg->cs.hold_ns != 0U)) {
-		return -ENOTSUP;
+		if ((spi_cfg->peripheral > 3U) || (spi_cfg->cs.hold_ns != 0U)) {
+			return -ENOTSUP;
+		}
 	}
 
 	word_size = SPI_WORD_SIZE_GET(spi_cfg->operation);
@@ -98,6 +96,24 @@ static int hpm_spi_configure(const struct device *dev, const struct spi_config *
 	spi_master_get_default_timing_config(&timing_config);
 	timing_config.master_config.clk_src_freq_in_hz = clock_freq;
 	timing_config.master_config.sclk_freq_in_hz = spi_cfg->frequency;
+
+	if (!spi_cs_is_gpio(spi_cfg) && (spi_cfg->cs.setup_ns != 0U)) {
+		uint64_t setup_ns = spi_cfg->cs.setup_ns;
+		uint64_t period_ns = DIV_ROUND_UP(NSEC_PER_SEC, spi_cfg->frequency);
+		uint8_t cs2sclk;
+
+		for (cs2sclk = 0U; cs2sclk < 4U; cs2sclk++) {
+			if ((period_ns * (cs2sclk + 1U)) / 2U >= setup_ns) {
+				break;
+			}
+		}
+
+		if (cs2sclk >= 4U) {
+			return -ENOTSUP;
+		}
+		timing_config.master_config.cs2sclk = cs2sclk;
+	}
+
 	if (spi_master_timing_init(config->base, &timing_config) != status_success) {
 		return -EINVAL;
 	}
@@ -113,6 +129,8 @@ static int hpm_spi_configure(const struct device *dev, const struct spi_config *
 						   : spi_sclk_sampling_odd_clk_edges;
 	format_config.common_config.lsb = (spi_cfg->operation & SPI_TRANSFER_LSB) != 0U;
 	spi_format_init(config->base, &format_config);
+
+	((struct hpm_spi_data *)dev->data)->ctx.config = spi_cfg;
 
 	return 0;
 }
@@ -275,44 +293,47 @@ static int hpm_spi_transceive(const struct device *dev, const struct spi_config 
 	uint32_t rx_frames;
 	int ret;
 
+	spi_context_lock(&data->ctx, false, NULL, NULL, spi_cfg);
+
 	ret = hpm_spi_configure(dev, spi_cfg);
 	if (ret < 0) {
-		return ret;
+		goto out;
 	}
 
 	ret = hpm_spi_buffer_total(tx_bufs, &tx_len);
 	if (ret < 0) {
-		return ret;
+		goto out;
 	}
 
 	ret = hpm_spi_buffer_total(rx_bufs, &rx_len);
 	if (ret < 0) {
-		return ret;
+		goto out;
 	}
 
 	if ((tx_len == 0U) && (rx_len == 0U)) {
-		return 0;
+		goto out;
 	}
 
 	word_size = SPI_WORD_SIZE_GET(spi_cfg->operation);
 	if ((word_size != 8U) && (word_size != 16U) && (word_size != 24U) && (word_size != 32U)) {
-		return -ENOTSUP;
+		ret = -ENOTSUP;
+		goto out;
 	}
 	frame_size = word_size / 8U;
 
 	if (((tx_len != 0U) && !IS_ALIGNED(tx_len, frame_size)) ||
 	    ((rx_len != 0U) && !IS_ALIGNED(rx_len, frame_size))) {
-		return -EINVAL;
+		ret = -EINVAL;
+		goto out;
 	}
 
 	tx_frames = (uint32_t)(tx_len / frame_size);
 	rx_frames = (uint32_t)(rx_len / frame_size);
 	frames = MAX(tx_frames, rx_frames);
 
-	k_mutex_lock(&data->lock, K_FOREVER);
-
 	spi_master_get_default_control_config(&control_config);
-	control_config.common_config.cs_index = (spi_cs_index_t)BIT(spi_cfg->peripheral);
+	control_config.common_config.cs_index =
+		spi_cs_is_gpio(spi_cfg) ? 0U : (spi_cs_index_t)BIT(spi_cfg->peripheral);
 
 	if ((tx_frames > 0U) && (rx_frames > 0U)) {
 		control_config.common_config.trans_mode = spi_trans_write_read_together;
@@ -322,18 +343,27 @@ static int hpm_spi_transceive(const struct device *dev, const struct spi_config 
 		control_config.common_config.trans_mode = spi_trans_read_only;
 	}
 
+	spi_context_cs_control(&data->ctx, true);
 	ret = hpm_spi_transfer_stream(config, &control_config, frame_size, frames, tx_frames,
 				      tx_bufs, rx_bufs);
+	spi_context_cs_control(&data->ctx, false);
 
-	k_mutex_unlock(&data->lock);
+out:
+	spi_context_release(&data->ctx, ret);
+	if (ret < 0) {
+		spi_context_unlock_unconditionally(&data->ctx);
+	}
 
 	return ret;
 }
 
 static int hpm_spi_release(const struct device *dev, const struct spi_config *spi_cfg)
 {
-	ARG_UNUSED(dev);
+	struct hpm_spi_data *data = dev->data;
+
 	ARG_UNUSED(spi_cfg);
+
+	spi_context_unlock_unconditionally(&data->ctx);
 
 	return 0;
 }
@@ -363,7 +393,12 @@ static int hpm_spi_init(const struct device *dev)
 		return -EIO;
 	}
 
-	k_mutex_init(&data->lock);
+	ret = spi_context_cs_configure_all(&data->ctx);
+	if (ret < 0) {
+		return ret;
+	}
+
+	spi_context_unlock_unconditionally(&data->ctx);
 
 	return 0;
 }
@@ -386,7 +421,10 @@ static const struct spi_driver_api hpm_spi_api = {
 		.pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),                                       \
 	};                                                                                         \
                                                                                                    \
-	static struct hpm_spi_data hpm_spi_data_##n;                                               \
+	static struct hpm_spi_data hpm_spi_data_##n = {                                            \
+		SPI_CONTEXT_INIT_LOCK(hpm_spi_data_##n, ctx),                                      \
+		SPI_CONTEXT_INIT_SYNC(hpm_spi_data_##n, ctx),                                      \
+		SPI_CONTEXT_CS_GPIOS_INITIALIZE(DT_DRV_INST(n), ctx)};                             \
                                                                                                    \
 	DEVICE_DT_INST_DEFINE(n, hpm_spi_init, NULL, &hpm_spi_data_##n, &hpm_spi_config_##n,       \
 			      POST_KERNEL, CONFIG_SPI_INIT_PRIORITY, &hpm_spi_api);

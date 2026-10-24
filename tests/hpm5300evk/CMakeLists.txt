@@ -7,3 +7,6 @@ project(hpm5300evk_smoke)
 
 target_sources(app PRIVATE src/main.c)
 target_sources_ifdef(CONFIG_CRYPTO_HPMICRO app PRIVATE src/crypto.c)
+target_sources_ifdef(CONFIG_SPI_HPMICRO app PRIVATE src/spi.c)
+target_sources_ifdef(CONFIG_DMA_HPMICRO app PRIVATE src/dma.c)
+target_sources_ifdef(CONFIG_UHC_HPMICRO app PRIVATE src/usb_host.c)

@@ -1,0 +1,8 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: Build-only HPMicro SPI GPIO chip-select consumer
+
+compatible: "hpmicro,spi-gpio-cs-test"
+
+include: spi-device.yaml
