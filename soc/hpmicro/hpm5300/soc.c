@@ -13,6 +13,24 @@
 #include <hpm_soc.h>
 #include <hpm_sysctl_drv.h>
 
+#if defined(CONFIG_RISCV_CUSTOM_CSR_ANDES_PMA)
+#include <pma.h>
+#endif
+
+void soc_early_init_hook(void)
+{
+#if defined(CONFIG_RISCV_CUSTOM_CSR_ANDES_PMA)
+	pma_init();
+#endif
+}
+
+void soc_per_core_init_hook(void)
+{
+#if defined(CONFIG_RISCV_CUSTOM_CSR_ANDES_PMA)
+	pma_init_per_core();
+#endif
+}
+
 static int hpm5300_clock_init(void)
 {
 	uint32_t cpu0_freq = clock_get_frequency(clock_cpu0);

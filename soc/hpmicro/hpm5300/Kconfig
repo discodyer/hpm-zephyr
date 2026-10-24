@@ -18,6 +18,7 @@ config SOC_HPM5361
 	select RISCV_ISA_EXT_ZIFENCEI
 	select CPU_HAS_DCACHE
 	select CPU_HAS_ICACHE
+	select CPU_HAS_ANDES_PMA
 	select RISCV_PMP if !MCUBOOT
 	select USE_HPMSDK_PCFG
 	select USE_HPMSDK_PLLCTLV2
@@ -29,7 +30,9 @@ if SOC_SERIES_HPM5300
 config SOC_ANDES_V5_PMA
 	bool "Andes V5 Physical Memory Attribute support"
 	default y
-	select ARCH_HAS_NOCACHE_MEMORY_SUPPORT
+	select RISCV_CUSTOM_CSR_ANDES_PMA
+	select SOC_EARLY_INIT_HOOK
+	select SOC_PER_CORE_INIT_HOOK
 	help
 	  Configure physical memory attributes through Andes PMA CSRs.
 
