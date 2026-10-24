@@ -139,6 +139,10 @@
 	status = "okay";
 };
 
+&ptpc1 {
+	status = "okay";
+};
+
 &otp {
 	status = "okay";
 };

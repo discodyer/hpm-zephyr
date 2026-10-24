@@ -25,6 +25,7 @@
 #include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/otp.h>
 #include <zephyr/drivers/ptp_clock.h>
+#include <drivers/ptp_clock/hpmicro_ptpc.h>
 #include <zephyr/drivers/sensor.h>
 #include <drivers/sensor/hpmicro_qeiv2.h>
 #include <zephyr/drivers/i2c.h>
@@ -202,11 +203,52 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_true(device_is_ready(DEVICE_DT_GET(TSNS_NODE)));
 #endif
 #if DT_NODE_HAS_STATUS(PTPC0_NODE, okay)
+	const struct device *ptpc0 = DEVICE_DT_GET(PTPC0_NODE);
+	const struct hpm_ptpc_capture_config ptpc_capture = {
+		.edge = HPM_PTPC_CAPTURE_RISING,
+		.keep = true,
+	};
+	struct hpm_ptpc_compare_config ptpc_compare = {
+		.target =
+			{
+				.second = 1U,
+				.nanosecond = 500000000U,
+			},
+		.enable = true,
+	};
 	struct net_ptp_time ptp_time;
+	uint32_t ptpc_events;
 
-	zassert_true(device_is_ready(DEVICE_DT_GET(PTPC0_NODE)));
-	zassert_ok(ptp_clock_get(DEVICE_DT_GET(PTPC0_NODE), &ptp_time));
+	zassert_true(device_is_ready(ptpc0));
+	zassert_true(DEVICE_API_IS(ptp_clock, ptpc0));
+	zassert_true(DEVICE_API_IS(hpm_ptpc, ptpc0));
+	zassert_ok(ptp_clock_get(ptpc0, &ptp_time));
 	zassert_true(ptp_time.nanosecond < NSEC_PER_SEC);
+	zassert_ok(hpm_ptpc_configure_capture(ptpc0, &ptpc_capture));
+	zassert_ok(hpm_ptpc_read_capture(ptpc0, &ptp_time));
+	zassert_equal(hpm_ptpc_configure_capture(ptpc0, NULL), -EINVAL);
+	zassert_equal(hpm_ptpc_read_capture(ptpc0, NULL), -EINVAL);
+	zassert_ok(hpm_ptpc_configure_compare(ptpc0, &ptpc_compare));
+	ptpc_compare.enable = false;
+	zassert_ok(hpm_ptpc_configure_compare(ptpc0, &ptpc_compare));
+	zassert_equal(hpm_ptpc_configure_compare(ptpc0, NULL), -EINVAL);
+	zassert_ok(hpm_ptpc_configure_pps(ptpc0, 1U));
+	zassert_equal(hpm_ptpc_configure_pps(ptpc0, 15U), -EINVAL);
+	zassert_ok(hpm_ptpc_get_events(ptpc0, &ptpc_events));
+	zassert_equal(hpm_ptpc_get_events(ptpc0, NULL), -EINVAL);
+	zassert_ok(hpm_ptpc_clear_events(ptpc0, HPM_PTPC_EVENT_ALL));
+	zassert_equal(hpm_ptpc_clear_events(ptpc0, BIT(7)), -EINVAL);
+	zassert_ok(hpm_ptpc_set_event_callback(ptpc0, HPM_PTPC_EVENT_ALL, NULL, NULL));
+	zassert_equal(hpm_ptpc_set_event_callback(ptpc0, BIT(7), NULL, NULL), -EINVAL);
+#endif
+#if DT_NODE_HAS_STATUS(PTPC1_NODE, okay)
+	const struct device *ptpc1 = DEVICE_DT_GET(PTPC1_NODE);
+
+	zassert_true(device_is_ready(ptpc1));
+	zassert_true(DEVICE_API_IS(ptp_clock, ptpc1));
+	zassert_true(DEVICE_API_IS(hpm_ptpc, ptpc1));
+	zassert_ok(hpm_ptpc_configure_pps(ptpc1, 0U));
+	zassert_ok(hpm_ptpc_set_event_callback(ptpc1, HPM_PTPC_EVENT_COMPARE, NULL, NULL));
 #endif
 #if DT_NODE_HAS_STATUS(OTP_NODE, okay)
 	uint32_t otp_word;

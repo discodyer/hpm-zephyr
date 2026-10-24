@@ -11,9 +11,12 @@ config PTP_CLOCK_HPMICRO
 	depends on DT_HAS_HPMICRO_HPM_PTPC_ENABLED
 	depends on HAS_HPMSDK_PTPC
 	select USE_HPMSDK_PTPC
+	select SHARED_INTERRUPTS
 	help
 	  Enable the HPMicro PTPC timestamp clock driver. Each enabled child
-	  node represents one of the two independent timestamp counters.
+	  node represents one of the two independent timestamp counters. Both
+	  channels share one hardware interrupt line, so shared interrupt support
+	  is required when both children are enabled.
 
 if PTP_CLOCK_HPMICRO
 
