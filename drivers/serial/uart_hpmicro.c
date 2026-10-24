@@ -12,6 +12,7 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/irq.h>
+#include <zephyr/kernel.h>
 
 #include <hpm_common.h>
 #include <hpm_clock_drv.h>
@@ -33,11 +34,110 @@ struct hpm_zephyr_uart_config {
 };
 
 struct hpm_zephyr_uart_data {
+	struct k_spinlock lock;
+	uint32_t clock_freq;
+	uint32_t baudrate;
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	uart_irq_callback_user_data_t callback;
 	void *callback_data;
 #endif
 };
+
+static word_length_t hpm_uart_word_length(enum uart_config_data_bits data_bits)
+{
+	switch (data_bits) {
+	case UART_CFG_DATA_BITS_5:
+		return word_length_5_bits;
+	case UART_CFG_DATA_BITS_6:
+		return word_length_6_bits;
+	case UART_CFG_DATA_BITS_7:
+		return word_length_7_bits;
+	case UART_CFG_DATA_BITS_8:
+		return word_length_8_bits;
+	default:
+		return (word_length_t)UINT8_MAX;
+	}
+}
+
+static parity_setting_t hpm_uart_parity(enum uart_config_parity parity)
+{
+	switch (parity) {
+	case UART_CFG_PARITY_NONE:
+		return parity_none;
+	case UART_CFG_PARITY_ODD:
+		return parity_odd;
+	case UART_CFG_PARITY_EVEN:
+		return parity_even;
+	case UART_CFG_PARITY_MARK:
+		return parity_always_1;
+	case UART_CFG_PARITY_SPACE:
+		return parity_always_0;
+	default:
+		return (parity_setting_t)UINT8_MAX;
+	}
+}
+
+static num_of_stop_bits_t hpm_uart_stop_bits(enum uart_config_stop_bits stop_bits)
+{
+	switch (stop_bits) {
+	case UART_CFG_STOP_BITS_1:
+		return stop_bits_1;
+	case UART_CFG_STOP_BITS_1_5:
+		return stop_bits_1_5;
+	case UART_CFG_STOP_BITS_2:
+		return stop_bits_2;
+	default:
+		return (num_of_stop_bits_t)UINT8_MAX;
+	}
+}
+
+static int hpm_uart_configure(const struct device *dev, const struct uart_config *cfg)
+{
+	const struct hpm_zephyr_uart_config *config = dev->config;
+	struct hpm_zephyr_uart_data *data = dev->data;
+	word_length_t word_length;
+	parity_setting_t parity;
+	num_of_stop_bits_t stop_bits;
+	k_spinlock_key_t key;
+	hpm_stat_t status;
+
+	if (cfg == NULL) {
+		return -EINVAL;
+	}
+
+	if ((cfg->flow_ctrl != UART_CFG_FLOW_CTRL_NONE) ||
+	    (cfg->data_bits == UART_CFG_DATA_BITS_9) ||
+	    ((cfg->data_bits == UART_CFG_DATA_BITS_5) &&
+	     (cfg->stop_bits == UART_CFG_STOP_BITS_2))) {
+		return -ENOTSUP;
+	}
+
+	word_length = hpm_uart_word_length(cfg->data_bits);
+	parity = hpm_uart_parity(cfg->parity);
+	stop_bits = hpm_uart_stop_bits(cfg->stop_bits);
+	if ((word_length == (word_length_t)UINT8_MAX) || (parity == (parity_setting_t)UINT8_MAX) ||
+	    (stop_bits == (num_of_stop_bits_t)UINT8_MAX)) {
+		return -ENOTSUP;
+	}
+
+	if (cfg->baudrate == 0U) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	status = uart_set_baudrate(config->base, cfg->baudrate, data->clock_freq);
+	if (status != status_success) {
+		k_spin_unlock(&data->lock, key);
+		return -EINVAL;
+	}
+	uart_set_data_bits(config->base, word_length);
+	uart_set_parity(config->base, parity);
+	uart_set_stop_bits(config->base, stop_bits);
+	data->baudrate = cfg->baudrate;
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
 
 static int hpm_uart_init(const struct device *dev)
 {
@@ -83,6 +183,14 @@ static int hpm_uart_init(const struct device *dev)
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	config->irq_config_func(dev);
 #endif
+
+	struct hpm_zephyr_uart_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	key = k_spin_lock(&data->lock);
+	data->clock_freq = clock_freq;
+	data->baudrate = config->current_speed;
+	k_spin_unlock(&data->lock, key);
 
 	return 0;
 }
@@ -256,10 +364,87 @@ static void hpm_uart_isr(const struct device *dev)
 }
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 
+static int hpm_uart_config_get(const struct device *dev, struct uart_config *cfg)
+{
+	const struct hpm_zephyr_uart_config *config = dev->config;
+	struct hpm_zephyr_uart_data *data = dev->data;
+	word_length_t word_length;
+	parity_setting_t parity;
+	num_of_stop_bits_t stop_bits;
+	k_spinlock_key_t key;
+
+	if (cfg == NULL) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	word_length = uart_get_data_bits(config->base);
+	parity = uart_get_parity(config->base);
+	stop_bits = uart_get_stop_bits(config->base);
+	cfg->baudrate = data->baudrate;
+	k_spin_unlock(&data->lock, key);
+
+	switch (word_length) {
+	case word_length_5_bits:
+		cfg->data_bits = UART_CFG_DATA_BITS_5;
+		break;
+	case word_length_6_bits:
+		cfg->data_bits = UART_CFG_DATA_BITS_6;
+		break;
+	case word_length_7_bits:
+		cfg->data_bits = UART_CFG_DATA_BITS_7;
+		break;
+	case word_length_8_bits:
+		cfg->data_bits = UART_CFG_DATA_BITS_8;
+		break;
+	default:
+		return -EIO;
+	}
+
+	switch (parity) {
+	case parity_none:
+		cfg->parity = UART_CFG_PARITY_NONE;
+		break;
+	case parity_odd:
+		cfg->parity = UART_CFG_PARITY_ODD;
+		break;
+	case parity_even:
+		cfg->parity = UART_CFG_PARITY_EVEN;
+		break;
+	case parity_always_1:
+		cfg->parity = UART_CFG_PARITY_MARK;
+		break;
+	case parity_always_0:
+		cfg->parity = UART_CFG_PARITY_SPACE;
+		break;
+	default:
+		return -EIO;
+	}
+
+	switch (stop_bits) {
+	case stop_bits_1:
+		cfg->stop_bits = UART_CFG_STOP_BITS_1;
+		break;
+	case stop_bits_1_5:
+		cfg->stop_bits = UART_CFG_STOP_BITS_1_5;
+		break;
+	case stop_bits_2:
+		cfg->stop_bits = UART_CFG_STOP_BITS_2;
+		break;
+	default:
+		return -EIO;
+	}
+
+	cfg->flow_ctrl = UART_CFG_FLOW_CTRL_NONE;
+	return 0;
+}
+
 static const struct uart_driver_api hpm_uart_api = {
 	.poll_in = hpm_uart_poll_in,
 	.poll_out = hpm_uart_poll_out,
 	.err_check = hpm_uart_err_check,
+	.configure = hpm_uart_configure,
+	.config_get = hpm_uart_config_get,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.fifo_fill = hpm_uart_fifo_fill,
 	.fifo_read = hpm_uart_fifo_read,
