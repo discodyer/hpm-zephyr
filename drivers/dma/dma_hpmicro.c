@@ -42,6 +42,7 @@ struct hpm_dma_channel_data {
 	uint32_t blocks;
 	uint32_t current_block;
 	bool busy;
+	bool suspended;
 	bool cyclic;
 	bool complete_callback_en;
 };
@@ -386,6 +387,7 @@ static int hpm_dma_config(const struct device *dev, uint32_t channel, struct dma
 	channel_data->complete_callback_en = dma_cfg->complete_callback_en;
 	channel_data->interrupt_mask = hal_cfg.interrupt_mask;
 	channel_data->busy = false;
+	channel_data->suspended = false;
 	k_spin_unlock(&channel_data->lock, key);
 
 	return 0;
@@ -460,6 +462,62 @@ static int hpm_dma_start(const struct device *dev, uint32_t channel)
 	}
 
 	channel_data->busy = true;
+	channel_data->suspended = false;
+	k_spin_unlock(&channel_data->lock, key);
+
+	return 0;
+}
+
+static int hpm_dma_suspend(const struct device *dev, uint32_t channel)
+{
+	const struct hpm_dma_config *config = dev->config;
+	struct hpm_dma_data *data = dev->data;
+	struct hpm_dma_channel_data *channel_data;
+	k_spinlock_key_t key;
+
+	if (!hpm_dma_channel_is_valid(dev, channel)) {
+		return -EINVAL;
+	}
+
+	channel_data = &data->channels[channel];
+	key = k_spin_lock(&channel_data->lock);
+	if (!channel_data->busy || channel_data->suspended) {
+		k_spin_unlock(&channel_data->lock, key);
+		return -EINVAL;
+	}
+
+	dma_disable_channel(config->base, channel);
+	channel_data->suspended = true;
+	k_spin_unlock(&channel_data->lock, key);
+
+	return 0;
+}
+
+static int hpm_dma_resume(const struct device *dev, uint32_t channel)
+{
+	const struct hpm_dma_config *config = dev->config;
+	struct hpm_dma_data *data = dev->data;
+	struct hpm_dma_channel_data *channel_data;
+	k_spinlock_key_t key;
+	hpm_stat_t status;
+
+	if (!hpm_dma_channel_is_valid(dev, channel)) {
+		return -EINVAL;
+	}
+
+	channel_data = &data->channels[channel];
+	key = k_spin_lock(&channel_data->lock);
+	if (!channel_data->busy || !channel_data->suspended) {
+		k_spin_unlock(&channel_data->lock, key);
+		return -EINVAL;
+	}
+
+	status = dma_enable_channel(config->base, channel);
+	if (status != status_success) {
+		k_spin_unlock(&channel_data->lock, key);
+		return -EIO;
+	}
+	channel_data->suspended = false;
 	k_spin_unlock(&channel_data->lock, key);
 
 	return 0;
@@ -481,6 +539,7 @@ static int hpm_dma_stop(const struct device *dev, uint32_t channel)
 	dma_disable_channel(config->base, channel);
 	dma_clear_transfer_status(config->base, channel);
 	channel_data->busy = false;
+	channel_data->suspended = false;
 	k_spin_unlock(&channel_data->lock, key);
 
 	return 0;
@@ -502,13 +561,14 @@ static int hpm_dma_get_status(const struct device *dev, uint32_t channel, struct
 	key = k_spin_lock(&channel_data->lock);
 	remaining =
 		dma_get_remaining_transfer_size(config->base, channel) * channel_data->data_size;
-	status->busy = channel_data->busy;
+	status->busy = channel_data->busy && !channel_data->suspended;
 	status->dir = channel_data->direction;
 	status->write_position = 0U;
 	status->read_position = 0U;
 	status->free = 0U;
 
-	if (channel_data->busy && (channel_data->current_block < channel_data->blocks)) {
+	if (channel_data->busy && !channel_data->suspended &&
+	    (channel_data->current_block < channel_data->blocks)) {
 		uint32_t current_size = channel_data->block_sizes[channel_data->current_block];
 
 		status->total_copied = channel_data->completed +
@@ -581,6 +641,7 @@ static void hpm_dma_chan_release(const struct device *dev, uint32_t channel)
 	channel_data->callback = NULL;
 	channel_data->user_data = NULL;
 	channel_data->busy = false;
+	channel_data->suspended = false;
 	k_spin_unlock(&channel_data->lock, key);
 }
 
@@ -693,6 +754,8 @@ static DEVICE_API(dma, hpm_dma_api) = {
 	.reload = hpm_dma_reload,
 	.start = hpm_dma_start,
 	.stop = hpm_dma_stop,
+	.suspend = hpm_dma_suspend,
+	.resume = hpm_dma_resume,
 	.get_status = hpm_dma_get_status,
 	.get_attribute = hpm_dma_get_attribute,
 	.chan_filter = hpm_dma_chan_filter,
