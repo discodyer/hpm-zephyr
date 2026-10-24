@@ -22,6 +22,7 @@
 #include <drivers/motor/hpmicro_synt.h>
 #include <drivers/motor/hpmicro_plb.h>
 #include <zephyr/drivers/mux.h>
+#include <drivers/mux/hpmicro_trgm.h>
 #include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/otp.h>
 #include <zephyr/drivers/ptp_clock.h>
@@ -34,6 +35,7 @@
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/ztest.h>
 #include <dt-bindings/clock/hpm5361-clocks.h>
+#include <hpm_trgmmux_src.h>
 
 #define UART_NODE         DT_NODELABEL(uart0)
 #define CLOCK_NODE        DT_NODELABEL(clk)
@@ -745,15 +747,102 @@ ZTEST(hpm5300evk, test_devices_ready)
 	const struct device *mux_dev = MUX_CONTROL_DT_DEV_GET(MUX_CONSUMER_NODE);
 	const struct mux_control *mux_control = MUX_CONTROL_DT_GET(MUX_CONSUMER_NODE);
 	const struct mux_state *mux_default = MUX_STATE_DT_GET(MUX_CONSUMER_NODE);
+	const struct hpm_trgm_filter_config filter_config = {
+		.mode = HPM_TRGM_FILTER_DELAY,
+		.invert = true,
+		.sync = true,
+		.filter_length = 17U,
+	};
+	const struct hpm_trgm_output_config output_config = {
+		.source = HPM_TRGM0_INPUT_SRC_TRGM0_P0,
+		.type = HPM_TRGM_OUTPUT_BOTH_EDGE_PULSE,
+		.invert = true,
+	};
+	const struct hpm_trgm_matrix_config adc_matrix = {
+		.source = HPM_TRGM_ADC_SOURCE_RDC_ADC1,
+		.invert = true,
+	};
+	const struct hpm_trgm_matrix_config dac_matrix = {
+		.source = HPM_TRGM_DAC_SOURCE_RDC_DAC1,
+		.invert = true,
+	};
+	const struct hpm_trgm_matrix_config pos_matrix = {
+		.source = HPM_TRGM_POS_SOURCE_MMC1_POS1,
+		.invert = true,
+	};
+	struct hpm_trgm_filter_config filter_readback;
+	struct hpm_trgm_output_config output_readback;
+	struct hpm_trgm_matrix_config matrix_readback;
+	uint8_t dma_source;
 	uint32_t mux_state;
 
 	zassert_true(device_is_ready(mux_dev));
+	zassert_true(DEVICE_API_IS(mux_control, mux_dev));
+	zassert_true(DEVICE_API_IS(hpm_trgm, mux_dev));
+
 	zassert_ok(mux_control_set(mux_dev, mux_control, 9U));
 	zassert_ok(mux_state_get(mux_dev, mux_control, &mux_state));
 	zassert_equal(mux_state, 9U);
 	zassert_ok(mux_state_apply(mux_dev, mux_default));
 	zassert_ok(mux_state_get(mux_dev, mux_default->control, &mux_state));
 	zassert_equal(mux_state, mux_default->state);
+
+	zassert_ok(hpm_trgm_configure_filter(mux_dev, 16U, &filter_config));
+	zassert_ok(hpm_trgm_get_filter(mux_dev, 16U, &filter_readback));
+	zassert_equal(filter_readback.mode, filter_config.mode);
+	zassert_equal(filter_readback.invert, filter_config.invert);
+	zassert_equal(filter_readback.sync, filter_config.sync);
+	zassert_equal(filter_readback.filter_length, filter_config.filter_length);
+	zassert_equal(hpm_trgm_configure_filter(mux_dev, HPM_TRGM_FILTER_COUNT, &filter_config),
+		      -EINVAL);
+	zassert_equal(hpm_trgm_configure_filter(mux_dev, 0U, NULL), -EINVAL);
+	filter_readback.mode = HPM_TRGM_FILTER_DELAY;
+	filter_readback.filter_length = HPM_TRGM_FILTER_LENGTH_MAX + 1U;
+	zassert_equal(hpm_trgm_configure_filter(mux_dev, 0U, &filter_readback), -EINVAL);
+
+	zassert_ok(hpm_trgm_configure_output(mux_dev, HPM_TRGM_OUTPUT_IRQ0, &output_config));
+	zassert_ok(hpm_trgm_get_output(mux_dev, HPM_TRGM_OUTPUT_IRQ0, &output_readback));
+	zassert_equal(output_readback.source, output_config.source);
+	zassert_equal(output_readback.type, output_config.type);
+	zassert_equal(output_readback.invert, output_config.invert);
+	zassert_equal(hpm_trgm_configure_output(mux_dev, HPM_TRGM_OUTPUT_COUNT, &output_config),
+		      -EINVAL);
+	zassert_equal(hpm_trgm_configure_output(mux_dev, HPM_TRGM_OUTPUT_IRQ0, NULL), -EINVAL);
+
+	zassert_ok(hpm_trgm_configure_dma_request(mux_dev, 0U, HPM_TRGM0_DMA_SRC_QEI0));
+	zassert_ok(hpm_trgm_get_dma_request(mux_dev, 0U, &dma_source));
+	zassert_equal(dma_source, HPM_TRGM0_DMA_SRC_QEI0);
+	zassert_equal(hpm_trgm_configure_dma_request(mux_dev, HPM_TRGM_DMA_REQUEST_COUNT,
+						     HPM_TRGM0_DMA_SRC_QEI0),
+		      -EINVAL);
+	zassert_equal(hpm_trgm_configure_dma_request(mux_dev, 0U, 0x3EU), -EINVAL);
+	zassert_equal(hpm_trgm_get_dma_request(mux_dev, 0U, NULL), -EINVAL);
+
+	zassert_ok(hpm_trgm_configure_adc_matrix(mux_dev, HPM_TRGM_ADC_CONSUMER_QEI0_ADC0,
+						 &adc_matrix));
+	zassert_ok(hpm_trgm_get_adc_matrix(mux_dev, HPM_TRGM_ADC_CONSUMER_QEI0_ADC0,
+					   &matrix_readback));
+	zassert_equal(matrix_readback.source, adc_matrix.source);
+	zassert_equal(matrix_readback.invert, adc_matrix.invert);
+	zassert_equal(
+		hpm_trgm_configure_adc_matrix(mux_dev, HPM_TRGM_ADC_CONSUMER_COUNT, &adc_matrix),
+		-EINVAL);
+
+	zassert_ok(hpm_trgm_configure_dac_matrix(mux_dev, HPM_TRGM_DAC_CONSUMER_DAC1, &dac_matrix));
+	zassert_ok(hpm_trgm_get_dac_matrix(mux_dev, HPM_TRGM_DAC_CONSUMER_DAC1, &matrix_readback));
+	zassert_equal(matrix_readback.source, dac_matrix.source);
+	zassert_equal(matrix_readback.invert, dac_matrix.invert);
+	zassert_equal(
+		hpm_trgm_configure_dac_matrix(mux_dev, HPM_TRGM_DAC_CONSUMER_COUNT, &dac_matrix),
+		-EINVAL);
+
+	zassert_ok(hpm_trgm_configure_pos_matrix(mux_dev, HPM_TRGM_POS_CONSUMER_QEO1, &pos_matrix));
+	zassert_ok(hpm_trgm_get_pos_matrix(mux_dev, HPM_TRGM_POS_CONSUMER_QEO1, &matrix_readback));
+	zassert_equal(matrix_readback.source, pos_matrix.source);
+	zassert_equal(matrix_readback.invert, pos_matrix.invert);
+	zassert_equal(
+		hpm_trgm_configure_pos_matrix(mux_dev, HPM_TRGM_POS_CONSUMER_COUNT, &pos_matrix),
+		-EINVAL);
 #endif
 #if CONFIG_UART_INTERRUPT_DRIVEN
 	zassert_ok(uart_irq_callback_user_data_set(DEVICE_DT_GET(UART_NODE), NULL, NULL));

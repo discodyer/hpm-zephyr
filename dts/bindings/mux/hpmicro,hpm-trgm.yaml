@@ -6,7 +6,9 @@ description: |
 
   Each TRGM output is addressed as a mux control line. The mux state is the
   TRGM input source number, using the HPM_TRGM0_INPUT_SRC_* constants from the
-  pinned HPM SDK.
+  pinned HPM SDK. The HPM-specific API extension configures input filters,
+  output edge conversion and polarity, DMA requests, and the ADC/DAC/position
+  routing matrices.
 
 compatible: "hpmicro,hpm-trgm"
 

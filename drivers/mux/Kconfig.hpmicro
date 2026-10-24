@@ -15,3 +15,6 @@ config MUX_HPMICRO_TRGM
 	  Enable the HPMicro TRGM driver as a Zephyr mux controller. Each
 	  mux control selects one TRGM output; the mux state selects the TRGM
 	  input source using the HPM_TRGM0_INPUT_SRC_* values from the SDK.
+	  The HPM-specific extension also provides input filtering, output
+	  polarity and edge-pulse conversion, DMA request routing, and the
+	  ADC, DAC and position routing matrices.

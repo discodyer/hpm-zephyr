@@ -464,6 +464,9 @@ config USE_HPMSDK_TAMP
 config USE_HPMSDK_TFA
 	bool
 	depends on HAS_HPMSDK_TFA
+config USE_HPMSDK_TRGM
+	bool
+	depends on HAS_HPMSDK_TRGM
 config USE_HPMSDK_TSNS
 	bool
 	depends on HAS_HPMSDK_TSNS
