@@ -54,6 +54,18 @@ config SEI_TAMAGAWA_HPMICRO
 	  watchdog recovery, then reports position, revolution, encoder status and
 	  timestamps.
 
+config SEI_BISSC_HPMICRO
+	bool "HPMicro BiSS-C encoder protocol consumer"
+	default y
+	depends on SEI_HPMICRO
+	depends on SYNT_HPMICRO
+	help
+	  Enable the synchronous BiSS-C master protocol consumer on top of the
+	  protocol-neutral HPMicro SEI driver. It programs the ACK/start/response
+	  sequence, configurable position and CRC widths, SAMPLE/UPDATE mapping,
+	  periodic polling and watchdog recovery, then reports position, error and
+	  warning bits, CRC and timestamps.
+
 DT_COMPAT_HPM_MMC := hpmicro,hpm-mmc
 
 config MMC_HPMICRO

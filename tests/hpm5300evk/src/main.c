@@ -19,6 +19,7 @@
 #include <zephyr/drivers/mbox.h>
 #include <drivers/motor/hpmicro_qeo.h>
 #include <drivers/motor/hpmicro_sei.h>
+#include <drivers/motor/hpmicro_sei_bissc.h>
 #include <drivers/motor/hpmicro_sei_ssi.h>
 #include <drivers/motor/hpmicro_sei_tamagawa.h>
 #include <drivers/motor/hpmicro_mmc.h>
@@ -808,6 +809,19 @@ ZTEST(hpm5300evk, test_devices_ready)
 	};
 	struct hpm_sei_tamagawa_result sei_tamagawa_result;
 #endif
+#if CONFIG_SEI_BISSC_HPMICRO
+	struct hpm_sei_bissc_config sei_bissc_config = {
+		.baudrate = 1000000U,
+		.multi_turn_bits = 12U,
+		.single_turn_bits = 12U,
+		.crc_bits = 6U,
+		.crc_polynomial = 3U,
+		.crc_invert = true,
+		.poll_period_us = 20000U,
+		.watchdog_time = 0xfffeU,
+	};
+	struct hpm_sei_bissc_result sei_bissc_result;
+#endif
 	struct hpm_sei_timing sei_timing;
 #if CONFIG_SYNT_HPMICRO
 	enum hpm_sei_timestamp_source sei_timestamp_source;
@@ -892,6 +906,12 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(hpm_sei_tamagawa_configure(sei, HPM_SEI_CHANNEL_1, &sei_tamagawa_config),
 		      -EBUSY);
 #endif
+#if CONFIG_SEI_BISSC_HPMICRO
+	zassert_equal(hpm_sei_bissc_configure(sei, HPM_SEI_CHANNEL_1, &sei_bissc_config), -EBUSY);
+	sei_bissc_config.crc_bits = 0U;
+	zassert_equal(hpm_sei_bissc_configure(sei, HPM_SEI_CHANNEL_1, &sei_bissc_config), -EINVAL);
+	sei_bissc_config.crc_bits = 6U;
+#endif
 	zassert_ok(hpm_sei_ssi_deconfigure(sei, HPM_SEI_CHANNEL_0));
 	zassert_equal(hpm_sei_ssi_configure(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
 	sei_ssi_config.multi_turn_bits = 0U;
@@ -913,6 +933,18 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(
 		hpm_sei_tamagawa_get_result(sei, (enum hpm_sei_channel)2, &sei_tamagawa_result),
 		-EINVAL);
+#endif
+#if CONFIG_SEI_BISSC_HPMICRO
+	zassert_ok(hpm_sei_bissc_configure(sei, HPM_SEI_CHANNEL_1, &sei_bissc_config));
+	zassert_equal(hpm_sei_bissc_configure(sei, HPM_SEI_CHANNEL_0, &sei_bissc_config), -EBUSY);
+	zassert_ok(hpm_sei_bissc_deconfigure(sei, HPM_SEI_CHANNEL_1));
+	zassert_equal(hpm_sei_bissc_configure(sei, HPM_SEI_CHANNEL_1, NULL), -EINVAL);
+	sei_bissc_config.crc_bits = 0U;
+	zassert_equal(hpm_sei_bissc_configure(sei, HPM_SEI_CHANNEL_1, &sei_bissc_config), -EINVAL);
+	sei_bissc_config.crc_bits = 6U;
+	zassert_equal(hpm_sei_bissc_get_result(sei, HPM_SEI_CHANNEL_1, NULL), -EINVAL);
+	zassert_equal(hpm_sei_bissc_get_result(sei, (enum hpm_sei_channel)2, &sei_bissc_result),
+		      -EINVAL);
 #endif
 #endif
 #if DT_NODE_HAS_STATUS(MMC0_NODE, okay)

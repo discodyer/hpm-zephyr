@@ -7,6 +7,7 @@
 #include <stdint.h>
 
 #include <drivers/motor/hpmicro_rdc.h>
+#include <drivers/motor/hpmicro_sei_bissc.h>
 #include <drivers/motor/hpmicro_sei_ssi.h>
 #include <drivers/motor/hpmicro_sei_tamagawa.h>
 #include <zephyr/ztest.h>
@@ -99,6 +100,15 @@ ZTEST(hpm_motor_math, test_tamagawa_watchdog_timing)
 	zassert_equal(hpm_sei_tamagawa_check_timing(2500000U, 30000U, 0xfffeU), -EINVAL);
 	zassert_equal(hpm_sei_tamagawa_check_timing(0U, 20000U, 0xfffeU), -EINVAL);
 	zassert_equal(hpm_sei_tamagawa_check_timing(2500000U, 0U, 0xfffeU), -EINVAL);
+}
+
+ZTEST(hpm_motor_math, test_bissc_watchdog_timing)
+{
+	zassert_ok(hpm_sei_bissc_check_timing(1000000U, 20000U, 0xfffeU));
+	zassert_ok(hpm_sei_bissc_check_timing(1000000U, 300000U, 0U));
+	zassert_equal(hpm_sei_bissc_check_timing(1000000U, 300000U, 0xfffeU), -EINVAL);
+	zassert_equal(hpm_sei_bissc_check_timing(0U, 200000U, 0xfffeU), -EINVAL);
+	zassert_equal(hpm_sei_bissc_check_timing(1000000U, 0U, 0xfffeU), -EINVAL);
 }
 
 ZTEST_SUITE(hpm_motor_math, NULL, NULL, NULL, NULL, NULL);
