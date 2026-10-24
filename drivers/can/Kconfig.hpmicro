@@ -10,6 +10,11 @@ config CAN_HPMICRO
 	depends on DT_HAS_HPMICRO_HPM_MCAN_ENABLED
 	depends on HAS_HPMSDK_MCAN
 	select CAN_MCAN
+	select CAN_RX_TIMESTAMP
 	select PINCTRL
 	help
 	  Enable the HPMicro MCAN driver using the generic Bosch M_CAN backend.
+	  The HPM extension configures the M_CAN timestamping unit and supports
+	  selecting PTPC0 or PTPC1 as its external timebase. Enabling this driver
+	  also enables the generic CAN receive timestamp field, which carries a
+	  TSU slot reference while external TSU timestamping is active.

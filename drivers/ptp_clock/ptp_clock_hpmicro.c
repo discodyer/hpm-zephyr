@@ -40,6 +40,9 @@ struct hpm_ptpc_data {
 	void *callback_user_data;
 };
 
+/* These routing registers are global to both PTPC timestamp channels. */
+static struct k_spinlock hpm_ptpc_routing_lock;
+
 static uint32_t hpm_ptpc_channel_event_mask(const struct hpm_ptpc_config *config, uint32_t events)
 {
 	uint32_t shift = config->index == 0U ? 0U : 16U;
@@ -307,6 +310,85 @@ static int hpm_ptpc_drv_configure_pps(const struct device *dev, uint8_t frequenc
 	return hpm_ptpc_status_to_errno(status);
 }
 
+static int hpm_ptpc_drv_configure_can_time_source(const struct device *dev, uint8_t can_port,
+						  enum hpm_ptpc_can_time_source source)
+{
+	const struct hpm_ptpc_config *config = dev->config;
+	k_spinlock_key_t key;
+
+	if ((can_port >= HPM_PTPC_CAN_PORT_COUNT) || ((source != HPM_PTPC_CAN_TIME_SOURCE_PTPC0) &&
+						      (source != HPM_PTPC_CAN_TIME_SOURCE_PTPC1))) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&hpm_ptpc_routing_lock);
+	config->base->TIME_SEL =
+		(config->base->TIME_SEL & ~BIT(can_port)) | ((uint32_t)source << can_port);
+	k_spin_unlock(&hpm_ptpc_routing_lock, key);
+
+	return 0;
+}
+
+static int hpm_ptpc_drv_get_can_time_source(const struct device *dev, uint8_t can_port,
+					    enum hpm_ptpc_can_time_source *source)
+{
+	const struct hpm_ptpc_config *config = dev->config;
+
+	if ((can_port >= HPM_PTPC_CAN_PORT_COUNT) || (source == NULL)) {
+		return -EINVAL;
+	}
+
+	*source = (enum hpm_ptpc_can_time_source)((config->base->TIME_SEL >> can_port) & 1U);
+
+	return 0;
+}
+
+static uint8_t hpm_ptpc_tsu_input_shift(uint8_t tsu_input)
+{
+	return (uint8_t)(8U + (tsu_input * 6U));
+}
+
+static int hpm_ptpc_drv_configure_tsu_input(const struct device *dev, uint8_t tsu_input,
+					    enum hpm_ptpc_tsu_input_source source)
+{
+	const struct hpm_ptpc_config *config = dev->config;
+	k_spinlock_key_t key;
+	uint32_t shift;
+
+	if ((tsu_input >= HPM_PTPC_TSU_INPUT_COUNT) ||
+	    ((source != HPM_PTPC_TSU_INPUT_PTPC0) && (source != HPM_PTPC_TSU_INPUT_PTPC1))) {
+		return -EINVAL;
+	}
+
+	shift = hpm_ptpc_tsu_input_shift(tsu_input);
+	key = k_spin_lock(&hpm_ptpc_routing_lock);
+	config->base->PTPC_CAN_TS_SEL =
+		(config->base->PTPC_CAN_TS_SEL & ~(0x3FU << shift)) | ((uint32_t)source << shift);
+	k_spin_unlock(&hpm_ptpc_routing_lock, key);
+
+	return 0;
+}
+
+static int hpm_ptpc_drv_get_tsu_input(const struct device *dev, uint8_t tsu_input,
+				      enum hpm_ptpc_tsu_input_source *source)
+{
+	const struct hpm_ptpc_config *config = dev->config;
+	uint32_t value;
+
+	if ((tsu_input >= HPM_PTPC_TSU_INPUT_COUNT) || (source == NULL)) {
+		return -EINVAL;
+	}
+
+	value = (config->base->PTPC_CAN_TS_SEL >> hpm_ptpc_tsu_input_shift(tsu_input)) & 0x3FU;
+	if ((value != HPM_PTPC_TSU_INPUT_PTPC0) && (value != HPM_PTPC_TSU_INPUT_PTPC1)) {
+		return -EIO;
+	}
+
+	*source = (enum hpm_ptpc_tsu_input_source)value;
+
+	return 0;
+}
+
 static int hpm_ptpc_drv_get_events(const struct device *dev, uint32_t *events)
 {
 	const struct hpm_ptpc_config *config = dev->config;
@@ -418,6 +500,10 @@ static DEVICE_API(hpm_ptpc, hpm_ptpc_api) = {
 	.read_capture = hpm_ptpc_drv_read_capture,
 	.configure_compare = hpm_ptpc_drv_configure_compare,
 	.configure_pps = hpm_ptpc_drv_configure_pps,
+	.configure_can_time_source = hpm_ptpc_drv_configure_can_time_source,
+	.get_can_time_source = hpm_ptpc_drv_get_can_time_source,
+	.configure_tsu_input = hpm_ptpc_drv_configure_tsu_input,
+	.get_tsu_input = hpm_ptpc_drv_get_tsu_input,
 	.get_events = hpm_ptpc_drv_get_events,
 	.clear_events = hpm_ptpc_drv_clear_events,
 	.set_event_callback = hpm_ptpc_drv_set_event_callback,

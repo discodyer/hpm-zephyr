@@ -25,6 +25,29 @@ extern "C" {
  * @{
  */
 
+/** Number of CAN timestamp output ports provided by PTPC. */
+#define HPM_PTPC_CAN_PORT_COUNT  4U
+/** Number of MCAN TSU input selectors controlled by PTPC_CAN_TS_SEL. */
+#define HPM_PTPC_TSU_INPUT_COUNT 4U
+
+/** PTPC counter selected for a CAN timestamp output port. */
+enum hpm_ptpc_can_time_source {
+	HPM_PTPC_CAN_TIME_SOURCE_PTPC0 = 0,
+	HPM_PTPC_CAN_TIME_SOURCE_PTPC1,
+};
+
+/**
+ * MCAN TSU input source encoded in PTPC_CAN_TS_SEL.
+ *
+ * Values 0x00 through 0x1e select the timestamp output of MCAN0 through MCAN30.
+ * PTPC0 and PTPC1 are the only values that this driver exposes because they are
+ * the on-chip sources relevant to the PTPC timestamp controller.
+ */
+enum hpm_ptpc_tsu_input_source {
+	HPM_PTPC_TSU_INPUT_PTPC0 = 0x20,
+	HPM_PTPC_TSU_INPUT_PTPC1 = 0x21,
+};
+
 /** Capture input edge selection. */
 enum hpm_ptpc_capture_edge {
 	HPM_PTPC_CAPTURE_DISABLED = 0,
@@ -72,6 +95,14 @@ __subsystem struct hpm_ptpc_driver_api {
 	int (*configure_compare)(const struct device *dev,
 				 const struct hpm_ptpc_compare_config *config);
 	int (*configure_pps)(const struct device *dev, uint8_t frequency_exponent);
+	int (*configure_can_time_source)(const struct device *dev, uint8_t can_port,
+					 enum hpm_ptpc_can_time_source source);
+	int (*get_can_time_source)(const struct device *dev, uint8_t can_port,
+				   enum hpm_ptpc_can_time_source *source);
+	int (*configure_tsu_input)(const struct device *dev, uint8_t tsu_input,
+				   enum hpm_ptpc_tsu_input_source source);
+	int (*get_tsu_input)(const struct device *dev, uint8_t tsu_input,
+			     enum hpm_ptpc_tsu_input_source *source);
 	int (*get_events)(const struct device *dev, uint32_t *events);
 	int (*clear_events)(const struct device *dev, uint32_t events);
 	int (*set_event_callback)(const struct device *dev, uint32_t event_mask,
@@ -137,6 +168,76 @@ static inline int hpm_ptpc_configure_compare(const struct device *dev,
 static inline int hpm_ptpc_configure_pps(const struct device *dev, uint8_t frequency_exponent)
 {
 	return DEVICE_API_GET(hpm_ptpc, dev)->configure_pps(dev, frequency_exponent);
+}
+
+/**
+ * @brief Select which PTPC counter feeds a CAN timestamp output port.
+ *
+ * The selection is global to the PTPC block and applies to all MCAN instances
+ * using the same CAN timestamp port.
+ *
+ * @param dev PTPC timestamp channel.
+ * @param can_port CAN timestamp output port, from 0 through HPM_PTPC_CAN_PORT_COUNT - 1.
+ * @param source PTPC counter to route to the port.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for an invalid port or source.
+ */
+static inline int hpm_ptpc_configure_can_time_source(const struct device *dev, uint8_t can_port,
+						     enum hpm_ptpc_can_time_source source)
+{
+	return DEVICE_API_GET(hpm_ptpc, dev)->configure_can_time_source(dev, can_port, source);
+}
+
+/**
+ * @brief Read the PTPC counter selected for a CAN timestamp output port.
+ *
+ * @param dev PTPC timestamp channel.
+ * @param can_port CAN timestamp output port.
+ * @param source Output selected PTPC counter.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for an invalid port or null output pointer.
+ */
+static inline int hpm_ptpc_get_can_time_source(const struct device *dev, uint8_t can_port,
+					       enum hpm_ptpc_can_time_source *source)
+{
+	return DEVICE_API_GET(hpm_ptpc, dev)->get_can_time_source(dev, can_port, source);
+}
+
+/**
+ * @brief Assign PTPC0 or PTPC1 to one MCAN TSU input.
+ *
+ * The same TSU input selector is shared by the four MCAN instances; changing it
+ * affects every MCAN that selects the corresponding input.
+ *
+ * @param dev PTPC timestamp channel.
+ * @param tsu_input MCAN TSU input selector, from 0 through HPM_PTPC_TSU_INPUT_COUNT - 1.
+ * @param source PTPC counter to expose on the selector.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for an invalid selector or source.
+ */
+static inline int hpm_ptpc_configure_tsu_input(const struct device *dev, uint8_t tsu_input,
+					       enum hpm_ptpc_tsu_input_source source)
+{
+	return DEVICE_API_GET(hpm_ptpc, dev)->configure_tsu_input(dev, tsu_input, source);
+}
+
+/**
+ * @brief Read the source assigned to one MCAN TSU input selector.
+ *
+ * @param dev PTPC timestamp channel.
+ * @param tsu_input MCAN TSU input selector.
+ * @param source Output source selection.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for an invalid selector or null output pointer.
+ */
+static inline int hpm_ptpc_get_tsu_input(const struct device *dev, uint8_t tsu_input,
+					 enum hpm_ptpc_tsu_input_source *source)
+{
+	return DEVICE_API_GET(hpm_ptpc, dev)->get_tsu_input(dev, tsu_input, source);
 }
 
 /**

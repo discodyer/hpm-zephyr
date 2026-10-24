@@ -5,6 +5,7 @@
 
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/adc.h>
+#include <zephyr/drivers/can.h>
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/crc.h>
 #include <zephyr/drivers/comparator.h>
@@ -13,6 +14,7 @@
 #include <zephyr/drivers/entropy.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/gpio.h>
+#include <drivers/can/hpmicro_mcan.h>
 #include <drivers/gpiom/hpmicro_gpiom.h>
 #include <zephyr/drivers/mbox.h>
 #include <drivers/motor/hpmicro_qeo.h>
@@ -58,6 +60,7 @@
 #define MBX0A_NODE        DT_NODELABEL(mbx0a)
 #define MBX0B_NODE        DT_NODELABEL(mbx0b)
 #define DMA_NODE          DT_NODELABEL(hdma)
+#define CAN0_NODE         DT_NODELABEL(mcan0)
 #define QEI0_NODE         DT_NODELABEL(qei0)
 #define TRGM_NODE         DT_NODELABEL(trgm0)
 #define FGPIO_NODE        DT_NODELABEL(fgpioa)
@@ -69,6 +72,15 @@
 #define SYNT_NODE         DT_NODELABEL(synt)
 #define PLB_NODE          DT_NODELABEL(plb)
 #define MUX_CONSUMER_NODE DT_NODELABEL(mux_consumer)
+
+#if DT_NODE_HAS_STATUS(CAN0_NODE, okay)
+static void can_rx_callback(const struct device *dev, struct can_frame *frame, void *user_data)
+{
+	ARG_UNUSED(dev);
+	ARG_UNUSED(frame);
+	ARG_UNUSED(user_data);
+}
+#endif
 
 BUILD_ASSERT(DT_NODE_HAS_STATUS(UART_NODE, okay));
 BUILD_ASSERT(DT_NODE_HAS_STATUS(CLOCK_NODE, okay));
@@ -219,6 +231,8 @@ ZTEST(hpm5300evk, test_devices_ready)
 		.enable = true,
 	};
 	struct net_ptp_time ptp_time;
+	enum hpm_ptpc_can_time_source ptpc_can_source;
+	enum hpm_ptpc_tsu_input_source ptpc_tsu_source;
 	uint32_t ptpc_events;
 
 	zassert_true(device_is_ready(ptpc0));
@@ -236,6 +250,31 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(hpm_ptpc_configure_compare(ptpc0, NULL), -EINVAL);
 	zassert_ok(hpm_ptpc_configure_pps(ptpc0, 1U));
 	zassert_equal(hpm_ptpc_configure_pps(ptpc0, 15U), -EINVAL);
+	zassert_ok(hpm_ptpc_configure_can_time_source(ptpc0, 0U, HPM_PTPC_CAN_TIME_SOURCE_PTPC0));
+	zassert_ok(hpm_ptpc_get_can_time_source(ptpc0, 0U, &ptpc_can_source));
+	zassert_equal(ptpc_can_source, HPM_PTPC_CAN_TIME_SOURCE_PTPC0);
+	zassert_ok(hpm_ptpc_configure_can_time_source(ptpc0, 3U, HPM_PTPC_CAN_TIME_SOURCE_PTPC1));
+	zassert_ok(hpm_ptpc_get_can_time_source(ptpc0, 3U, &ptpc_can_source));
+	zassert_equal(ptpc_can_source, HPM_PTPC_CAN_TIME_SOURCE_PTPC1);
+	zassert_equal(hpm_ptpc_configure_can_time_source(ptpc0, HPM_PTPC_CAN_PORT_COUNT,
+							 HPM_PTPC_CAN_TIME_SOURCE_PTPC0),
+		      -EINVAL);
+	zassert_equal(
+		hpm_ptpc_configure_can_time_source(ptpc0, 0U, (enum hpm_ptpc_can_time_source)2),
+		-EINVAL);
+	zassert_equal(hpm_ptpc_get_can_time_source(ptpc0, 0U, NULL), -EINVAL);
+	zassert_ok(hpm_ptpc_configure_tsu_input(ptpc0, 0U, HPM_PTPC_TSU_INPUT_PTPC0));
+	zassert_ok(hpm_ptpc_get_tsu_input(ptpc0, 0U, &ptpc_tsu_source));
+	zassert_equal(ptpc_tsu_source, HPM_PTPC_TSU_INPUT_PTPC0);
+	zassert_ok(hpm_ptpc_configure_tsu_input(ptpc0, 3U, HPM_PTPC_TSU_INPUT_PTPC1));
+	zassert_ok(hpm_ptpc_get_tsu_input(ptpc0, 3U, &ptpc_tsu_source));
+	zassert_equal(ptpc_tsu_source, HPM_PTPC_TSU_INPUT_PTPC1);
+	zassert_equal(hpm_ptpc_configure_tsu_input(ptpc0, HPM_PTPC_TSU_INPUT_COUNT,
+						   HPM_PTPC_TSU_INPUT_PTPC0),
+		      -EINVAL);
+	zassert_equal(hpm_ptpc_configure_tsu_input(ptpc0, 0U, (enum hpm_ptpc_tsu_input_source)0x1F),
+		      -EINVAL);
+	zassert_equal(hpm_ptpc_get_tsu_input(ptpc0, 0U, NULL), -EINVAL);
 	zassert_ok(hpm_ptpc_get_events(ptpc0, &ptpc_events));
 	zassert_equal(hpm_ptpc_get_events(ptpc0, NULL), -EINVAL);
 	zassert_ok(hpm_ptpc_clear_events(ptpc0, HPM_PTPC_EVENT_ALL));
@@ -265,6 +304,63 @@ ZTEST(hpm5300evk, test_devices_ready)
 #endif
 #if DT_NODE_HAS_STATUS(MBX0B_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(MBX0B_NODE)));
+#endif
+#if DT_NODE_HAS_STATUS(CAN0_NODE, okay)
+	const struct device *mcan = DEVICE_DT_GET(CAN0_NODE);
+	const struct hpm_mcan_tsu_config tsu_config = {
+		.timebase = HPM_MCAN_TSU_TIMEBASE_PTPC,
+		.timebase_input = HPM_MCAN_TSU_TIMEBASE_INPUT_0,
+		.capture_on_sof = true,
+		.use_64bit = true,
+	};
+	const struct can_filter timestamp_filter = {
+		.id = 0x123U,
+		.mask = CAN_STD_ID_MASK,
+	};
+	struct hpm_mcan_tsu_snapshot tsu_snapshot;
+	struct hpm_mcan_tsu_config tsu_invalid;
+	bool filter_timestamp;
+	int filter_id;
+
+	zassert_true(device_is_ready(mcan));
+	zassert_true(DEVICE_API_IS(can, mcan));
+	zassert_true(DEVICE_API_IS(hpm_mcan, mcan));
+	zassert_ok(hpm_mcan_configure_tsu(mcan, &tsu_config));
+	zassert_equal(hpm_mcan_get_tsu_snapshot(mcan, 8U, &tsu_snapshot), -EINVAL);
+	zassert_ok(hpm_mcan_get_tsu_snapshot(mcan, 0U, &tsu_snapshot));
+	zassert_true(tsu_snapshot.is_64bit);
+	zassert_equal(hpm_mcan_get_tsu_snapshot(mcan, 0U, NULL), -EINVAL);
+	zassert_equal(hpm_mcan_decode_rx_timestamp(mcan, 0U, &tsu_snapshot), -ENODATA);
+	zassert_ok(hpm_mcan_decode_rx_timestamp(mcan, BIT(4) | 1U, &tsu_snapshot));
+	zassert_equal(tsu_snapshot.slot, 1U);
+	zassert_equal(hpm_mcan_decode_rx_timestamp(mcan, BIT(4), NULL), -EINVAL);
+	tsu_invalid = tsu_config;
+	tsu_invalid.timebase = (enum hpm_mcan_tsu_timebase)2;
+	zassert_equal(hpm_mcan_configure_tsu(mcan, &tsu_invalid), -EINVAL);
+	tsu_invalid = tsu_config;
+	tsu_invalid.timebase_input = (enum hpm_mcan_tsu_timebase_input)HPM_MCAN_TSU_INPUT_COUNT;
+	zassert_equal(hpm_mcan_configure_tsu(mcan, &tsu_invalid), -EINVAL);
+	tsu_invalid = tsu_config;
+	tsu_invalid.timebase = HPM_MCAN_TSU_TIMEBASE_INTERNAL;
+	tsu_invalid.use_64bit = false;
+	zassert_ok(hpm_mcan_configure_tsu(mcan, &tsu_invalid));
+	zassert_ok(hpm_mcan_get_tsu_snapshot(mcan, HPM_MCAN_TSU_SLOT_COUNT - 1U, &tsu_snapshot));
+	zassert_false(tsu_snapshot.is_64bit);
+	zassert_equal(hpm_mcan_configure_tsu(mcan, NULL), -EINVAL);
+
+	filter_id = can_add_rx_filter(mcan, can_rx_callback, NULL, &timestamp_filter);
+	zassert_true(filter_id >= 0);
+	zassert_ok(hpm_mcan_set_rx_filter_timestamp(mcan, filter_id, true));
+	zassert_ok(hpm_mcan_get_rx_filter_timestamp(mcan, filter_id, &filter_timestamp));
+	zassert_true(filter_timestamp);
+	zassert_ok(hpm_mcan_get_rx_filter_timestamp(mcan, filter_id, &filter_timestamp));
+	zassert_true(filter_timestamp);
+	zassert_ok(hpm_mcan_set_rx_filter_timestamp(mcan, filter_id, false));
+	zassert_ok(hpm_mcan_get_rx_filter_timestamp(mcan, filter_id, &filter_timestamp));
+	zassert_false(filter_timestamp);
+	zassert_equal(hpm_mcan_set_rx_filter_timestamp(mcan, -1, true), -EINVAL);
+	zassert_equal(hpm_mcan_get_rx_filter_timestamp(mcan, filter_id, NULL), -EINVAL);
+	can_remove_rx_filter(mcan, filter_id);
 #endif
 #if DT_NODE_HAS_STATUS(DMA_NODE, okay)
 	uint32_t dma_attribute;
