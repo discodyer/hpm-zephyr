@@ -41,7 +41,8 @@ and initialization execute from RAM while XIP is active.
 Build-only validation is complete for both boards, including the Twister
 smoke test. No console, timer, GPIO, flash erase/program, boot, or runner
 behavior has been validated on real hardware. USB device enumeration and class
-traffic are also unvalidated.
+traffic are also unvalidated. SDP AES/SHA known-answer tests are built into the
+crypto smoke image but have not been executed on hardware.
 
 The module can be validated without adding it to the west manifest:
 
@@ -96,7 +97,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | TSNS | 1 | `sensor` | Implemented (build-only) | Continuous die-temperature measurement, configurable averaging/speed/interval, exact fixed-point conversion to sensor_value; limits and interrupts not exposed |
 | RNG | 1 | `entropy` | Implemented (build-only) | Hardware TRNG with automatic reseeding, optional startup self-test and blocking thread-mode entropy reads; no ISR or asynchronous API |
 | PTPC | 1 block, 2 timestamp counters | `ptp_clock` + custom extension | Implemented (build-only) | 32-bit seconds plus nanosecond counters, set/get, signed time adjustment and ADDEND rate adjustment; input capture, compare targets, PPS output, event status and shared-IRQ callbacks through `hpm_ptpc`. CAN0-3 time-source selection and the four MCAN TSU input routes are exposed. Hardware timestamp capture behavior remains unvalidated |
-| SDP | 1 | `crypto` candidate | Missing | API and algorithm mapping not designed |
+| SDP | 1 | `crypto` | Partial (build-only) | Synchronous AES-128/256 ECB, CBC and CTR plus SHA-256 through the Zephyr crypto API. The unmodified SDK `hpm_sdp_drv.c` is the hardware backend; operations are serialized and use non-cacheable bounce buffers. CTR counters are limited to 32-120 bits to avoid the pinned SDK counter-carry edge case at byte 0. SHA-1, SM3/SM4, CRC32, CCM, async completion and hardware timeout handling are not exposed yet |
 | SEC / SECMON / KEYM | 1 each | Custom/security | Missing | No Zephyr integration |
 | OTP | 1 | `otp` | Implemented (build-only) | Read-only shadow access by default, byte-addressed API, optional irreversible fuse programming behind CONFIG_OTP_PROGRAM; lock/region helpers and reload not exposed |
 
@@ -105,8 +106,10 @@ missing drivers are not built or enabled. The SoC startup, PLIC, PLICSW, machine
 timer and cache paths are native Zephyr/SoC integration rather than HPM driver
 classes. No third-party module is currently selected for the remaining standard
 Zephyr APIs. USB device mode uses Zephyr's native device-next stack plus the
-unmodified SDK controller engine; USB host/UHC and motor-control integration
-still need separate design decisions before adding any third-party stack.
+unmodified SDK controller engine. SDP exposes only the generic Zephyr crypto
+API and does not pull in an SDK crypto middleware stack. USB host/UHC and
+motor-control integration still need separate design decisions before adding
+any third-party stack.
 
 The detailed, workspace-level matrix and task queue are maintained in
 `docs/agent/tasks.md`.

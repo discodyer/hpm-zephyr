@@ -59,3 +59,28 @@ tests:
     extra_args:
       - EXTRA_DTC_OVERLAY_FILE=usb_device.overlay
       - EXTRA_CONF_FILE=usb_device.conf
+
+  boards.hpmicro.hpm5300evk.crypto:
+    tags:
+      - hpmicro
+      - crypto
+    platform_allow:
+      - hpm5300evk/hpm5361
+      - hpm5361icb/hpm5361
+    build_only: true
+    extra_args:
+      - EXTRA_DTC_OVERLAY_FILE=crypto.overlay
+      - EXTRA_CONF_FILE=crypto.conf
+
+  boards.hpmicro.hpm5300evk.crypto_xip:
+    tags:
+      - hpmicro
+      - crypto
+    platform_allow:
+      - hpm5300evk/hpm5361
+      - hpm5361icb/hpm5361
+    build_only: true
+    extra_args:
+      - EXTRA_DTC_OVERLAY_FILE=crypto.overlay
+      - EXTRA_CONF_FILE=crypto.conf
+      - EXTRA_CONF_FILE=crypto_xip.conf

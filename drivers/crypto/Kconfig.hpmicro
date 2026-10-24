@@ -1,0 +1,41 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_SDP := hpmicro,hpm-sdp
+
+config CRYPTO_HPMICRO
+	bool "HPMicro SDP crypto accelerator driver"
+	default y
+	depends on CRYPTO
+	depends on CLOCK_CONTROL
+	depends on DT_HAS_HPMICRO_HPM_SDP_ENABLED
+	depends on HAS_HPMSDK_SDP
+	depends on ARCH_HAS_NOCACHE_MEMORY_SUPPORT
+	select NOCACHE_MEMORY
+	select USE_HPMSDK_SDP
+	help
+	  Zephyr crypto driver for the HPMicro secure data processor (SDP).
+	  The driver exposes synchronous AES-128/256 ECB, CBC and CTR cipher
+	  operations and SHA-256 hashing while reusing the unmodified SDK
+	  driver. CTR accepts 32- to 120-bit counters.
+
+if CRYPTO_HPMICRO
+
+config CRYPTO_HPMICRO_MAX_SESSIONS
+	int "Maximum number of SDP crypto sessions"
+	range 1 4
+	default 2
+	help
+	  Number of concurrent cipher or hash sessions tracked by the driver.
+	  Hardware operations themselves are serialized.
+
+config CRYPTO_HPMICRO_BOUNCE_SIZE
+	int "SDP DMA bounce buffer size"
+	range 256 4096
+	default 1024
+	help
+	  Size of each non-cacheable staging buffer used for SDP input and
+	  output. Larger requests are processed in chunks. The buffers are
+	  placed in the Zephyr nocache RAM region.
+
+endif # CRYPTO_HPMICRO
