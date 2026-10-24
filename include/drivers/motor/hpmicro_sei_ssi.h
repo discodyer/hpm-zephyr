@@ -71,20 +71,7 @@ struct hpm_sei_ssi_result {
 static inline int hpm_sei_ssi_period_to_cycles(uint32_t clock_hz, uint32_t period_us,
 					       uint32_t *cycles)
 {
-	uint64_t converted;
-
-	if ((clock_hz == 0U) || (period_us == 0U) || (cycles == NULL)) {
-		return -EINVAL;
-	}
-
-	converted = ((uint64_t)clock_hz * period_us + 500000U) / 1000000U;
-	if ((converted == 0U) || (converted >= UINT32_MAX)) {
-		return -ERANGE;
-	}
-
-	*cycles = (uint32_t)converted;
-
-	return 0;
+	return hpm_sei_period_us_to_cycles(clock_hz, period_us, cycles);
 }
 
 /**
@@ -105,20 +92,7 @@ static inline int hpm_sei_ssi_period_to_cycles(uint32_t clock_hz, uint32_t perio
 static inline int hpm_sei_ssi_baud_to_divider(uint32_t clock_hz, uint32_t baudrate,
 					      uint32_t *divider)
 {
-	uint64_t converted;
-
-	if ((clock_hz == 0U) || (baudrate == 0U) || (divider == NULL)) {
-		return -EINVAL;
-	}
-
-	converted = ((uint64_t)clock_hz + (baudrate / 2U)) / baudrate;
-	if ((converted < 4U) || (converted > (UINT16_MAX + 1U))) {
-		return -EINVAL;
-	}
-
-	*divider = (uint32_t)converted;
-
-	return 0;
+	return hpm_sei_baud_to_divider(clock_hz, baudrate, divider);
 }
 
 /**
@@ -138,11 +112,15 @@ static inline int hpm_sei_ssi_baud_to_divider(uint32_t clock_hz, uint32_t baudra
  * @retval -EINVAL for invalid arguments or a baud rate that leaves fewer than
  *         four SEI clock cycles per SSI bit.
  * @retval -ERANGE when the polling interval is too long.
- * @retval -EBUSY when the channel is owned by another SEI device.
+ * @retval -EBUSY when the SEI block is owned by another consumer or the
+ *         other channel is already active.
  * @retval -EIO when the SEI driver rejects register programming.
  */
 int hpm_sei_ssi_configure(const struct device *dev, enum hpm_sei_channel channel,
 			  const struct hpm_sei_ssi_config *config);
+
+/** Stop the SSI consumer and release its whole-block ownership. */
+int hpm_sei_ssi_deconfigure(const struct device *dev, enum hpm_sei_channel channel);
 
 /**
  * @brief Read the latest SSI result.

@@ -102,6 +102,46 @@ enum hpm_sei_trigger_command {
 	HPM_SEI_TRIGGER_COMMAND_SOFTWARE,
 };
 
+/** Convert a microsecond interval to SEI clock cycles, rounded to nearest. */
+static inline int hpm_sei_period_us_to_cycles(uint32_t clock_hz, uint32_t period_us,
+					       uint32_t *cycles)
+{
+	uint64_t converted;
+
+	if ((clock_hz == 0U) || (period_us == 0U) || (cycles == NULL)) {
+		return -EINVAL;
+	}
+
+	converted = ((uint64_t)clock_hz * period_us + 500000U) / 1000000U;
+	if ((converted == 0U) || (converted >= UINT32_MAX)) {
+		return -ERANGE;
+	}
+
+	*cycles = (uint32_t)converted;
+
+	return 0;
+}
+
+/** Convert a bit rate to an SEI divider, rounded to nearest. */
+static inline int hpm_sei_baud_to_divider(uint32_t clock_hz, uint32_t baudrate,
+					  uint32_t *divider)
+{
+	uint64_t converted;
+
+	if ((clock_hz == 0U) || (baudrate == 0U) || (divider == NULL)) {
+		return -EINVAL;
+	}
+
+	converted = ((uint64_t)clock_hz + (baudrate / 2U)) / baudrate;
+	if ((converted < 4U) || (converted > (UINT16_MAX + 1U))) {
+		return -EINVAL;
+	}
+
+	*divider = (uint32_t)converted;
+
+	return 0;
+}
+
 /** Trigger input selection. */
 struct hpm_sei_trigger_input_config {
 	/** Enable external trigger 0. */
@@ -120,7 +160,7 @@ struct hpm_sei_trigger_input_config {
 	bool periodic_sync;
 	/** Trigger input used for periodic synchronization, from 0 through 7. */
 	uint8_t periodic_sync_select;
-	/** Periodic interval in SEI clock cycles, from 1 through 0xFFFFFFFE. */
+	/** Periodic interval in SEI clock cycles, from 1 through 0xFFFFFFFE when enabled. */
 	uint32_t periodic_cycles;
 };
 
@@ -346,6 +386,8 @@ struct hpm_sei_status {
 __subsystem struct hpm_sei_driver_api {
 	int (*configure_transceiver)(const struct device *dev, enum hpm_sei_channel channel,
 				     const struct hpm_sei_transceiver_config *config);
+	int (*claim)(const struct device *dev, const void *owner);
+	int (*release)(const struct device *dev, const void *owner);
 	int (*configure_data)(const struct device *dev, enum hpm_sei_data_register register_index,
 			      const struct hpm_sei_data_format *format);
 	int (*set_instruction)(const struct device *dev, uint8_t index,
@@ -375,6 +417,8 @@ __subsystem struct hpm_sei_driver_api {
 	int (*software_trigger)(const struct device *dev, enum hpm_sei_channel channel);
 	int (*get_data)(const struct device *dev, enum hpm_sei_data_register register_index,
 			uint32_t *value);
+	int (*get_crc_value)(const struct device *dev,
+			     enum hpm_sei_data_register register_index, uint32_t *value);
 	int (*set_data)(const struct device *dev, enum hpm_sei_data_register register_index,
 			uint32_t value);
 	int (*get_clock_frequency)(const struct device *dev, uint32_t *frequency);
@@ -384,6 +428,7 @@ __subsystem struct hpm_sei_driver_api {
 			       uint16_t rx_point, uint16_t tx_point);
 	int (*rewind)(const struct device *dev, enum hpm_sei_channel channel,
 		      uint32_t data_register_mask);
+	int (*restart_async)(const struct device *dev, enum hpm_sei_channel channel);
 	int (*get_latch_time)(const struct device *dev, enum hpm_sei_channel channel, uint8_t latch,
 			      uint32_t *time);
 	int (*set_timestamp_source)(const struct device *dev, enum hpm_sei_timestamp_source source);
@@ -404,6 +449,26 @@ static inline int hpm_sei_configure_transceiver(const struct device *dev,
 						const struct hpm_sei_transceiver_config *config)
 {
 	return DEVICE_API_GET(hpm_sei, dev)->configure_transceiver(dev, channel, config);
+}
+
+/**
+ * @brief Claim the SEI block for one protocol consumer.
+ *
+ * The instruction table and data registers are shared by both channels, so a
+ * protocol consumer reserves the whole block. Re-claiming with the same owner
+ * is allowed. A NULL owner is invalid.
+ *
+ * @retval -EBUSY if another owner already controls the block.
+ */
+static inline int hpm_sei_claim(const struct device *dev, const void *owner)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->claim(dev, owner);
+}
+
+/** Release a previously claimed SEI block. */
+static inline int hpm_sei_release(const struct device *dev, const void *owner)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->release(dev, owner);
 }
 
 static inline int hpm_sei_configure_data(const struct device *dev,
@@ -504,6 +569,18 @@ static inline int hpm_sei_get_data(const struct device *dev,
 	return DEVICE_API_GET(hpm_sei, dev)->get_data(dev, register_index, value);
 }
 
+/**
+ * @brief Read a CRC-mode data register with bit-order normalization.
+ *
+ * Only data registers 2 through 9 can be configured in CRC mode.
+ */
+static inline int hpm_sei_get_crc_value(const struct device *dev,
+					enum hpm_sei_data_register register_index,
+					uint32_t *value)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->get_crc_value(dev, register_index, value);
+}
+
 static inline int hpm_sei_set_data(const struct device *dev,
 				   enum hpm_sei_data_register register_index, uint32_t value)
 {
@@ -540,6 +617,20 @@ static inline int hpm_sei_rewind(const struct device *dev, enum hpm_sei_channel 
 				 uint32_t data_register_mask)
 {
 	return DEVICE_API_GET(hpm_sei, dev)->rewind(dev, channel, data_register_mask);
+}
+
+/**
+ * @brief Restart the asynchronous transceiver state machine.
+ *
+ * The engine must be disabled before restarting the transceiver.
+ *
+ * @retval -EBUSY if the SEI engine is still enabled.
+ * @retval -ENOTSUP if the channel is not configured for asynchronous mode.
+ */
+static inline int hpm_sei_restart_async(const struct device *dev,
+					enum hpm_sei_channel channel)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->restart_async(dev, channel);
 }
 
 /** Read the timestamp captured by one SEI latch. */

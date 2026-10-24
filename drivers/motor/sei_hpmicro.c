@@ -62,6 +62,7 @@ struct hpm_sei_data {
 	struct k_spinlock lock;
 	uint32_t clock_frequency;
 	enum hpm_sei_timestamp_source timestamp_source;
+	const void *owner;
 	enum hpm_sei_mode mode[HPM_SEI_CHANNEL_1 + 1U];
 	uint32_t event_mask[HPM_SEI_CHANNEL_1 + 1U];
 	hpm_sei_event_callback_t callback[HPM_SEI_CHANNEL_1 + 1U];
@@ -90,6 +91,48 @@ static bool hpm_sei_bit_config_is_valid(const struct hpm_sei_data_format *format
 	return format->word_length >= 1U && format->word_length <= 32U &&
 	       format->first_bit <= 31U && format->last_bit <= 31U && format->min_bit <= 31U &&
 	       format->max_bit <= 31U && format->crc_length <= 32U;
+}
+
+static int hpm_sei_drv_claim(const struct device *dev, const void *owner)
+{
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+	int ret = 0;
+
+	if (owner == NULL) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	if ((data->owner != NULL) && (data->owner != owner)) {
+		ret = -EBUSY;
+	} else {
+		data->owner = owner;
+	}
+	k_spin_unlock(&data->lock, key);
+
+	return ret;
+}
+
+static int hpm_sei_drv_release(const struct device *dev, const void *owner)
+{
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+	int ret = 0;
+
+	if (owner == NULL) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	if (data->owner != owner) {
+		ret = -EINVAL;
+	} else {
+		data->owner = NULL;
+	}
+	k_spin_unlock(&data->lock, key);
+
+	return ret;
 }
 
 static int hpm_sei_drv_configure_transceiver(const struct device *dev, enum hpm_sei_channel channel,
@@ -303,8 +346,9 @@ hpm_sei_drv_configure_trigger_input(const struct device *dev, enum hpm_sei_chann
 
 	if (!hpm_sei_channel_is_valid(channel) || (config == NULL) ||
 	    (config->input0_select > 7U) || (config->input1_select > 7U) ||
-	    (config->periodic_sync_select > 7U) || (config->periodic_cycles == 0U) ||
-	    (config->periodic_cycles == UINT32_MAX)) {
+	    (config->periodic_sync_select > 7U) ||
+	    (config->periodic_enable &&
+	     ((config->periodic_cycles == 0U) || (config->periodic_cycles == UINT32_MAX)))) {
 		return -EINVAL;
 	}
 
@@ -569,6 +613,25 @@ static int hpm_sei_drv_get_data(const struct device *dev, enum hpm_sei_data_regi
 	return 0;
 }
 
+static int hpm_sei_drv_get_crc_value(const struct device *dev,
+				     enum hpm_sei_data_register register_index, uint32_t *value)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if ((register_index < HPM_SEI_DATA_REGISTER_2) ||
+	    (register_index > HPM_SEI_DATA_REGISTER_9) || (value == NULL)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	*value = sei_get_crc_value(sei->base, register_index);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
 static int hpm_sei_drv_set_data(const struct device *dev, enum hpm_sei_data_register register_index,
 				uint32_t value)
 {
@@ -668,6 +731,27 @@ static int hpm_sei_drv_rewind(const struct device *dev, enum hpm_sei_channel cha
 			sei_set_data_rewind(sei->base, register_index);
 		}
 	}
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_sei_drv_restart_async(const struct device *dev, enum hpm_sei_channel channel)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (!hpm_sei_channel_is_valid(channel) || (data->mode[channel] != HPM_SEI_MODE_ASYNC)) {
+		return -ENOTSUP;
+	}
+
+	key = k_spin_lock(&data->lock);
+	if ((sei->base->CTRL[channel].ENGINE.CTRL & SEI_CTRL_ENGINE_CTRL_ENABLE_MASK) != 0U) {
+		k_spin_unlock(&data->lock, key);
+		return -EBUSY;
+	}
+	sei_restart_asynchronous_xcvr(sei->base, channel);
 	k_spin_unlock(&data->lock, key);
 
 	return 0;
@@ -868,6 +952,8 @@ static void hpm_sei_isr_1(const struct device *dev)
 
 static DEVICE_API(hpm_sei, hpm_sei_api) = {
 	.configure_transceiver = hpm_sei_drv_configure_transceiver,
+	.claim = hpm_sei_drv_claim,
+	.release = hpm_sei_drv_release,
 	.configure_data = hpm_sei_drv_configure_data,
 	.set_instruction = hpm_sei_drv_set_instruction,
 	.configure_latch = hpm_sei_drv_configure_latch,
@@ -882,11 +968,13 @@ static DEVICE_API(hpm_sei, hpm_sei_api) = {
 	.enable = hpm_sei_drv_enable,
 	.software_trigger = hpm_sei_drv_software_trigger,
 	.get_data = hpm_sei_drv_get_data,
+	.get_crc_value = hpm_sei_drv_get_crc_value,
 	.set_data = hpm_sei_drv_set_data,
 	.get_clock_frequency = hpm_sei_drv_get_clock_frequency,
 	.get_timing = hpm_sei_drv_get_timing,
 	.set_data_points = hpm_sei_drv_set_data_points,
 	.rewind = hpm_sei_drv_rewind,
+	.restart_async = hpm_sei_drv_restart_async,
 	.get_latch_time = hpm_sei_drv_get_latch_time,
 	.set_timestamp_source = hpm_sei_drv_set_timestamp_source,
 	.get_timestamp_source = hpm_sei_drv_get_timestamp_source,

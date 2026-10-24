@@ -20,6 +20,7 @@
 #include <drivers/motor/hpmicro_qeo.h>
 #include <drivers/motor/hpmicro_sei.h>
 #include <drivers/motor/hpmicro_sei_ssi.h>
+#include <drivers/motor/hpmicro_sei_tamagawa.h>
 #include <drivers/motor/hpmicro_mmc.h>
 #include <drivers/motor/hpmicro_rdc.h>
 #include <drivers/motor/hpmicro_synt.h>
@@ -779,6 +780,8 @@ ZTEST(hpm5300evk, test_devices_ready)
 		.periodic_enable = true,
 		.periodic_cycles = 12000U,
 	};
+	const struct hpm_sei_trigger_input_config sei_trigger_disabled = {0};
+	struct hpm_sei_trigger_input_config sei_trigger_invalid = sei_trigger_input;
 	const struct hpm_sei_trigger_output_config sei_trigger_output = {
 		.enable = true,
 		.latch = 3U,
@@ -796,6 +799,14 @@ ZTEST(hpm5300evk, test_devices_ready)
 		.poll_period_us = 200000U,
 	};
 	struct hpm_sei_ssi_result sei_ssi_result;
+#endif
+#if CONFIG_SEI_TAMAGAWA_HPMICRO
+	struct hpm_sei_tamagawa_config sei_tamagawa_config = {
+		.baudrate = 2500000U,
+		.poll_period_us = 20000U,
+		.watchdog_time = 0xfffeU,
+	};
+	struct hpm_sei_tamagawa_result sei_tamagawa_result;
 #endif
 	struct hpm_sei_timing sei_timing;
 #if CONFIG_SYNT_HPMICRO
@@ -818,6 +829,12 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_sei_configure_update(sei, HPM_SEI_CHANNEL_0, &sei_update));
 	zassert_ok(hpm_sei_configure_engine(sei, HPM_SEI_CHANNEL_0, &sei_engine));
 	zassert_ok(hpm_sei_configure_trigger_input(sei, HPM_SEI_CHANNEL_0, &sei_trigger_input));
+	sei_trigger_invalid.periodic_cycles = 0U;
+	zassert_equal(hpm_sei_configure_trigger_input(sei, HPM_SEI_CHANNEL_0,
+						      &sei_trigger_invalid),
+		      -EINVAL);
+	zassert_ok(hpm_sei_configure_trigger_input(sei, HPM_SEI_CHANNEL_0,
+						  &sei_trigger_disabled));
 	zassert_ok(hpm_sei_configure_trigger_output(sei, HPM_SEI_CHANNEL_0, 0U,
 						    &sei_trigger_output));
 	zassert_ok(hpm_sei_set_trigger_command(sei, HPM_SEI_CHANNEL_0,
@@ -869,12 +886,33 @@ ZTEST(hpm5300evk, test_devices_ready)
 #endif
 #if CONFIG_SEI_SSI_HPMICRO
 	zassert_ok(hpm_sei_ssi_configure(sei, HPM_SEI_CHANNEL_0, &sei_ssi_config));
+#if CONFIG_SEI_TAMAGAWA_HPMICRO
+	zassert_equal(hpm_sei_tamagawa_configure(sei, HPM_SEI_CHANNEL_0, &sei_tamagawa_config),
+		      -EBUSY);
+	zassert_equal(hpm_sei_tamagawa_configure(sei, HPM_SEI_CHANNEL_1, &sei_tamagawa_config),
+		      -EBUSY);
+#endif
+	zassert_ok(hpm_sei_ssi_deconfigure(sei, HPM_SEI_CHANNEL_0));
 	zassert_equal(hpm_sei_ssi_configure(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
 	sei_ssi_config.multi_turn_bits = 0U;
 	zassert_equal(hpm_sei_ssi_configure(sei, HPM_SEI_CHANNEL_0, &sei_ssi_config), -EINVAL);
 	zassert_equal(hpm_sei_ssi_get_result(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
 	zassert_equal(hpm_sei_ssi_get_result(sei, (enum hpm_sei_channel)2, &sei_ssi_result),
 		      -EINVAL);
+#endif
+#if CONFIG_SEI_TAMAGAWA_HPMICRO
+	zassert_ok(hpm_sei_tamagawa_configure(sei, HPM_SEI_CHANNEL_0, &sei_tamagawa_config));
+	zassert_equal(hpm_sei_tamagawa_configure(sei, HPM_SEI_CHANNEL_1, &sei_tamagawa_config),
+		      -EBUSY);
+	zassert_ok(hpm_sei_tamagawa_deconfigure(sei, HPM_SEI_CHANNEL_0));
+	zassert_equal(hpm_sei_tamagawa_configure(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
+	sei_tamagawa_config.baudrate = 0U;
+	zassert_equal(hpm_sei_tamagawa_configure(sei, HPM_SEI_CHANNEL_0, &sei_tamagawa_config),
+		      -EINVAL);
+	zassert_equal(hpm_sei_tamagawa_get_result(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
+	zassert_equal(
+		hpm_sei_tamagawa_get_result(sei, (enum hpm_sei_channel)2, &sei_tamagawa_result),
+		-EINVAL);
 #endif
 #endif
 #if DT_NODE_HAS_STATUS(MMC0_NODE, okay)

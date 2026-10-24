@@ -8,6 +8,7 @@
 
 #include <drivers/motor/hpmicro_rdc.h>
 #include <drivers/motor/hpmicro_sei_ssi.h>
+#include <drivers/motor/hpmicro_sei_tamagawa.h>
 #include <zephyr/ztest.h>
 
 #define ANGLE_TOLERANCE 5U
@@ -89,6 +90,15 @@ ZTEST(hpm_motor_math, test_ssi_baud_divider)
 	zassert_equal(hpm_sei_ssi_baud_to_divider(0U, 1U, &divider), -EINVAL);
 	zassert_equal(hpm_sei_ssi_baud_to_divider(1U, 0U, &divider), -EINVAL);
 	zassert_equal(hpm_sei_ssi_baud_to_divider(1U, 1U, NULL), -EINVAL);
+}
+
+ZTEST(hpm_motor_math, test_tamagawa_watchdog_timing)
+{
+	zassert_ok(hpm_sei_tamagawa_check_timing(2500000U, 20000U, 0xfffeU));
+	zassert_ok(hpm_sei_tamagawa_check_timing(2500000U, 30000U, 0U));
+	zassert_equal(hpm_sei_tamagawa_check_timing(2500000U, 30000U, 0xfffeU), -EINVAL);
+	zassert_equal(hpm_sei_tamagawa_check_timing(0U, 20000U, 0xfffeU), -EINVAL);
+	zassert_equal(hpm_sei_tamagawa_check_timing(2500000U, 0U, 0xfffeU), -EINVAL);
 }
 
 ZTEST_SUITE(hpm_motor_math, NULL, NULL, NULL, NULL, NULL);

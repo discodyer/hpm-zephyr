@@ -49,6 +49,8 @@ static const struct hpm_sei_latch_transition ssi_latch_disabled = {
 	.disable_timeout_check = true,
 };
 
+static const struct hpm_sei_trigger_input_config ssi_trigger_disabled;
+
 static bool hpm_sei_ssi_channel_is_valid(enum hpm_sei_channel channel)
 {
 	return channel <= HPM_SEI_CHANNEL_1;
@@ -355,11 +357,11 @@ static int hpm_sei_ssi_configure_channel(const struct device *dev, enum hpm_sei_
 		}
 	}
 
-	ret = hpm_sei_enable(dev, channel, true);
+	ret = hpm_sei_configure_trigger_input(dev, channel, &trigger);
 	if (ret < 0) {
 		goto fail;
 	}
-	ret = hpm_sei_configure_trigger_input(dev, channel, &trigger);
+	ret = hpm_sei_enable(dev, channel, true);
 	if (ret < 0) {
 		goto fail;
 	}
@@ -383,6 +385,7 @@ int hpm_sei_ssi_configure(const struct device *dev, enum hpm_sei_channel channel
 	uint32_t clock_hz;
 	uint32_t period_cycles;
 	uint32_t baud_div;
+	bool claimed = false;
 	int ret;
 
 	if (!hpm_sei_ssi_device_is_valid(dev)) {
@@ -410,26 +413,72 @@ int hpm_sei_ssi_configure(const struct device *dev, enum hpm_sei_channel channel
 
 	k_mutex_lock(&ssi_lock, K_FOREVER);
 	state = &ssi_state[channel];
+	for (uint8_t i = 0U; i <= HPM_SEI_CHANNEL_1; i++) {
+		if ((i != channel) && ssi_state[i].configured && (ssi_state[i].dev == dev)) {
+			ret = -EBUSY;
+			goto out;
+		}
+	}
 	if (state->configured && (state->dev != dev)) {
 		ret = -EBUSY;
 		goto out;
 	}
+	ret = hpm_sei_claim(dev, state);
+	if (ret < 0) {
+		goto out;
+	}
+	claimed = true;
 
 	ret = hpm_sei_enable(dev, channel, false);
 	if (ret < 0) {
-		goto out;
+		goto fail_release;
 	}
 	state->configured = false;
 	(void)hpm_sei_clear_events(dev, channel, HPM_SEI_EVENT_ALL);
 	ret = hpm_sei_rewind(dev, channel,
 			     BIT(HPM_SEI_DATA_REGISTER_2) | BIT(HPM_SEI_DATA_REGISTER_3));
 	if (ret < 0) {
-		goto out;
+		goto fail_release;
 	}
 	ret = hpm_sei_ssi_configure_channel(dev, channel, period_cycles, baud_div, config, state);
 	if (ret == 0) {
 		state->dev = dev;
 	}
+
+fail_release:
+	if ((ret < 0) && claimed) {
+		(void)hpm_sei_release(dev, state);
+	}
+
+out:
+	k_mutex_unlock(&ssi_lock);
+	return ret;
+}
+
+int hpm_sei_ssi_deconfigure(const struct device *dev, enum hpm_sei_channel channel)
+{
+	struct hpm_sei_ssi_channel_state *state;
+	int ret;
+
+	if (!hpm_sei_ssi_device_is_valid(dev) || !hpm_sei_ssi_channel_is_valid(channel)) {
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&ssi_lock, K_FOREVER);
+	state = &ssi_state[channel];
+	if (!state->configured || (state->dev != dev)) {
+		ret = -EINVAL;
+		goto out;
+	}
+	ret = hpm_sei_enable(dev, channel, false);
+	if (ret < 0) {
+		goto out;
+	}
+	(void)hpm_sei_configure_trigger_input(dev, channel, &ssi_trigger_disabled);
+	(void)hpm_sei_set_event_callback(dev, channel, 0U, NULL, NULL);
+	(void)hpm_sei_release(dev, state);
+	state->configured = false;
+	state->dev = NULL;
 
 out:
 	k_mutex_unlock(&ssi_lock);

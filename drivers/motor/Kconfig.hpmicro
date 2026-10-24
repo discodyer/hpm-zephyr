@@ -42,6 +42,18 @@ config SEI_SSI_HPMICRO
 	  command program, SAMPLE/UPDATE mapping, latches and periodic trigger,
 	  then decodes multi-turn and single-turn position data.
 
+config SEI_TAMAGAWA_HPMICRO
+	bool "HPMicro Tamagawa encoder protocol consumer"
+	default y
+	depends on SEI_HPMICRO
+	depends on SYNT_HPMICRO
+	help
+	  Enable the asynchronous Tamagawa master protocol consumer on top of the
+	  protocol-neutral HPMicro SEI driver. It programs the Data ID 3 command
+	  sequence, CRC accumulation, SAMPLE/UPDATE mapping, periodic polling and
+	  watchdog recovery, then reports position, revolution, encoder status and
+	  timestamps.
+
 DT_COMPAT_HPM_MMC := hpmicro,hpm-mmc
 
 config MMC_HPMICRO
