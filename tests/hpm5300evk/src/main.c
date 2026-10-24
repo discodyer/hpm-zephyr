@@ -20,6 +20,7 @@
 #include <drivers/motor/hpmicro_qeo.h>
 #include <drivers/motor/hpmicro_sei.h>
 #include <drivers/motor/hpmicro_sei_bissc.h>
+#include <drivers/motor/hpmicro_sei_endat.h>
 #include <drivers/motor/hpmicro_sei_ssi.h>
 #include <drivers/motor/hpmicro_sei_tamagawa.h>
 #include <drivers/motor/hpmicro_mmc.h>
@@ -769,6 +770,17 @@ ZTEST(hpm5300evk, test_devices_ready)
 		.position_data_register = HPM_SEI_DATA_REGISTER_2,
 		.use_position_rx = true,
 	};
+	const struct hpm_sei_data_format sei_command_format = {
+		.mode = HPM_SEI_DATA_MODE_DATA,
+		.bit_order = HPM_SEI_BIT_ORDER_MSB_FIRST,
+		.word_order = HPM_SEI_WORD_ORDER_NORMAL,
+		.word_length = 6U,
+		.first_bit = 5U,
+		.last_bit = 0U,
+		.min_bit = 0U,
+		.max_bit = 5U,
+	};
+	struct hpm_sei_data_format sei_command_invalid = sei_command_format;
 	const struct hpm_sei_engine_config sei_engine = {
 		.initial_instruction = 0U,
 		.watchdog_instruction = 0U,
@@ -809,6 +821,20 @@ ZTEST(hpm5300evk, test_devices_ready)
 	};
 	struct hpm_sei_tamagawa_result sei_tamagawa_result;
 #endif
+#if CONFIG_SEI_ENDAT_HPMICRO
+	struct hpm_sei_endat_config sei_endat_config = {
+		.baudrate = 1000000U,
+		.mode_command = HPM_SEI_ENDAT_COMMAND_READ_POSITION,
+		.single_turn_bits = 25U,
+		.crc_bits = 5U,
+		.crc_polynomial = HPM_SEI_ENDAT_CRC_POLYNOMIAL,
+		.crc_initial_value = HPM_SEI_ENDAT_CRC_INITIAL_VALUE,
+		.crc_invert = true,
+		.poll_period_us = 20000U,
+		.watchdog_time = 0xfffeU,
+	};
+	struct hpm_sei_endat_result sei_endat_result;
+#endif
 #if CONFIG_SEI_BISSC_HPMICRO
 	struct hpm_sei_bissc_config sei_bissc_config = {
 		.baudrate = 1000000U,
@@ -833,6 +859,14 @@ ZTEST(hpm5300evk, test_devices_ready)
 
 	zassert_true(device_is_ready(sei));
 	zassert_ok(hpm_sei_configure_transceiver(sei, HPM_SEI_CHANNEL_0, &sei_transceiver));
+	zassert_ok(hpm_sei_configure_command(sei, HPM_SEI_CHANNEL_0, &sei_command_format));
+	zassert_ok(hpm_sei_set_command(sei, HPM_SEI_CHANNEL_0, HPM_SEI_ENDAT_COMMAND_READ_POSITION));
+	zassert_ok(hpm_sei_get_command(sei, HPM_SEI_CHANNEL_0, &sei_value));
+	zassert_equal(sei_value, HPM_SEI_ENDAT_COMMAND_READ_POSITION);
+	sei_command_invalid.mode = HPM_SEI_DATA_MODE_CRC;
+	zassert_equal(hpm_sei_configure_command(sei, HPM_SEI_CHANNEL_0, &sei_command_invalid), -EINVAL);
+	zassert_equal(hpm_sei_get_command(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
+	zassert_equal(hpm_sei_set_command(sei, (enum hpm_sei_channel)2, 0U), -EINVAL);
 	zassert_ok(hpm_sei_configure_data(sei, HPM_SEI_DATA_REGISTER_2, &sei_format));
 	zassert_ok(hpm_sei_set_instruction(sei, 0U, &sei_instr));
 	zassert_ok(hpm_sei_configure_latch(sei, HPM_SEI_CHANNEL_0, 0U, 0U, &sei_latch));
@@ -912,6 +946,12 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(hpm_sei_bissc_configure(sei, HPM_SEI_CHANNEL_1, &sei_bissc_config), -EINVAL);
 	sei_bissc_config.crc_bits = 6U;
 #endif
+#if CONFIG_SEI_ENDAT_HPMICRO
+	zassert_equal(hpm_sei_endat_configure(sei, HPM_SEI_CHANNEL_1, &sei_endat_config), -EBUSY);
+	sei_endat_config.crc_bits = 0U;
+	zassert_equal(hpm_sei_endat_configure(sei, HPM_SEI_CHANNEL_1, &sei_endat_config), -EINVAL);
+	sei_endat_config.crc_bits = 5U;
+#endif
 	zassert_ok(hpm_sei_ssi_deconfigure(sei, HPM_SEI_CHANNEL_0));
 	zassert_equal(hpm_sei_ssi_configure(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
 	sei_ssi_config.multi_turn_bits = 0U;
@@ -944,6 +984,18 @@ ZTEST(hpm5300evk, test_devices_ready)
 	sei_bissc_config.crc_bits = 6U;
 	zassert_equal(hpm_sei_bissc_get_result(sei, HPM_SEI_CHANNEL_1, NULL), -EINVAL);
 	zassert_equal(hpm_sei_bissc_get_result(sei, (enum hpm_sei_channel)2, &sei_bissc_result),
+		      -EINVAL);
+#endif
+#if CONFIG_SEI_ENDAT_HPMICRO
+	zassert_ok(hpm_sei_endat_configure(sei, HPM_SEI_CHANNEL_1, &sei_endat_config));
+	zassert_equal(hpm_sei_endat_configure(sei, HPM_SEI_CHANNEL_0, &sei_endat_config), -EBUSY);
+	zassert_ok(hpm_sei_endat_deconfigure(sei, HPM_SEI_CHANNEL_1));
+	zassert_equal(hpm_sei_endat_configure(sei, HPM_SEI_CHANNEL_1, NULL), -EINVAL);
+	sei_endat_config.mode_command = 0x40U;
+	zassert_equal(hpm_sei_endat_configure(sei, HPM_SEI_CHANNEL_1, &sei_endat_config), -EINVAL);
+	sei_endat_config.mode_command = HPM_SEI_ENDAT_COMMAND_READ_POSITION;
+	zassert_equal(hpm_sei_endat_get_result(sei, HPM_SEI_CHANNEL_1, NULL), -EINVAL);
+	zassert_equal(hpm_sei_endat_get_result(sei, (enum hpm_sei_channel)2, &sei_endat_result),
 		      -EINVAL);
 #endif
 #endif

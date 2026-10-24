@@ -66,6 +66,18 @@ config SEI_BISSC_HPMICRO
 	  periodic polling and watchdog recovery, then reports position, error and
 	  warning bits, CRC and timestamps.
 
+config SEI_ENDAT_HPMICRO
+	bool "HPMicro EnDat 2.1/2.2 encoder protocol consumer"
+	default y
+	depends on SEI_HPMICRO
+	depends on SYNT_HPMICRO
+	help
+	  Enable the synchronous EnDat 2.1/2.2 master protocol consumer on top of
+	  the protocol-neutral HPMicro SEI driver. It programs the start and mode
+	  transfer sequence, configurable position and CRC handling, SAMPLE/UPDATE
+	  mapping, periodic polling and watchdog recovery, then reports position,
+	  error status, CRC and timestamps.
+
 DT_COMPAT_HPM_MMC := hpmicro,hpm-mmc
 
 config MMC_HPMICRO

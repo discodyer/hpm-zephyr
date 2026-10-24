@@ -225,6 +225,8 @@ typedef void (*hpm_sei_event_callback_t)(const struct device *dev, enum hpm_sei_
 enum hpm_sei_data_register {
 	HPM_SEI_DATA_REGISTER_0 = 0,
 	HPM_SEI_DATA_REGISTER_1,
+	/** Command-register selector for instruction encoding only. */
+	HPM_SEI_DATA_REGISTER_COMMAND = HPM_SEI_DATA_REGISTER_1,
 	HPM_SEI_DATA_REGISTER_2,
 	HPM_SEI_DATA_REGISTER_3,
 	HPM_SEI_DATA_REGISTER_4,
@@ -390,6 +392,8 @@ __subsystem struct hpm_sei_driver_api {
 	int (*release)(const struct device *dev, const void *owner);
 	int (*configure_data)(const struct device *dev, enum hpm_sei_data_register register_index,
 			      const struct hpm_sei_data_format *format);
+	int (*configure_command)(const struct device *dev, enum hpm_sei_channel channel,
+				 const struct hpm_sei_data_format *format);
 	int (*set_instruction)(const struct device *dev, uint8_t index,
 			       const struct hpm_sei_instruction *instruction);
 	int (*configure_latch)(const struct device *dev, enum hpm_sei_channel channel,
@@ -421,6 +425,8 @@ __subsystem struct hpm_sei_driver_api {
 			     enum hpm_sei_data_register register_index, uint32_t *value);
 	int (*set_data)(const struct device *dev, enum hpm_sei_data_register register_index,
 			uint32_t value);
+	int (*get_command)(const struct device *dev, enum hpm_sei_channel channel, uint32_t *value);
+	int (*set_command)(const struct device *dev, enum hpm_sei_channel channel, uint32_t value);
 	int (*get_clock_frequency)(const struct device *dev, uint32_t *frequency);
 	int (*get_timing)(const struct device *dev, enum hpm_sei_channel channel,
 			  struct hpm_sei_timing *timing);
@@ -476,6 +482,20 @@ static inline int hpm_sei_configure_data(const struct device *dev,
 					 const struct hpm_sei_data_format *format)
 {
 	return DEVICE_API_GET(hpm_sei, dev)->configure_data(dev, register_index, format);
+}
+
+/**
+ * @brief Configure the per-channel command register data format.
+ *
+ * The command register only supports data mode. Use
+ * @ref hpm_sei_set_command to load a command and
+ * @ref hpm_sei_get_command to read the current value.
+ */
+static inline int hpm_sei_configure_command(const struct device *dev,
+					    enum hpm_sei_channel channel,
+					    const struct hpm_sei_data_format *format)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->configure_command(dev, channel, format);
 }
 
 static inline int hpm_sei_set_instruction(const struct device *dev, uint8_t index,
@@ -585,6 +605,20 @@ static inline int hpm_sei_set_data(const struct device *dev,
 				   enum hpm_sei_data_register register_index, uint32_t value)
 {
 	return DEVICE_API_GET(hpm_sei, dev)->set_data(dev, register_index, value);
+}
+
+/** Read the current command-register value for a channel. */
+static inline int hpm_sei_get_command(const struct device *dev, enum hpm_sei_channel channel,
+				      uint32_t *value)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->get_command(dev, channel, value);
+}
+
+/** Set the command-register value for a channel. */
+static inline int hpm_sei_set_command(const struct device *dev, enum hpm_sei_channel channel,
+				      uint32_t value)
+{
+	return DEVICE_API_GET(hpm_sei, dev)->set_command(dev, channel, value);
 }
 
 /** Read the SEI module clock frequency captured at driver initialization. */

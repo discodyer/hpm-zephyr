@@ -244,6 +244,78 @@ static int hpm_sei_drv_configure_data(const struct device *dev,
 	return status == status_success ? 0 : -EIO;
 }
 
+static int hpm_sei_drv_configure_command(const struct device *dev,
+					 enum hpm_sei_channel channel,
+					 const struct hpm_sei_data_format *format)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	sei_data_format_config_t sdk_format = {0};
+	k_spinlock_key_t key;
+	hpm_stat_t status;
+
+	if (!hpm_sei_channel_is_valid(channel) || (format == NULL) ||
+	    (format->mode != HPM_SEI_DATA_MODE_DATA) || !hpm_sei_bit_config_is_valid(format)) {
+		return -EINVAL;
+	}
+
+	sdk_format.mode = (sei_data_mode_t)format->mode;
+	sdk_format.signed_flag = format->is_signed;
+	sdk_format.bit_order = (sei_data_bit_order_t)format->bit_order;
+	sdk_format.word_order = (sei_data_word_order_t)format->word_order;
+	sdk_format.word_len = format->word_length;
+	sdk_format.crc_invert = format->crc_invert;
+	sdk_format.crc_shift_mode = format->crc_shift;
+	sdk_format.crc_len = format->crc_length;
+	sdk_format.first_bit = format->first_bit;
+	sdk_format.last_bit = format->last_bit;
+	sdk_format.min_bit = format->min_bit;
+	sdk_format.max_bit = format->max_bit;
+
+	key = k_spin_lock(&data->lock);
+	status = sei_cmd_data_format_config_init(sei->base, SEI_SELECT_CMD, channel,
+						 &sdk_format);
+	k_spin_unlock(&data->lock, key);
+
+	return status == status_success ? 0 : -EIO;
+}
+
+static int hpm_sei_drv_get_command(const struct device *dev, enum hpm_sei_channel channel,
+				   uint32_t *value)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (!hpm_sei_channel_is_valid(channel) || (value == NULL)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	*value = sei_get_command_value(sei->base, channel);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_sei_drv_set_command(const struct device *dev, enum hpm_sei_channel channel,
+				   uint32_t value)
+{
+	const struct hpm_sei_config *sei = dev->config;
+	struct hpm_sei_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (!hpm_sei_channel_is_valid(channel)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	sei->base->CTRL[channel].CMD.CMD = value;
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
 static int hpm_sei_drv_set_instruction(const struct device *dev, uint8_t index,
 				       const struct hpm_sei_instruction *instruction)
 {
@@ -955,6 +1027,7 @@ static DEVICE_API(hpm_sei, hpm_sei_api) = {
 	.claim = hpm_sei_drv_claim,
 	.release = hpm_sei_drv_release,
 	.configure_data = hpm_sei_drv_configure_data,
+	.configure_command = hpm_sei_drv_configure_command,
 	.set_instruction = hpm_sei_drv_set_instruction,
 	.configure_latch = hpm_sei_drv_configure_latch,
 	.configure_latch_output = hpm_sei_drv_configure_latch_output,
@@ -970,6 +1043,8 @@ static DEVICE_API(hpm_sei, hpm_sei_api) = {
 	.get_data = hpm_sei_drv_get_data,
 	.get_crc_value = hpm_sei_drv_get_crc_value,
 	.set_data = hpm_sei_drv_set_data,
+	.get_command = hpm_sei_drv_get_command,
+	.set_command = hpm_sei_drv_set_command,
 	.get_clock_frequency = hpm_sei_drv_get_clock_frequency,
 	.get_timing = hpm_sei_drv_get_timing,
 	.set_data_points = hpm_sei_drv_set_data_points,
