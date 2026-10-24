@@ -92,6 +92,18 @@ config SEI_HIPERFACE_HPMICRO
 	  implementation is build-only until a CRC-based parity workaround or an
 	  external UART path is validated.
 
+config SEI_NIKON_HPMICRO
+	bool "HPMicro Nikon encoder protocol consumer"
+	default y
+	depends on SEI_HPMICRO
+	depends on SYNT_HPMICRO
+	help
+	  Enable the asynchronous Nikon CDF0 master protocol consumer on top of the
+	  protocol-neutral HPMicro SEI driver. It programs the Sink Code and
+	  CDF0 command, validates the information-field echoes and the CRC-8 data
+	  field, then reports 20-bit single-turn and multi-turn position, status and
+	  LATCH0/LATCH1 timestamps with periodic polling and watchdog recovery.
+
 DT_COMPAT_HPM_MMC := hpmicro,hpm-mmc
 
 config MMC_HPMICRO

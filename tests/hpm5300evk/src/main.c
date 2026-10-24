@@ -22,6 +22,7 @@
 #include <drivers/motor/hpmicro_sei_bissc.h>
 #include <drivers/motor/hpmicro_sei_endat.h>
 #include <drivers/motor/hpmicro_sei_hiperface.h>
+#include <drivers/motor/hpmicro_sei_nikon.h>
 #include <drivers/motor/hpmicro_sei_ssi.h>
 #include <drivers/motor/hpmicro_sei_tamagawa.h>
 #include <drivers/motor/hpmicro_mmc.h>
@@ -846,6 +847,17 @@ ZTEST(hpm5300evk, test_devices_ready)
 	};
 	struct hpm_sei_hiperface_result sei_hiperface_result;
 #endif
+#if CONFIG_SEI_NIKON_HPMICRO
+	struct hpm_sei_nikon_config sei_nikon_config = {
+		.baudrate = 2500000U,
+		.sink_code = HPM_SEI_NIKON_DEFAULT_SINK_CODE,
+		.cdf0 = HPM_SEI_NIKON_DEFAULT_CDF0,
+		.expected_eax = 0x04U,
+		.poll_period_us = 20000U,
+		.watchdog_time = 0xfffeU,
+	};
+	struct hpm_sei_nikon_result sei_nikon_result;
+#endif
 #if CONFIG_SEI_BISSC_HPMICRO
 	struct hpm_sei_bissc_config sei_bissc_config = {
 		.baudrate = 1000000U,
@@ -973,6 +985,12 @@ ZTEST(hpm5300evk, test_devices_ready)
 		      -EINVAL);
 	sei_hiperface_config.address = HPM_SEI_HIPERFACE_DEFAULT_ADDRESS;
 #endif
+#if CONFIG_SEI_NIKON_HPMICRO
+	zassert_equal(hpm_sei_nikon_configure(sei, HPM_SEI_CHANNEL_1, &sei_nikon_config), -EBUSY);
+	sei_nikon_config.cdf0 = 32U;
+	zassert_equal(hpm_sei_nikon_configure(sei, HPM_SEI_CHANNEL_1, &sei_nikon_config), -EINVAL);
+	sei_nikon_config.cdf0 = HPM_SEI_NIKON_DEFAULT_CDF0;
+#endif
 	zassert_ok(hpm_sei_ssi_deconfigure(sei, HPM_SEI_CHANNEL_0));
 	zassert_equal(hpm_sei_ssi_configure(sei, HPM_SEI_CHANNEL_0, NULL), -EINVAL);
 	sei_ssi_config.multi_turn_bits = 0U;
@@ -1032,6 +1050,18 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(hpm_sei_hiperface_get_result(sei, HPM_SEI_CHANNEL_1, NULL), -EINVAL);
 	zassert_equal(hpm_sei_hiperface_get_result(sei, (enum hpm_sei_channel)2,
 						   &sei_hiperface_result),
+		      -EINVAL);
+#endif
+#if CONFIG_SEI_NIKON_HPMICRO
+	zassert_ok(hpm_sei_nikon_configure(sei, HPM_SEI_CHANNEL_1, &sei_nikon_config));
+	zassert_equal(hpm_sei_nikon_configure(sei, HPM_SEI_CHANNEL_0, &sei_nikon_config), -EBUSY);
+	zassert_ok(hpm_sei_nikon_deconfigure(sei, HPM_SEI_CHANNEL_1));
+	zassert_equal(hpm_sei_nikon_configure(sei, HPM_SEI_CHANNEL_1, NULL), -EINVAL);
+	sei_nikon_config.sink_code = 8U;
+	zassert_equal(hpm_sei_nikon_configure(sei, HPM_SEI_CHANNEL_1, &sei_nikon_config), -EINVAL);
+	sei_nikon_config.sink_code = HPM_SEI_NIKON_DEFAULT_SINK_CODE;
+	zassert_equal(hpm_sei_nikon_get_result(sei, HPM_SEI_CHANNEL_1, NULL), -EINVAL);
+	zassert_equal(hpm_sei_nikon_get_result(sei, (enum hpm_sei_channel)2, &sei_nikon_result),
 		      -EINVAL);
 #endif
 #endif
