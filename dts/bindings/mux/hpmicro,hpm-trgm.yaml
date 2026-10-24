@@ -8,7 +8,8 @@ description: |
   TRGM input source number, using the HPM_TRGM0_INPUT_SRC_* constants from the
   pinned HPM SDK. The HPM-specific API extension configures input filters,
   output edge conversion and polarity, DMA requests, and the ADC/DAC/position
-  routing matrices.
+  routing matrices. It also exposes named motor-control routes for SYNT, MMC,
+  SEI, RDC, QEO and PLB inter-IP connections.
 
 compatible: "hpmicro,hpm-trgm"
 

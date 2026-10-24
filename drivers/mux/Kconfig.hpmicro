@@ -17,4 +17,6 @@ config MUX_HPMICRO_TRGM
 	  input source using the HPM_TRGM0_INPUT_SRC_* values from the SDK.
 	  The HPM-specific extension also provides input filtering, output
 	  polarity and edge-pulse conversion, DMA request routing, and the
-	  ADC, DAC and position routing matrices.
+	  ADC, DAC and position routing matrices. Named motor-control routes
+	  connect SYNT, MMC, SEI, RDC, QEO and PLB without duplicating TRGM
+	  output indices in those drivers.

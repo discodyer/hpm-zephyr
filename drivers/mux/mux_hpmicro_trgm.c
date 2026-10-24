@@ -46,6 +46,65 @@ BUILD_ASSERT((int)HPM_TRGM_POS_CONSUMER_SEI_POS0 == (int)trgm_pos_matrix_output_
 BUILD_ASSERT((int)HPM_TRGM_POS_CONSUMER_QEO1 == (int)trgm_pos_matrix_output_to_qeo1);
 BUILD_ASSERT((int)HPM_TRGM_POS_SOURCE_SEI_POS0 == (int)trgm_pos_matrix_in_from_sei_pos0);
 BUILD_ASSERT((int)HPM_TRGM_POS_SOURCE_MMC1_POS1 == (int)trgm_pos_matrix_in_from_mmc1_pos1);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_QEO0_TRIG_IN0 == TRGM_TRGOCFG_QEO0_TRIG_IN0);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_QEO0_TRIG_IN1 == TRGM_TRGOCFG_QEO0_TRIG_IN1);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_QEO1_TRIG_IN0 == TRGM_TRGOCFG_QEO1_TRIG_IN0);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_QEO1_TRIG_IN1 == TRGM_TRGOCFG_QEO1_TRIG_IN1);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_SEI_TRIG_IN0 == TRGM_TRGOCFG_SEI_TRIG_IN0);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_SEI_TRIG_IN1 == TRGM_TRGOCFG_SEI_TRIG_IN1);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_SEI_TRIG_IN2 == TRGM_TRGOCFG_SEI_TRIG_IN2);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_SEI_TRIG_IN3 == TRGM_TRGOCFG_SEI_TRIG_IN3);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_SEI_TRIG_IN4 == TRGM_TRGOCFG_SEI_TRIG_IN4);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_SEI_TRIG_IN5 == TRGM_TRGOCFG_SEI_TRIG_IN5);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_SEI_TRIG_IN6 == TRGM_TRGOCFG_SEI_TRIG_IN6);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_SEI_TRIG_IN7 == TRGM_TRGOCFG_SEI_TRIG_IN7);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_MMC0_TRIG_IN0 == TRGM_TRGOCFG_MMC0_TRIG_IN0);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_MMC0_TRIG_IN1 == TRGM_TRGOCFG_MMC0_TRIG_IN1);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_MMC1_TRIG_IN0 == TRGM_TRGOCFG_MMC1_TRIG_IN0);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_MMC1_TRIG_IN1 == TRGM_TRGOCFG_MMC1_TRIG_IN1);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_PLB_IN_00 == TRGM_TRGOCFG_PLB_IN_00);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_PLB_IN_31 == TRGM_TRGOCFG_PLB_IN_31);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_RDC_TRIG_IN0 == TRGM_TRGOCFG_RDC_TRIG_IN0);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_RDC_TRIG_IN1 == TRGM_TRGOCFG_RDC_TRIG_IN1);
+BUILD_ASSERT(HPM_TRGM_OUTPUT_SYNT_TRIG == TRGM_TRGOCFG_SYNCTIMER_TRIG);
+BUILD_ASSERT(HPM_TRGM_INPUT_ACMP0_OUT == HPM_TRGM0_INPUT_SRC_ACMP0_OUT);
+BUILD_ASSERT(HPM_TRGM_INPUT_ACMP1_OUT == HPM_TRGM0_INPUT_SRC_ACMP1_OUT);
+BUILD_ASSERT(HPM_TRGM_INPUT_SYNT0_CH0 == HPM_TRGM0_INPUT_SRC_SYNT0_CH0);
+BUILD_ASSERT(HPM_TRGM_INPUT_SYNT0_CH1 == HPM_TRGM0_INPUT_SRC_SYNT0_CH1);
+BUILD_ASSERT(HPM_TRGM_INPUT_SYNT0_CH2 == HPM_TRGM0_INPUT_SRC_SYNT0_CH2);
+BUILD_ASSERT(HPM_TRGM_INPUT_SYNT0_CH3 == HPM_TRGM0_INPUT_SRC_SYNT0_CH3);
+BUILD_ASSERT(HPM_TRGM_INPUT_MMC0_TRGO_0 == HPM_TRGM0_INPUT_SRC_MMC0_TRGO_0);
+BUILD_ASSERT(HPM_TRGM_INPUT_MMC0_TRGO_1 == HPM_TRGM0_INPUT_SRC_MMC0_TRGO_1);
+BUILD_ASSERT(HPM_TRGM_INPUT_MMC1_TRGO_0 == HPM_TRGM0_INPUT_SRC_MMC1_TRGO_0);
+BUILD_ASSERT(HPM_TRGM_INPUT_MMC1_TRGO_1 == HPM_TRGM0_INPUT_SRC_MMC1_TRGO_1);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO0_TRGO_0 == HPM_TRGM0_INPUT_SRC_QEO0_TRGO_0);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO0_TRGO_1 == HPM_TRGM0_INPUT_SRC_QEO0_TRGO_1);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO0_TRGO_2 == HPM_TRGM0_INPUT_SRC_QEO0_TRGO_2);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO0_TRGO_3 == HPM_TRGM0_INPUT_SRC_QEO0_TRGO_3);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO0_TRGO_4 == HPM_TRGM0_INPUT_SRC_QEO0_TRGO_4);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO0_TRGO_5 == HPM_TRGM0_INPUT_SRC_QEO0_TRGO_5);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO0_TRGO_6 == HPM_TRGM0_INPUT_SRC_QEO0_TRGO_6);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO0_TRGO_7 == HPM_TRGM0_INPUT_SRC_QEO0_TRGO_7);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO1_TRGO_0 == HPM_TRGM0_INPUT_SRC_QEO1_TRGO_0);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO1_TRGO_1 == HPM_TRGM0_INPUT_SRC_QEO1_TRGO_1);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO1_TRGO_2 == HPM_TRGM0_INPUT_SRC_QEO1_TRGO_2);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO1_TRGO_3 == HPM_TRGM0_INPUT_SRC_QEO1_TRGO_3);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO1_TRGO_4 == HPM_TRGM0_INPUT_SRC_QEO1_TRGO_4);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO1_TRGO_5 == HPM_TRGM0_INPUT_SRC_QEO1_TRGO_5);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO1_TRGO_6 == HPM_TRGM0_INPUT_SRC_QEO1_TRGO_6);
+BUILD_ASSERT(HPM_TRGM_INPUT_QEO1_TRGO_7 == HPM_TRGM0_INPUT_SRC_QEO1_TRGO_7);
+BUILD_ASSERT(HPM_TRGM_INPUT_PLB_OUT00 == HPM_TRGM0_INPUT_SRC_PLB_OUT00);
+BUILD_ASSERT(HPM_TRGM_INPUT_PLB_OUT31 == HPM_TRGM0_INPUT_SRC_PLB_OUT31);
+BUILD_ASSERT(HPM_TRGM_INPUT_RDC_TRGO_0 == HPM_TRGM0_INPUT_SRC_RDC_TRGO_0);
+BUILD_ASSERT(HPM_TRGM_INPUT_RDC_TRGO_1 == HPM_TRGM0_INPUT_SRC_RDC_TRGO_1);
+BUILD_ASSERT(HPM_TRGM_INPUT_SEI_TRGO_0 == HPM_TRGM0_INPUT_SRC_SEI_TRGO_0);
+BUILD_ASSERT(HPM_TRGM_INPUT_SEI_TRGO_1 == HPM_TRGM0_INPUT_SRC_SEI_TRGO_1);
+BUILD_ASSERT(HPM_TRGM_INPUT_SEI_TRGO_2 == HPM_TRGM0_INPUT_SRC_SEI_TRGO_2);
+BUILD_ASSERT(HPM_TRGM_INPUT_SEI_TRGO_3 == HPM_TRGM0_INPUT_SRC_SEI_TRGO_3);
+BUILD_ASSERT(HPM_TRGM_INPUT_SEI_TRGO_4 == HPM_TRGM0_INPUT_SRC_SEI_TRGO_4);
+BUILD_ASSERT(HPM_TRGM_INPUT_SEI_TRGO_5 == HPM_TRGM0_INPUT_SRC_SEI_TRGO_5);
+BUILD_ASSERT(HPM_TRGM_INPUT_SEI_TRGO_6 == HPM_TRGM0_INPUT_SRC_SEI_TRGO_6);
+BUILD_ASSERT(HPM_TRGM_INPUT_SEI_TRGO_7 == HPM_TRGM0_INPUT_SRC_SEI_TRGO_7);
 
 struct hpm_trgm_config {
 	TRGM_Type *base;
@@ -401,6 +460,92 @@ static int hpm_trgm_drv_get_pos_matrix(const struct device *dev,
 	return 0;
 }
 
+static int hpm_trgm_route_output(const struct device *dev, uint8_t output,
+				 const struct hpm_trgm_motor_route_config *config)
+{
+	const struct hpm_trgm_config *trgm = dev->config;
+	struct hpm_trgm_data *data = dev->data;
+	trgm_output_t sdk_config;
+	k_spinlock_key_t key;
+
+	if (config->source > TRGM_TRGOCFG_TRIGOSEL_MASK) {
+		return -EINVAL;
+	}
+
+	sdk_config.input = config->source;
+	sdk_config.invert = config->invert;
+	sdk_config.type = config->edge_pulse ? trgm_output_pulse_at_input_both_edge
+					     : trgm_output_same_as_input;
+
+	key = k_spin_lock(&data->lock);
+	trgm_output_config(trgm->base, output, &sdk_config);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_trgm_route_position(const struct device *dev,
+				   enum hpm_trgm_pos_consumer consumer,
+				   const struct hpm_trgm_motor_route_config *config)
+{
+	const struct hpm_trgm_config *trgm = dev->config;
+	struct hpm_trgm_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (((unsigned int)config->source >= HPM_TRGM_POS_SOURCE_COUNT) || config->edge_pulse) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	trgm_pos_matrix_config(trgm->base, (trgm_pos_matrix_out_t)consumer,
+			       (trgm_pos_matrix_in_t)config->source, config->invert);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
+static int hpm_trgm_drv_configure_motor_route(const struct device *dev,
+					      enum hpm_trgm_motor_route route,
+					      const struct hpm_trgm_motor_route_config *config)
+{
+	if (config == NULL) {
+		return -EINVAL;
+	}
+
+	switch (route) {
+	case HPM_TRGM_MOTOR_ROUTE_SYNT_TO_QEO0_SAFETY:
+		return hpm_trgm_route_output(dev, HPM_TRGM_OUTPUT_QEO0_TRIG_IN1, config);
+	case HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0:
+		if (config->source > HPM_TRGM_POS_SOURCE_MMC1_POS1) {
+			return -EINVAL;
+		}
+		return hpm_trgm_route_position(dev, HPM_TRGM_POS_CONSUMER_QEO0, config);
+	case HPM_TRGM_MOTOR_ROUTE_MMC1_TO_QEO1:
+		if (config->source > HPM_TRGM_POS_SOURCE_MMC1_POS1) {
+			return -EINVAL;
+		}
+		return hpm_trgm_route_position(dev, HPM_TRGM_POS_CONSUMER_QEO1, config);
+	case HPM_TRGM_MOTOR_ROUTE_SEI_TO_MMC0:
+		if (config->source > HPM_TRGM_POS_SOURCE_MMC1_POS1) {
+			return -EINVAL;
+		}
+		return hpm_trgm_route_position(dev, HPM_TRGM_POS_CONSUMER_MMC0, config);
+	case HPM_TRGM_MOTOR_ROUTE_SEI_TO_MMC1:
+		if (config->source > HPM_TRGM_POS_SOURCE_MMC1_POS1) {
+			return -EINVAL;
+		}
+		return hpm_trgm_route_position(dev, HPM_TRGM_POS_CONSUMER_MMC1, config);
+	case HPM_TRGM_MOTOR_ROUTE_MMC0_TO_RDC:
+		return hpm_trgm_route_output(dev, HPM_TRGM_OUTPUT_RDC_TRIG_IN0, config);
+	case HPM_TRGM_MOTOR_ROUTE_PLB_TO_QEO0:
+		return hpm_trgm_route_output(dev, HPM_TRGM_OUTPUT_QEO0_TRIG_IN1, config);
+	case HPM_TRGM_MOTOR_ROUTE_PLB_TO_QEO1:
+		return hpm_trgm_route_output(dev, HPM_TRGM_OUTPUT_QEO1_TRIG_IN1, config);
+	default:
+		return -EINVAL;
+	}
+}
+
 static int hpm_trgm_init(const struct device *dev)
 {
 	const struct hpm_trgm_config *config = dev->config;
@@ -430,6 +575,7 @@ static DEVICE_API(hpm_trgm, hpm_trgm_api) = {
 	.get_dac_matrix = hpm_trgm_drv_get_dac_matrix,
 	.configure_pos_matrix = hpm_trgm_drv_configure_pos_matrix,
 	.get_pos_matrix = hpm_trgm_drv_get_pos_matrix,
+	.configure_motor_route = hpm_trgm_drv_configure_motor_route,
 };
 
 #define HPM_TRGM_INIT(n)                                                                           \

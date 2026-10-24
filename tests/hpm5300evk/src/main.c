@@ -1047,6 +1047,32 @@ ZTEST(hpm5300evk, test_devices_ready)
 		.source = HPM_TRGM_POS_SOURCE_MMC1_POS1,
 		.invert = true,
 	};
+	const struct hpm_trgm_motor_route_config mmc0_pos_route = {
+		.source = HPM_TRGM_POS_SOURCE_MMC0_POS0,
+	};
+	const struct hpm_trgm_motor_route_config sei_pos_route = {
+		.source = HPM_TRGM_POS_SOURCE_SEI_POS0,
+		.invert = true,
+	};
+	const struct hpm_trgm_motor_route_config mmc0_trigger_route = {
+		.source = HPM_TRGM_INPUT_MMC0_TRGO_0,
+		.edge_pulse = true,
+	};
+	const struct hpm_trgm_motor_route_config synt_trigger_route = {
+		.source = HPM_TRGM_INPUT_SYNT0_CH0,
+		.edge_pulse = true,
+	};
+	const struct hpm_trgm_motor_route_config plb_trigger_route = {
+		.source = HPM_TRGM_INPUT_PLB_OUT00,
+		.invert = true,
+	};
+	const struct hpm_trgm_motor_route_config invalid_pos_route = {
+		.source = HPM_TRGM_POS_SOURCE_COUNT,
+	};
+	const struct hpm_trgm_motor_route_config invalid_pulse_pos_route = {
+		.source = HPM_TRGM_POS_SOURCE_MMC0_POS0,
+		.edge_pulse = true,
+	};
 	struct hpm_trgm_filter_config filter_readback;
 	struct hpm_trgm_output_config output_readback;
 	struct hpm_trgm_matrix_config matrix_readback;
@@ -1120,6 +1146,50 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(
 		hpm_trgm_configure_pos_matrix(mux_dev, HPM_TRGM_POS_CONSUMER_COUNT, &pos_matrix),
 		-EINVAL);
+
+	zassert_ok(hpm_trgm_configure_motor_route(
+		mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0, &mmc0_pos_route));
+	zassert_ok(hpm_trgm_get_pos_matrix(mux_dev, HPM_TRGM_POS_CONSUMER_QEO0,
+					   &matrix_readback));
+	zassert_equal(matrix_readback.source, mmc0_pos_route.source);
+	zassert_false(matrix_readback.invert);
+	zassert_ok(hpm_trgm_configure_motor_route(
+		mux_dev, HPM_TRGM_MOTOR_ROUTE_SEI_TO_MMC0, &sei_pos_route));
+	zassert_ok(hpm_trgm_get_pos_matrix(mux_dev, HPM_TRGM_POS_CONSUMER_MMC0,
+					   &matrix_readback));
+	zassert_equal(matrix_readback.source, sei_pos_route.source);
+	zassert_true(matrix_readback.invert);
+	zassert_ok(hpm_trgm_configure_motor_route(
+		mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_RDC, &mmc0_trigger_route));
+	zassert_ok(hpm_trgm_get_output(mux_dev, HPM_TRGM_OUTPUT_RDC_TRIG_IN0,
+				       &output_readback));
+	zassert_equal(output_readback.source, mmc0_trigger_route.source);
+	zassert_equal(output_readback.type, HPM_TRGM_OUTPUT_BOTH_EDGE_PULSE);
+	zassert_ok(hpm_trgm_configure_motor_route(
+		mux_dev, HPM_TRGM_MOTOR_ROUTE_SYNT_TO_QEO0_SAFETY, &synt_trigger_route));
+	zassert_ok(hpm_trgm_get_output(mux_dev, HPM_TRGM_OUTPUT_QEO0_TRIG_IN1,
+				       &output_readback));
+	zassert_equal(output_readback.source, synt_trigger_route.source);
+	zassert_equal(output_readback.type, HPM_TRGM_OUTPUT_BOTH_EDGE_PULSE);
+	zassert_ok(hpm_trgm_configure_motor_route(
+		mux_dev, HPM_TRGM_MOTOR_ROUTE_PLB_TO_QEO1, &plb_trigger_route));
+	zassert_ok(hpm_trgm_get_output(mux_dev, HPM_TRGM_OUTPUT_QEO1_TRIG_IN1,
+				       &output_readback));
+	zassert_equal(output_readback.source, plb_trigger_route.source);
+	zassert_true(output_readback.invert);
+
+	zassert_equal(hpm_trgm_configure_motor_route(
+			      mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0, &invalid_pos_route),
+		      -EINVAL);
+	zassert_equal(hpm_trgm_configure_motor_route(
+			      mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0, &invalid_pulse_pos_route),
+		      -EINVAL);
+	zassert_equal(hpm_trgm_configure_motor_route(
+			      mux_dev, HPM_TRGM_MOTOR_ROUTE_COUNT, &mmc0_pos_route),
+		      -EINVAL);
+	zassert_equal(hpm_trgm_configure_motor_route(
+			      mux_dev, HPM_TRGM_MOTOR_ROUTE_MMC0_TO_QEO0, NULL),
+		      -EINVAL);
 #endif
 #if CONFIG_UART_INTERRUPT_DRIVEN
 	zassert_ok(uart_irq_callback_user_data_set(DEVICE_DT_GET(UART_NODE), NULL, NULL));
