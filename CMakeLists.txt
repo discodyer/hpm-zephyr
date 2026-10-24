@@ -26,5 +26,10 @@ include(${HPM_SDK_DIR}/cmake/ide/segger.cmake)
 include(${HPM_SDK_DIR}/cmake/ide/iar.cmake)
 
 zephyr_include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
+# Zephyr scans this interface for __subsystem and DEVICE_API_EXTENDS when
+# generating device API sections. Module headers must be registered here
+# as well as globally included, otherwise custom API classes have no
+# linker section and DEVICE_API_IS() produces undefined symbols.
+zephyr_syscall_include_directories(${CMAKE_CURRENT_LIST_DIR}/include)
 include(${CMAKE_CURRENT_LIST_DIR}/modules/hpm_sdk/CMakeLists.txt)
 add_subdirectory(drivers)
