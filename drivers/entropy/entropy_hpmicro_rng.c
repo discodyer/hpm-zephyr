@@ -29,6 +29,7 @@ struct hpm_rng_config {
 
 struct hpm_rng_data {
 	struct k_mutex lock;
+	struct k_spinlock fifo_lock;
 };
 
 static int hpm_rng_status_to_errno(hpm_stat_t status)
@@ -48,35 +49,83 @@ static int hpm_rng_status_to_errno(hpm_stat_t status)
 	}
 }
 
-static int hpm_rng_get_entropy(const struct device *dev, uint8_t *buffer, uint16_t length)
+static int hpm_rng_read(const struct device *dev, uint8_t *buffer, uint16_t length, bool wait)
 {
 	const struct hpm_rng_config *config = dev->config;
 	struct hpm_rng_data *data = dev->data;
-	uint32_t random_word;
 	uint16_t offset = 0U;
-	hpm_stat_t status;
-	int ret = 0;
+
+	if ((buffer == NULL) || (length == 0U)) {
+		return -EINVAL;
+	}
+
+	while (offset < length) {
+		uint32_t random_word;
+		size_t chunk;
+		k_spinlock_key_t key;
+
+		while (RNG_STA_FRNNU_GET(config->base->STA) == 0U) {
+			if ((config->base->STA & RNG_STA_FUNCERR_MASK) != 0U) {
+				return -EIO;
+			}
+			if (!wait) {
+				return offset;
+			}
+			k_busy_wait(1U);
+		}
+
+		key = k_spin_lock(&data->fifo_lock);
+		if ((config->base->STA & RNG_STA_FUNCERR_MASK) != 0U) {
+			k_spin_unlock(&data->fifo_lock, key);
+			return -EIO;
+		}
+		if (RNG_STA_FRNNU_GET(config->base->STA) == 0U) {
+			k_spin_unlock(&data->fifo_lock, key);
+			continue;
+		}
+		random_word = config->base->FO2B;
+		k_spin_unlock(&data->fifo_lock, key);
+
+		chunk = MIN((size_t)(length - offset), sizeof(random_word));
+		memcpy(&buffer[offset], &random_word, chunk);
+		offset += chunk;
+	}
+
+	return offset;
+}
+
+static int hpm_rng_get_entropy(const struct device *dev, uint8_t *buffer, uint16_t length)
+{
+	struct hpm_rng_data *data = dev->data;
+	int ret;
 
 	if ((buffer == NULL) && (length != 0U)) {
 		return -EINVAL;
 	}
 
-	k_mutex_lock(&data->lock, K_FOREVER);
-	while (offset < length) {
-		size_t chunk = MIN((size_t)(length - offset), sizeof(random_word));
-
-		status = rng_rand_wait(config->base, &random_word, sizeof(random_word));
-		ret = hpm_rng_status_to_errno(status);
-		if (ret < 0) {
-			break;
-		}
-
-		memcpy(&buffer[offset], &random_word, chunk);
-		offset += chunk;
+	if (length == 0U) {
+		return 0;
 	}
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	ret = hpm_rng_read(dev, buffer, length, true);
 	k_mutex_unlock(&data->lock);
 
-	return ret;
+	return ret == length ? 0 : (ret < 0 ? ret : -EIO);
+}
+
+static int hpm_rng_get_entropy_isr(const struct device *dev, uint8_t *buffer, uint16_t length,
+				   uint32_t flags)
+{
+	if ((buffer == NULL) && (length != 0U)) {
+		return -EINVAL;
+	}
+
+	if (length == 0U) {
+		return 0;
+	}
+
+	return hpm_rng_read(dev, buffer, length, (flags & ENTROPY_BUSYWAIT) != 0U);
 }
 
 static int hpm_rng_init(const struct device *dev)
@@ -116,6 +165,7 @@ static int hpm_rng_init(const struct device *dev)
 
 static DEVICE_API(entropy, hpm_rng_api) = {
 	.get_entropy = hpm_rng_get_entropy,
+	.get_entropy_isr = hpm_rng_get_entropy_isr,
 };
 
 #define HPM_RNG_INIT(n)                                                                            \
