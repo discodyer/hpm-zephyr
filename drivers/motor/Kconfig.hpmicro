@@ -160,5 +160,8 @@ config PLB_HPMICRO
 	select USE_HPMSDK_PLB
 	help
 	  Enable the HPMicro programmable logic block. The driver exposes the
-	  TYPE_A truth tables and TYPE_B slice, comparator and counter primitives;
-	  SDK PLB filter and encoder components are not built.
+	  TYPE_A truth tables, TYPE_B slice, comparator and counter primitives,
+	  and a Zephyr wrapper for the upstream PLB filter component. The TRGM
+	  controller is required for filter routing. The upstream ABZ encoder
+	  component is not built because it uses TRGM symbols absent from
+	  HPM5361.

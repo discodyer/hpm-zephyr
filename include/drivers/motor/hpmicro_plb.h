@@ -66,6 +66,30 @@ struct hpm_plb_type_a_config {
 	uint16_t truth[HPM_PLB_TYPE_A_LUT_COUNT];
 };
 
+/** Digital filter mode implemented by the upstream PLB filter component. */
+enum hpm_plb_filter_mode {
+	HPM_PLB_FILTER_RAPID_CHANGE = 0,
+	HPM_PLB_FILTER_DELAY,
+	HPM_PLB_FILTER_STABLE_LOW,
+	HPM_PLB_FILTER_STABLE_HIGH,
+};
+
+/** Configuration for one PLB TYPE_A/TYPE_B digital filter. */
+struct hpm_plb_filter_config {
+	/** TYPE_A channel implementing the output logic. */
+	uint8_t type_a_channel;
+	/** TYPE_B channel implementing the counter. */
+	uint8_t type_b_channel;
+	/** Filter mode. */
+	enum hpm_plb_filter_mode mode;
+	/** Filter length in PLB clock cycles. */
+	uint32_t filter_length;
+	/** TRGM input source selecting the raw signal. */
+	uint8_t input_source;
+	/** TRGM output index for the filtered signal. */
+	uint8_t output;
+};
+
 /** @cond INTERNAL_HIDDEN */
 __subsystem struct hpm_plb_driver_api {
 	int (*configure_type_a)(const struct device *dev, uint8_t channel,
@@ -81,6 +105,8 @@ __subsystem struct hpm_plb_driver_api {
 				     uint32_t value, enum hpm_plb_comparator_mode mode);
 	int (*set_type_b_counter)(const struct device *dev, uint8_t channel, uint32_t value);
 	int (*get_type_b_counter)(const struct device *dev, uint8_t channel, uint32_t *value);
+	int (*configure_filter)(const struct device *dev,
+				const struct hpm_plb_filter_config *config);
 };
 /** @endcond */
 
@@ -131,6 +157,21 @@ static inline int hpm_plb_get_type_b_counter(const struct device *dev, uint8_t c
 					     uint32_t *value)
 {
 	return DEVICE_API_GET(hpm_plb, dev)->get_type_b_counter(dev, channel, value);
+}
+
+/**
+ * @brief Configure a PLB digital filter and route its output through TRGM.
+ *
+ * This is the Zephyr adaptation of the upstream PLB filter component.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for invalid channels, mode or argument.
+ * @retval -ENODEV when the PLB node has no TRGM route.
+ */
+static inline int hpm_plb_configure_filter(const struct device *dev,
+					   const struct hpm_plb_filter_config *config)
+{
+	return DEVICE_API_GET(hpm_plb, dev)->configure_filter(dev, config);
 }
 
 /** @} */

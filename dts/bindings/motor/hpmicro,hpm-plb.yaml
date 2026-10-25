@@ -20,3 +20,8 @@ properties:
 
   clock-names:
     required: true
+
+  trgm:
+    type: phandle
+    required: true
+    description: TRGM controller used by the PLB filter and encoder components.

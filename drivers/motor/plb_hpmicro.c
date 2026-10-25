@@ -14,10 +14,13 @@
 #include <zephyr/kernel.h>
 
 #include <hpm_common.h>
+#include <hpm_filter.h>
 #include <hpm_plb_drv.h>
+#include <hpm_trgm_drv.h>
 
 struct hpm_plb_config {
 	PLB_Type *base;
+	TRGM_Type *trgm;
 	const struct device *clock_dev;
 	clock_control_subsys_t clock_subsys;
 };
@@ -230,6 +233,44 @@ static int hpm_plb_drv_get_type_b_counter(const struct device *dev, uint8_t chan
 	return 0;
 }
 
+static bool hpm_plb_filter_mode_is_valid(enum hpm_plb_filter_mode mode)
+{
+	return mode <= HPM_PLB_FILTER_STABLE_HIGH;
+}
+
+static int hpm_plb_drv_configure_filter(const struct device *dev,
+					const struct hpm_plb_filter_config *config)
+{
+	const struct hpm_plb_config *plb = dev->config;
+	struct hpm_plb_data *data = dev->data;
+	filter_config_t sdk_config = {0};
+	k_spinlock_key_t key;
+
+	if ((config == NULL) || !hpm_plb_filter_mode_is_valid(config->mode) ||
+	    !hpm_plb_channel_is_valid(config->type_a_channel) ||
+	    !hpm_plb_channel_is_valid(config->type_b_channel) || (config->filter_length == 0U) ||
+	    ((config->mode == HPM_PLB_FILTER_DELAY) &&
+	     (config->filter_length > (UINT32_MAX / 2U))) ||
+	    (config->input_source > TRGM_TRGOCFG_TRIGOSEL_MASK)) {
+		return -EINVAL;
+	}
+
+	sdk_config.plb = plb->base;
+	sdk_config.trgm = plb->trgm;
+	sdk_config.mode = (filter_mode_t)config->mode;
+	sdk_config.plb_type_a_chn = (plb_chn_t)config->type_a_channel;
+	sdk_config.plb_type_b_chn = (plb_chn_t)config->type_b_channel;
+	sdk_config.filter_len = config->filter_length;
+	sdk_config.input_trgmux_pin = config->input_source;
+	sdk_config.output_trgmux_pin = config->output;
+
+	key = k_spin_lock(&data->lock);
+	plb_filter_init(&sdk_config);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+}
+
 static DEVICE_API(hpm_plb, hpm_plb_api) = {
 	.configure_type_a = hpm_plb_drv_configure_type_a,
 	.inject_type_a = hpm_plb_drv_inject_type_a,
@@ -239,6 +280,7 @@ static DEVICE_API(hpm_plb, hpm_plb_api) = {
 	.set_type_b_comparator = hpm_plb_drv_set_type_b_comparator,
 	.set_type_b_counter = hpm_plb_drv_set_type_b_counter,
 	.get_type_b_counter = hpm_plb_drv_get_type_b_counter,
+	.configure_filter = hpm_plb_drv_configure_filter,
 };
 
 static int hpm_plb_init(const struct device *dev)
@@ -255,6 +297,7 @@ static int hpm_plb_init(const struct device *dev)
 #define HPM_PLB_INIT(n)                                                                            \
 	static const struct hpm_plb_config hpm_plb_config_##n = {                                  \
 		.base = (PLB_Type *)DT_INST_REG_ADDR(n),                                           \
+		.trgm = (TRGM_Type *)DT_REG_ADDR(DT_INST_PHANDLE(n, trgm)),                        \
 		.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),                                \
 		.clock_subsys = (clock_control_subsys_t)DT_INST_CLOCKS_CELL(n, name),              \
 	};                                                                                         \

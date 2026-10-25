@@ -1391,6 +1391,25 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(
 		hpm_plb_set_type_b_slice(plb, 0U, HPM_PLB_TYPE_B_SLICE_COUNT, HPM_PLB_SLICE_KEEP),
 		-EINVAL);
+
+	const struct hpm_plb_filter_config filter = {
+		.type_a_channel = 2U,
+		.type_b_channel = 2U,
+		.mode = HPM_PLB_FILTER_STABLE_HIGH,
+		.filter_length = 100U,
+		.input_source = HPM_TRGM0_INPUT_SRC_TRGM0_P0,
+		.output = HPM_TRGM_OUTPUT_PLB_IN_00 + 8U,
+	};
+	const struct hpm_plb_filter_config invalid_filter = {
+		.type_a_channel = HPM_PLB_CHANNEL_COUNT,
+		.type_b_channel = 2U,
+		.mode = HPM_PLB_FILTER_DELAY,
+		.filter_length = 100U,
+	};
+
+	zassert_ok(hpm_plb_configure_filter(plb, &filter));
+	zassert_equal(hpm_plb_configure_filter(plb, &invalid_filter), -EINVAL);
+	zassert_equal(hpm_plb_configure_filter(plb, NULL), -EINVAL);
 #endif
 #if DT_NODE_HAS_STATUS(TRGM_NODE, okay)
 	const struct device *mux_dev = MUX_CONTROL_DT_DEV_GET(MUX_CONSUMER_NODE);

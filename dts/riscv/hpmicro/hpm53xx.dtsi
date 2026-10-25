@@ -731,6 +731,7 @@
 			reg = <0xf0324000 0x1000>;
 			clocks = <&clk CLOCK_MOT0 CLK_SRC_OSC24M 1>;
 			clock-names = "plb";
+			trgm = <&trgm0>;
 			status = "disabled";
 		};
 

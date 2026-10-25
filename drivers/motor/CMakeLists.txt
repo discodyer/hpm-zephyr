@@ -14,3 +14,5 @@ zephyr_library_sources_ifdef(CONFIG_MMC_HPMICRO mmc_hpmicro.c)
 zephyr_library_sources_ifdef(CONFIG_RDC_HPMICRO rdc_hpmicro.c)
 zephyr_library_sources_ifdef(CONFIG_SYNT_HPMICRO synt_hpmicro.c)
 zephyr_library_sources_ifdef(CONFIG_PLB_HPMICRO plb_hpmicro.c)
+zephyr_library_sources_ifdef(CONFIG_PLB_HPMICRO
+	${HPM_SDK_DIR}/components/plb/filter/hpm_filter.c)
