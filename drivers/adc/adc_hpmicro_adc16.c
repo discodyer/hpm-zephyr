@@ -24,6 +24,10 @@
 #include <hpm_adc16_drv.h>
 #include <hpm_clock_drv.h>
 
+#if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
+#include <drivers/adc/hpmicro_adc16.h>
+#endif
+
 LOG_MODULE_REGISTER(adc_hpmicro_adc16, CONFIG_ADC_LOG_LEVEL);
 
 #define HPM_ADC16_MAX_CHANNELS         (ADC16_SOC_MAX_CH_NUM + 1U)
@@ -63,6 +67,9 @@ struct hpm_adc16_data {
 	bool seq_error;
 	bool sequence_irq_ready;
 	uint32_t *seq_buffer;
+#if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
+	enum hpm_adc16_trigger_source trigger_source;
+#endif
 #endif
 	uint8_t resolution;
 	uint8_t clock_divider;
@@ -275,8 +282,13 @@ static int hpm_adc16_start_sequence(const struct device *dev, const struct adc_s
 	seq_config.seq_len = data->seq_samples;
 	seq_config.restart_en = false;
 	seq_config.cont_en = false;
+#if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
+	seq_config.sw_trig_en = data->trigger_source == HPM_ADC16_TRIGGER_SOFTWARE;
+	seq_config.hw_trig_en = data->trigger_source == HPM_ADC16_TRIGGER_EXTERNAL;
+#else
 	seq_config.sw_trig_en = true;
 	seq_config.hw_trig_en = false;
+#endif
 	for (uint8_t i = 0U; i < data->seq_samples; i++) {
 		seq_config.queue[i].ch = data->seq_channels[i];
 		seq_config.queue[i].seq_int_en = i == (uint8_t)(data->seq_samples - 1U);
@@ -304,7 +316,12 @@ static int hpm_adc16_start_sequence(const struct device *dev, const struct adc_s
 
 	k_sem_reset(&data->seq_done);
 	adc16_enable_interrupts(config->base, hpm_adc16_sequence_status_mask());
+#if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
+	status = seq_config.sw_trig_en ? adc16_trigger_seq_by_sw(config->base)
+					 : status_success;
+#else
 	status = adc16_trigger_seq_by_sw(config->base);
+#endif
 	if (status != status_success) {
 		adc16_disable_interrupts(config->base, hpm_adc16_sequence_status_mask());
 		(void)adc16_deinit(config->base);
@@ -494,6 +511,38 @@ static int hpm_adc16_read_async(const struct device *dev, const struct adc_seque
 #endif /* CONFIG_ADC_ASYNC */
 #endif /* CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA */
 
+#if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
+static int hpm_adc16_set_trigger_source_impl(const struct device *dev,
+					     enum hpm_adc16_trigger_source source)
+{
+	struct hpm_adc16_data *data = dev->data;
+
+	if ((source != HPM_ADC16_TRIGGER_SOFTWARE) && (source != HPM_ADC16_TRIGGER_EXTERNAL)) {
+		return -EINVAL;
+	}
+
+	if (atomic_get(&data->async_busy) != 0) {
+		return -EBUSY;
+	}
+
+	data->trigger_source = source;
+	return 0;
+}
+
+static int hpm_adc16_get_trigger_source_impl(const struct device *dev,
+					     enum hpm_adc16_trigger_source *source)
+{
+	const struct hpm_adc16_data *data = dev->data;
+
+	if (source == NULL) {
+		return -EINVAL;
+	}
+
+	*source = data->trigger_source;
+	return 0;
+}
+#endif
+
 #ifdef CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA
 #define HPM_ADC16_IRQ_CONFIG(n)                                                                    \
 	static void hpm_adc16_irq_config_##n(const struct device *dev)                             \
@@ -521,6 +570,21 @@ static int hpm_adc16_read_async(const struct device *dev, const struct adc_seque
 #endif
 #endif
 
+#if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
+#define HPM_ADC16_API(n)                                                                           \
+	static DEVICE_API(hpm_adc16, hpm_adc16_api_##n) = {                                        \
+		.adc_api =                                                                         \
+			{                                                                          \
+				.channel_setup = hpm_adc16_channel_setup,                          \
+				.read = hpm_adc16_read,                                            \
+				IF_ENABLED(CONFIG_ADC_ASYNC,                                       \
+					   (.read_async = hpm_adc16_read_async,))                   \
+					.ref_internal = DT_INST_PROP_OR(n, vref_mv, 3300),         \
+			},                                                                         \
+		.set_trigger_source = hpm_adc16_set_trigger_source_impl,                           \
+		.get_trigger_source = hpm_adc16_get_trigger_source_impl,                           \
+	};
+#else
 #define HPM_ADC16_API(n)                                                                           \
 	static DEVICE_API(adc, hpm_adc16_api_##n) = {                                              \
 		.channel_setup = hpm_adc16_channel_setup,                                          \
@@ -528,6 +592,7 @@ static int hpm_adc16_read_async(const struct device *dev, const struct adc_seque
 		IF_ENABLED(CONFIG_ADC_ASYNC, (.read_async = hpm_adc16_read_async,)) .ref_internal =   \
 						     DT_INST_PROP_OR(n, vref_mv, 3300),            \
 	};
+#endif
 
 #define HPM_ADC16_INIT(n)                                                                          \
 	PINCTRL_DT_INST_DEFINE(n);                                                                 \

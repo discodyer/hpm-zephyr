@@ -36,4 +36,14 @@ config ADC_HPMICRO_ADC16_SEQUENCE_TIMEOUT_MS
 	help
 	  Maximum time to wait for a synchronous sequence conversion.
 
+config ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER
+	bool "Enable ADC16 external sequence trigger mode"
+	default y
+	depends on ADC_HPMICRO_ADC16_SEQUENCE_DMA
+	help
+	  Enable an HPM driver extension that selects between software and
+	  external sequence triggers. The external trigger input is wired through
+	  TRGM to the ADC STRGI signal; this option does not acquire or configure
+	  any trigger source.
+
 endif # ADC_HPMICRO_ADC16
