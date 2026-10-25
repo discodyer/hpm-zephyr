@@ -8,6 +8,12 @@
 #include <zephyr/drivers/adc.h>
 #include <zephyr/ztest.h>
 
+#ifdef CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA
+BUILD_ASSERT(IS_ENABLED(CONFIG_NOCACHE_MEMORY),
+	     "ADC16 sequence DMA requires non-cacheable memory support");
+BUILD_ASSERT(CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_TIMEOUT_MS > 0);
+#endif
+
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(adc0), okay) && defined(CONFIG_ADC_ASYNC)
 ZTEST(hpm_adc, test_async_api_contract)
 {

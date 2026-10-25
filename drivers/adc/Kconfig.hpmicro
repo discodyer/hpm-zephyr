@@ -11,4 +11,29 @@ config ADC_HPMICRO_ADC16
 	depends on HAS_HPMSDK_ADC16
 	select USE_HPMSDK_ADC16
 	help
-	  Enable the HPMicro ADC16 driver.
+
+	  Enable the HPMicro ADC16 driver. When the selected SoC supports
+	  non-cacheable memory, the driver uses the ADC internal sequence DMA
+	  engine and the sequence-complete interrupt for hardware-driven reads.
+
+if ADC_HPMICRO_ADC16
+
+config ADC_HPMICRO_ADC16_SEQUENCE_DMA
+	bool "Use ADC16 internal sequence DMA"
+	default y
+	depends on ARCH_HAS_NOCACHE_MEMORY_SUPPORT
+	select NOCACHE_MEMORY
+	help
+	  Use ADC16 sequence mode with its internal DMA engine, writing packed
+	  conversion records to non-cacheable memory and completing through the
+	  ADC interrupt. Disable to use the oneshot polling fallback.
+
+config ADC_HPMICRO_ADC16_SEQUENCE_TIMEOUT_MS
+	int "ADC16 sequence completion timeout"
+	depends on ADC_HPMICRO_ADC16_SEQUENCE_DMA
+	default 1000
+	range 1 60000
+	help
+	  Maximum time to wait for a synchronous sequence conversion.
+
+endif # ADC_HPMICRO_ADC16
