@@ -1696,6 +1696,12 @@ ZTEST(hpm5300evk, test_gpio_interrupt_config)
 {
 	const struct device *gpio = DEVICE_DT_GET(DT_NODELABEL(gpioa));
 
+	zassert_equal(gpio_pin_configure(gpio, 0, GPIO_DISCONNECTED), -ENOTSUP);
+	zassert_equal(gpio_pin_configure(gpio, 0, GPIO_INPUT | GPIO_PULL_UP),
+		      -ENOTSUP);
+	zassert_equal(gpio_pin_configure(gpio, 0,
+					 GPIO_OUTPUT | GPIO_OPEN_DRAIN),
+		      -ENOTSUP);
 	zassert_ok(gpio_pin_configure(gpio, 0, GPIO_INPUT));
 	zassert_ok(gpio_pin_interrupt_configure(gpio, 0, GPIO_INT_EDGE_RISING));
 	zassert_ok(gpio_pin_interrupt_configure(gpio, 0, GPIO_INT_EDGE_BOTH));

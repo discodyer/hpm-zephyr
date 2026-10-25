@@ -31,6 +31,25 @@ static int hpm_gpio_pin_configure(const struct device *dev, gpio_pin_t pin, gpio
 {
 	const struct hpm_gpio_config *config = dev->config;
 
+	/*
+	 * Bias and open-drain/open-source settings are pad properties owned by
+	 * pinctrl. Reject them instead of reporting success without applying
+	 * the requested configuration.
+	 */
+	if ((flags & (GPIO_PULL_UP | GPIO_PULL_DOWN |
+		      GPIO_SINGLE_ENDED)) != 0U) {
+		return -ENOTSUP;
+	}
+
+	if ((flags & (GPIO_INPUT | GPIO_OUTPUT)) == GPIO_DISCONNECTED) {
+		/*
+		 * The GPIO block can disable the output driver, but the input
+		 * buffer is configured by IOC/PINCTRL. Do not claim that both
+		 * directions are disconnected.
+		 */
+		return -ENOTSUP;
+	}
+
 	if ((flags & GPIO_OUTPUT) != 0U) {
 		if ((flags & GPIO_OUTPUT_INIT_HIGH) != 0U) {
 			gpio_write_pin(config->base, config->port, pin, 1);
@@ -38,7 +57,7 @@ static int hpm_gpio_pin_configure(const struct device *dev, gpio_pin_t pin, gpio
 			gpio_write_pin(config->base, config->port, pin, 0);
 		}
 		gpio_set_pin_output(config->base, config->port, pin);
-	} else if ((flags & GPIO_INPUT) != 0U) {
+	} else {
 		gpio_set_pin_input(config->base, config->port, pin);
 	}
 
