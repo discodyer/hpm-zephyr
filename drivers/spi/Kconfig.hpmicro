@@ -13,4 +13,30 @@ config SPI_HPMICRO
 	help
 	  Enable the HPMicro SPI controller driver. Standard synchronous transfers
 	  are always available. When CONFIG_SPI_ASYNC is enabled the driver also
-	  provides the asynchronous callback API through the system workqueue.
+	  provides the asynchronous callback API. Eligible single-line transfers
+	  use the HDMA controller; other transfers run through the synchronous
+	  engine on the system workqueue.
+
+if SPI_HPMICRO
+
+config SPI_HPMICRO_DMA
+	bool "Use DMA for eligible asynchronous transfers"
+	default y
+	depends on SPI_ASYNC
+	depends on DT_HAS_HPMICRO_HPM_DMA_ENABLED
+	select DMA
+	help
+	  Use TX/RX DMA channels from devicetree for single-line asynchronous
+	  transfers with contiguous, frame-aligned buffers. Without DMA, or for
+	  transfers outside that contract, use the API-compatible workqueue path.
+
+config SPI_HPMICRO_DMA_TIMEOUT_MS
+	int "SPI DMA asynchronous transaction timeout"
+	depends on SPI_HPMICRO_DMA
+	default 1000
+	range 1 60000
+	help
+	  Maximum time to wait for the SPI end interrupt and DMA channel
+	  callbacks before completing an asynchronous transfer with -ETIMEDOUT.
+
+endif # SPI_HPMICRO

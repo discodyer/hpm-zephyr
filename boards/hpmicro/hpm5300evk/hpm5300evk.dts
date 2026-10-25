@@ -59,6 +59,8 @@
 
 &spi1 {
 	status = "okay";
+	dmas = <&hdma 4 HPM_DMA_SRC_SPI1_RX>, <&hdma 5 HPM_DMA_SRC_SPI1_TX>;
+	dma-names = "rx", "tx";
 	pinctrl-0 = <&pa26_spi1_cs_0 &pa27_spi1_sclk
 		     &pa28_spi1_miso &pa29_spi1_mosi>;
 	pinctrl-names = "default";

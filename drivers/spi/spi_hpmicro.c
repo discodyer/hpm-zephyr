@@ -9,10 +9,13 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <zephyr/cache.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/spi.h>
+#include <zephyr/irq.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/atomic.h>
@@ -24,8 +27,9 @@ LOG_MODULE_REGISTER(spi_hpmicro, CONFIG_SPI_LOG_LEVEL);
 
 #include "spi_context.h"
 
-#define HPM_SPI_MAX_WORD_SIZE 32U
-#define HPM_SPI_FIFO_DEPTH    8U
+#define HPM_SPI_MAX_WORD_SIZE  32U
+#define HPM_SPI_FIFO_DEPTH     8U
+#define HPM_SPI_DMA_NO_CHANNEL UINT32_MAX
 
 struct hpm_spi_config {
 	SPI_Type *base;
@@ -35,6 +39,14 @@ struct hpm_spi_config {
 	clock_source_t clock_src;
 	uint32_t clock_div;
 	const struct pinctrl_dev_config *pincfg;
+#ifdef CONFIG_SPI_HPMICRO_DMA
+	const struct device *dma_dev;
+	uint32_t tx_dma_channel;
+	uint32_t rx_dma_channel;
+	uint32_t tx_dma_request;
+	uint32_t rx_dma_request;
+	void (*irq_config_func)(const struct device *dev);
+#endif
 };
 
 struct hpm_spi_data {
@@ -49,8 +61,141 @@ struct hpm_spi_data {
 	void *async_userdata;
 	atomic_t async_busy;
 	int async_result;
+#ifdef CONFIG_SPI_HPMICRO_DMA
+	struct k_spinlock dma_lock;
+	struct dma_block_config tx_dma_block;
+	struct dma_block_config rx_dma_block;
+	const uint8_t *dma_tx_buf;
+	uint8_t *dma_rx_buf;
+	size_t dma_rx_len;
+	uint32_t dma_pending;
+	struct k_work_delayable dma_timeout_work;
+	bool dma_active;
+	bool dma_error;
+	bool dma_timeout;
+#endif
 #endif
 };
+
+#ifdef CONFIG_SPI_HPMICRO_DMA
+#define HPM_SPI_DMA_TX_DONE  BIT(0)
+#define HPM_SPI_DMA_RX_DONE  BIT(1)
+#define HPM_SPI_DMA_SPI_DONE BIT(2)
+#endif
+
+#ifdef CONFIG_SPI_HPMICRO_DMA
+static void hpm_spi_dma_finish(const struct device *dev, int status);
+static void hpm_spi_dma_try_finish(const struct device *dev, uint32_t event);
+
+static void hpm_spi_dma_timeout_handler(struct k_work *work)
+{
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct hpm_spi_data *data = CONTAINER_OF(dwork, struct hpm_spi_data, dma_timeout_work);
+
+	data->dma_timeout = true;
+	hpm_spi_dma_try_finish(data->dev, 0U);
+}
+
+static void hpm_spi_dma_try_finish(const struct device *dev, uint32_t event)
+{
+	struct hpm_spi_data *data = dev->data;
+	k_spinlock_key_t key;
+	bool finish = false;
+	int status = 0;
+
+	key = k_spin_lock(&data->dma_lock);
+	if (data->dma_active) {
+		data->dma_pending &= ~event;
+		if (data->dma_timeout) {
+			status = -ETIMEDOUT;
+		} else if (data->dma_error) {
+			status = -EIO;
+		}
+		if ((data->dma_pending == 0U) || data->dma_error || data->dma_timeout) {
+			data->dma_active = false;
+			finish = true;
+		}
+	}
+	k_spin_unlock(&data->dma_lock, key);
+
+	if (finish) {
+		hpm_spi_dma_finish(dev, status);
+	}
+}
+
+static void hpm_spi_dma_tx_callback(const struct device *dma_dev, void *user_data, uint32_t channel,
+				    int status)
+{
+	const struct device *dev = user_data;
+	struct hpm_spi_data *data = dev->data;
+
+	ARG_UNUSED(dma_dev);
+	ARG_UNUSED(channel);
+
+	if (status < 0) {
+		data->dma_error = true;
+	}
+	hpm_spi_dma_try_finish(dev, HPM_SPI_DMA_TX_DONE);
+}
+
+static void hpm_spi_dma_rx_callback(const struct device *dma_dev, void *user_data, uint32_t channel,
+				    int status)
+{
+	const struct device *dev = user_data;
+	struct hpm_spi_data *data = dev->data;
+
+	ARG_UNUSED(dma_dev);
+	ARG_UNUSED(channel);
+
+	if (status < 0) {
+		data->dma_error = true;
+	}
+	hpm_spi_dma_try_finish(dev, HPM_SPI_DMA_RX_DONE);
+}
+
+static void hpm_spi_isr(const struct device *dev)
+{
+	const struct hpm_spi_config *config = dev->config;
+	struct hpm_spi_data *data = dev->data;
+	uint32_t status = spi_get_interrupt_status(config->base);
+
+	spi_clear_interrupt_status(config->base, status);
+	if ((status & (spi_rx_fifo_overflow_int | spi_tx_fifo_underflow_int)) != 0U) {
+		data->dma_error = true;
+		hpm_spi_dma_try_finish(dev, 0U);
+		return;
+	}
+	if ((status & spi_end_int) != 0U) {
+		hpm_spi_dma_try_finish(dev, HPM_SPI_DMA_SPI_DONE);
+	}
+}
+
+static void hpm_spi_dma_finish(const struct device *dev, int status)
+{
+	const struct hpm_spi_config *config = dev->config;
+	struct hpm_spi_data *data = dev->data;
+	uint8_t *rx_buf = data->dma_rx_buf;
+	size_t rx_len = data->dma_rx_len;
+
+	(void)k_work_cancel_delayable(&data->dma_timeout_work);
+	spi_disable_interrupt(config->base,
+			      spi_end_int | spi_rx_fifo_overflow_int | spi_tx_fifo_underflow_int);
+	spi_disable_tx_dma(config->base);
+	spi_disable_rx_dma(config->base);
+	(void)dma_stop(config->dma_dev, config->tx_dma_channel);
+	(void)dma_stop(config->dma_dev, config->rx_dma_channel);
+	spi_context_cs_control(&data->ctx, false);
+
+	if ((status == 0) && (rx_buf != NULL) && (rx_len != 0U)) {
+		(void)sys_cache_data_invd_range(rx_buf, rx_len);
+	}
+	data->dma_tx_buf = NULL;
+	data->dma_rx_buf = NULL;
+	data->dma_rx_len = 0U;
+	atomic_clear(&data->async_busy);
+	spi_context_complete(&data->ctx, dev, status);
+}
+#endif /* CONFIG_SPI_HPMICRO_DMA */
 
 static int hpm_spi_configure(const struct device *dev, const struct spi_config *spi_cfg)
 {
@@ -376,6 +521,219 @@ out:
 }
 
 #ifdef CONFIG_SPI_ASYNC
+#ifdef CONFIG_SPI_HPMICRO_DMA
+static bool hpm_spi_async_dma_supported(const struct device *dev, const struct spi_config *spi_cfg,
+					const struct spi_buf_set *tx_bufs,
+					const struct spi_buf_set *rx_bufs)
+{
+	const struct hpm_spi_config *config = dev->config;
+	uint32_t word_size;
+
+	if (!IS_ENABLED(CONFIG_SPI_HPMICRO_DMA) || (config->dma_dev == NULL) ||
+	    (SPI_OP_MODE_GET(spi_cfg->operation) != SPI_OP_MODE_CONTROLLER) ||
+	    ((spi_cfg->operation & SPI_LINES_MASK) != SPI_LINES_SINGLE)) {
+		return false;
+	}
+
+	word_size = SPI_WORD_SIZE_GET(spi_cfg->operation);
+	if ((word_size != 8U) && (word_size != 16U) && (word_size != 32U)) {
+		return false;
+	}
+
+	if ((tx_bufs != NULL) && ((tx_bufs->count > 1U) || (tx_bufs->buffers == NULL))) {
+		return false;
+	}
+	if ((rx_bufs != NULL) && ((rx_bufs->count > 1U) || (rx_bufs->buffers == NULL))) {
+		return false;
+	}
+	if ((tx_bufs != NULL) && (tx_bufs->count != 0U) &&
+	    (config->tx_dma_channel == HPM_SPI_DMA_NO_CHANNEL)) {
+		return false;
+	}
+	if ((rx_bufs != NULL) && (rx_bufs->count != 0U) &&
+	    (config->rx_dma_channel == HPM_SPI_DMA_NO_CHANNEL)) {
+		return false;
+	}
+
+	return true;
+}
+#endif /* CONFIG_SPI_HPMICRO_DMA */
+
+#ifdef CONFIG_SPI_HPMICRO_DMA
+static int hpm_spi_transceive_dma_async(const struct device *dev, const struct spi_config *spi_cfg,
+					const struct spi_buf_set *tx_bufs,
+					const struct spi_buf_set *rx_bufs, spi_callback_t callback,
+					void *userdata)
+{
+	const struct hpm_spi_config *config = dev->config;
+	struct hpm_spi_data *data = dev->data;
+	spi_control_config_t control_config = {0};
+	struct dma_config dma_cfg = {0};
+	const uint8_t *tx_buf = NULL;
+	uint8_t *rx_buf = NULL;
+	size_t tx_len = 0U;
+	size_t rx_len = 0U;
+	uint32_t word_size;
+	uint32_t data_size;
+	uint32_t frames;
+	int ret;
+
+	if ((tx_bufs != NULL) && (tx_bufs->count != 0U)) {
+		tx_buf = tx_bufs->buffers[0].buf;
+		tx_len = tx_bufs->buffers[0].len;
+	}
+	if ((rx_bufs != NULL) && (rx_bufs->count != 0U)) {
+		rx_buf = rx_bufs->buffers[0].buf;
+		rx_len = rx_bufs->buffers[0].len;
+	}
+	if ((tx_len == 0U) && (rx_len == 0U)) {
+		return -EINVAL;
+	}
+	if ((tx_len != 0U) && (tx_buf == NULL)) {
+		return -EINVAL;
+	}
+	if ((rx_len != 0U) && (rx_buf == NULL)) {
+		return -EINVAL;
+	}
+
+	word_size = SPI_WORD_SIZE_GET(spi_cfg->operation);
+	data_size = word_size / BITS_PER_BYTE;
+	if (!IS_ALIGNED(tx_len, data_size) || !IS_ALIGNED(rx_len, data_size) ||
+	    ((tx_len != 0U) && (rx_len != 0U) && (tx_len != rx_len))) {
+		return -EINVAL;
+	}
+	frames = MAX(tx_len, rx_len) / data_size;
+
+	spi_context_lock(&data->ctx, true, callback, userdata, spi_cfg);
+	ret = hpm_spi_configure(dev, spi_cfg);
+	if (ret < 0) {
+		spi_context_unlock_unconditionally(&data->ctx);
+		return ret;
+	}
+
+	spi_master_get_default_control_config(&control_config);
+	control_config.common_config.cs_index =
+		spi_cs_is_gpio(spi_cfg) ? 0U : (spi_cs_index_t)BIT(spi_cfg->peripheral);
+	control_config.common_config.data_phase_fmt = spi_single_io_mode;
+	control_config.common_config.tx_dma_enable = tx_len != 0U;
+	control_config.common_config.rx_dma_enable = rx_len != 0U;
+	if ((tx_len != 0U) && (rx_len != 0U)) {
+		control_config.common_config.trans_mode = spi_trans_write_read_together;
+	} else if (tx_len != 0U) {
+		control_config.common_config.trans_mode = spi_trans_write_only;
+	} else {
+		control_config.common_config.trans_mode = spi_trans_read_only;
+	}
+
+	data->dma_tx_buf = tx_buf;
+	data->dma_rx_buf = rx_buf;
+	data->dma_rx_len = rx_len;
+	data->dma_error = false;
+	data->dma_timeout = false;
+	data->dma_pending = HPM_SPI_DMA_SPI_DONE;
+	(void)k_work_reschedule(&data->dma_timeout_work, K_MSEC(CONFIG_SPI_HPMICRO_DMA_TIMEOUT_MS));
+
+	if (tx_len != 0U) {
+		data->tx_dma_block = (struct dma_block_config){
+			.source_address = (uint32_t)tx_buf,
+			.dest_address = (uint32_t)&config->base->DATA,
+			.source_addr_adj = DMA_ADDR_ADJ_INCREMENT,
+			.dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE,
+			.block_size = tx_len,
+		};
+		dma_cfg.channel_direction = MEMORY_TO_PERIPHERAL;
+		dma_cfg.dma_slot = config->tx_dma_request;
+		dma_cfg.source_data_size = data_size;
+		dma_cfg.dest_data_size = data_size;
+		dma_cfg.source_burst_length = data_size;
+		dma_cfg.dest_burst_length = data_size;
+		dma_cfg.block_count = 1U;
+		dma_cfg.head_block = &data->tx_dma_block;
+		dma_cfg.user_data = (void *)dev;
+		dma_cfg.dma_callback = hpm_spi_dma_tx_callback;
+		(void)sys_cache_data_flush_range((void *)tx_buf, tx_len);
+		ret = dma_config(config->dma_dev, config->tx_dma_channel, &dma_cfg);
+		if (ret < 0) {
+			goto error;
+		}
+		data->dma_pending |= HPM_SPI_DMA_TX_DONE;
+	}
+
+	if (rx_len != 0U) {
+		data->rx_dma_block = (struct dma_block_config){
+			.source_address = (uint32_t)&config->base->DATA,
+			.dest_address = (uint32_t)rx_buf,
+			.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE,
+			.dest_addr_adj = DMA_ADDR_ADJ_INCREMENT,
+			.block_size = rx_len,
+		};
+		dma_cfg = (struct dma_config){0};
+		dma_cfg.channel_direction = PERIPHERAL_TO_MEMORY;
+		dma_cfg.dma_slot = config->rx_dma_request;
+		dma_cfg.source_data_size = data_size;
+		dma_cfg.dest_data_size = data_size;
+		dma_cfg.source_burst_length = data_size;
+		dma_cfg.dest_burst_length = data_size;
+		dma_cfg.block_count = 1U;
+		dma_cfg.head_block = &data->rx_dma_block;
+		dma_cfg.user_data = (void *)dev;
+		dma_cfg.dma_callback = hpm_spi_dma_rx_callback;
+		(void)sys_cache_data_invd_range(rx_buf, rx_len);
+		ret = dma_config(config->dma_dev, config->rx_dma_channel, &dma_cfg);
+		if (ret < 0) {
+			goto error;
+		}
+		data->dma_pending |= HPM_SPI_DMA_RX_DONE;
+	}
+
+	spi_set_tx_fifo_threshold(config->base, 0U);
+	spi_set_rx_fifo_threshold(config->base, 0U);
+	spi_clear_interrupt_status(config->base, UINT32_MAX);
+	spi_enable_interrupt(config->base,
+			     spi_end_int | spi_rx_fifo_overflow_int | spi_tx_fifo_underflow_int);
+
+	data->dma_active = true;
+	spi_context_cs_control(&data->ctx, true);
+	if (tx_len != 0U) {
+		ret = dma_start(config->dma_dev, config->tx_dma_channel);
+		if (ret < 0) {
+			goto error_active;
+		}
+	}
+	if (rx_len != 0U) {
+		ret = dma_start(config->dma_dev, config->rx_dma_channel);
+		if (ret < 0) {
+			goto error_active;
+		}
+	}
+
+	ret = spi_setup_dma_transfer(config->base, &control_config, NULL, NULL, frames, frames);
+	if (ret != status_success) {
+		ret = -EIO;
+		goto error_active;
+	}
+	return 0;
+
+error_active:
+	(void)k_work_cancel_delayable(&data->dma_timeout_work);
+	spi_context_cs_control(&data->ctx, false);
+	data->dma_active = false;
+	spi_disable_interrupt(config->base,
+			      spi_end_int | spi_rx_fifo_overflow_int | spi_tx_fifo_underflow_int);
+	(void)dma_stop(config->dma_dev, config->tx_dma_channel);
+	(void)dma_stop(config->dma_dev, config->rx_dma_channel);
+	spi_disable_tx_dma(config->base);
+	spi_disable_rx_dma(config->base);
+error:
+	(void)k_work_cancel_delayable(&data->dma_timeout_work);
+	data->dma_tx_buf = NULL;
+	data->dma_rx_buf = NULL;
+	data->dma_rx_len = 0U;
+	spi_context_unlock_unconditionally(&data->ctx);
+	return ret;
+}
+#endif /* CONFIG_SPI_HPMICRO_DMA */
+
 static void hpm_spi_async_work_handler(struct k_work *work)
 {
 	struct hpm_spi_data *data = CONTAINER_OF(work, struct hpm_spi_data, async_work);
@@ -406,6 +764,20 @@ static int hpm_spi_transceive_async(const struct device *dev, const struct spi_c
 {
 	struct hpm_spi_data *data = dev->data;
 	int ret;
+
+#ifdef CONFIG_SPI_HPMICRO_DMA
+	if (hpm_spi_async_dma_supported(dev, spi_cfg, tx_bufs, rx_bufs)) {
+		if (!atomic_cas(&data->async_busy, 0, 1)) {
+			return -EBUSY;
+		}
+		ret = hpm_spi_transceive_dma_async(dev, spi_cfg, tx_bufs, rx_bufs, callback,
+						   userdata);
+		if (ret < 0) {
+			atomic_clear(&data->async_busy);
+		}
+		return ret;
+	}
+#endif
 
 	if (!atomic_cas(&data->async_busy, 0, 1)) {
 		return -EBUSY;
@@ -472,6 +844,28 @@ static int hpm_spi_init(const struct device *dev)
 	data->dev = dev;
 	k_work_init(&data->async_work, hpm_spi_async_work_handler);
 #endif
+#ifdef CONFIG_SPI_HPMICRO_DMA
+	if (config->dma_dev != NULL) {
+		uint32_t tx_filter = BIT(config->tx_dma_channel);
+		uint32_t rx_filter = BIT(config->rx_dma_channel);
+		int channel;
+
+		if (!device_is_ready(config->dma_dev)) {
+			return -ENODEV;
+		}
+		config->irq_config_func(dev);
+		k_work_init_delayable(&data->dma_timeout_work, hpm_spi_dma_timeout_handler);
+		channel = dma_request_channel(config->dma_dev, &tx_filter);
+		if (channel < 0) {
+			return channel;
+		}
+		channel = dma_request_channel(config->dma_dev, &rx_filter);
+		if (channel < 0) {
+			dma_release_channel(config->dma_dev, config->tx_dma_channel);
+			return channel;
+		}
+	}
+#endif
 
 	ret = spi_context_cs_configure_all(&data->ctx);
 	if (ret < 0) {
@@ -491,8 +885,35 @@ static DEVICE_API(spi, hpm_spi_api) = {
 	.release = hpm_spi_release,
 };
 
+#ifdef CONFIG_SPI_HPMICRO_DMA
+#define HPM_SPI_DMA_CONFIG(n)                                                                      \
+	.dma_dev = COND_CODE_1(DT_INST_DMAS_HAS_NAME(n, tx),                                       \
+			       (DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_NAME(n, tx))), (NULL)),                          \
+		 .tx_dma_channel = COND_CODE_1(DT_INST_DMAS_HAS_NAME(n, tx),                                 \
+				      (DT_INST_DMAS_CELL_BY_NAME(n, tx, channel)), (0)),                           \
+			  .rx_dma_channel = COND_CODE_1(DT_INST_DMAS_HAS_NAME(n, rx),                                 \
+				      (DT_INST_DMAS_CELL_BY_NAME(n, rx, channel)), (0)),                  \
+				   .tx_dma_request = COND_CODE_1(DT_INST_DMAS_HAS_NAME(n, tx),                                 \
+				      (DT_INST_DMAS_CELL_BY_NAME(n, tx, request)), (0)),         \
+					    .rx_dma_request = COND_CODE_1(DT_INST_DMAS_HAS_NAME(n, rx),                                 \
+				      (DT_INST_DMAS_CELL_BY_NAME(n, rx, request)), (0)),                                         \
+						     .irq_config_func = hpm_spi_irq_config_##n,
+
+#define HPM_SPI_IRQ_CONFIG(n)                                                                      \
+	static void hpm_spi_irq_config_##n(const struct device *dev)                               \
+	{                                                                                          \
+		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), hpm_spi_isr,                \
+			    DEVICE_DT_INST_GET(n), 0);                                             \
+		irq_enable(DT_INST_IRQN(n));                                                       \
+	}
+#else
+#define HPM_SPI_DMA_CONFIG(n)
+#define HPM_SPI_IRQ_CONFIG(n)
+#endif
+
 #define HPM_SPI_INIT(n)                                                                            \
 	PINCTRL_DT_INST_DEFINE(n);                                                                 \
+	HPM_SPI_IRQ_CONFIG(n)                                                                      \
                                                                                                    \
 	static const struct hpm_spi_config hpm_spi_config_##n = {                                  \
 		.base = (SPI_Type *)DT_INST_REG_ADDR(n),                                           \
@@ -502,7 +923,7 @@ static DEVICE_API(spi, hpm_spi_api) = {
 		.clock_src = DT_INST_PROP(n, clock_src),                                           \
 		.clock_div = DT_INST_CLOCKS_CELL_BY_IDX(n, 0, divider),                            \
 		.pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),                                       \
-	};                                                                                         \
+		HPM_SPI_DMA_CONFIG(n)};                                                            \
                                                                                                    \
 	static struct hpm_spi_data hpm_spi_data_##n = {                                            \
 		SPI_CONTEXT_INIT_LOCK(hpm_spi_data_##n, ctx),                                      \
