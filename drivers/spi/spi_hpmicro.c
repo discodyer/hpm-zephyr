@@ -15,6 +15,7 @@
 #include <zephyr/drivers/spi.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/atomic.h>
 
 #include <hpm_clock_drv.h>
 #include <hpm_spi_drv.h>
@@ -38,6 +39,17 @@ struct hpm_spi_config {
 
 struct hpm_spi_data {
 	struct spi_context ctx;
+#ifdef CONFIG_SPI_ASYNC
+	const struct device *dev;
+	struct k_work async_work;
+	const struct spi_config *async_config;
+	const struct spi_buf_set *async_tx_bufs;
+	const struct spi_buf_set *async_rx_bufs;
+	spi_callback_t async_callback;
+	void *async_userdata;
+	atomic_t async_busy;
+	int async_result;
+#endif
 };
 
 static int hpm_spi_configure(const struct device *dev, const struct spi_config *spi_cfg)
@@ -363,6 +375,63 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_SPI_ASYNC
+static void hpm_spi_async_work_handler(struct k_work *work)
+{
+	struct hpm_spi_data *data = CONTAINER_OF(work, struct hpm_spi_data, async_work);
+	const struct device *dev = data->dev;
+	spi_callback_t callback = data->async_callback;
+	void *userdata = data->async_userdata;
+	int ret;
+
+	ret = hpm_spi_transceive(dev, data->async_config, data->async_tx_bufs, data->async_rx_bufs);
+
+	data->async_config = NULL;
+	data->async_tx_bufs = NULL;
+	data->async_rx_bufs = NULL;
+	data->async_callback = NULL;
+	data->async_userdata = NULL;
+	data->async_result = ret;
+	atomic_clear(&data->async_busy);
+
+	if (callback != NULL) {
+		callback(dev, ret, userdata);
+	}
+}
+
+static int hpm_spi_transceive_async(const struct device *dev, const struct spi_config *spi_cfg,
+				    const struct spi_buf_set *tx_bufs,
+				    const struct spi_buf_set *rx_bufs, spi_callback_t callback,
+				    void *userdata)
+{
+	struct hpm_spi_data *data = dev->data;
+	int ret;
+
+	if (!atomic_cas(&data->async_busy, 0, 1)) {
+		return -EBUSY;
+	}
+
+	data->async_config = spi_cfg;
+	data->async_tx_bufs = tx_bufs;
+	data->async_rx_bufs = rx_bufs;
+	data->async_callback = callback;
+	data->async_userdata = userdata;
+
+	ret = k_work_submit(&data->async_work);
+	if (ret < 0) {
+		data->async_config = NULL;
+		data->async_tx_bufs = NULL;
+		data->async_rx_bufs = NULL;
+		data->async_callback = NULL;
+		data->async_userdata = NULL;
+		data->async_result = -EIO;
+		atomic_clear(&data->async_busy);
+	}
+
+	return ret < 0 ? ret : 0;
+}
+#endif /* CONFIG_SPI_ASYNC */
+
 static int hpm_spi_release(const struct device *dev, const struct spi_config *spi_cfg)
 {
 	struct hpm_spi_data *data = dev->data;
@@ -399,6 +468,11 @@ static int hpm_spi_init(const struct device *dev)
 		return -EIO;
 	}
 
+#ifdef CONFIG_SPI_ASYNC
+	data->dev = dev;
+	k_work_init(&data->async_work, hpm_spi_async_work_handler);
+#endif
+
 	ret = spi_context_cs_configure_all(&data->ctx);
 	if (ret < 0) {
 		return ret;
@@ -409,8 +483,11 @@ static int hpm_spi_init(const struct device *dev)
 	return 0;
 }
 
-static const struct spi_driver_api hpm_spi_api = {
+static DEVICE_API(spi, hpm_spi_api) = {
 	.transceive = hpm_spi_transceive,
+#ifdef CONFIG_SPI_ASYNC
+	.transceive_async = hpm_spi_transceive_async,
+#endif
 	.release = hpm_spi_release,
 };
 

@@ -11,4 +11,6 @@ config SPI_HPMICRO
 	depends on HAS_HPMSDK_SPI
 	select USE_HPMSDK_SPI
 	help
-	  Enable the HPMicro SPI controller driver.
+	  Enable the HPMicro SPI controller driver. Standard synchronous transfers
+	  are always available. When CONFIG_SPI_ASYNC is enabled the driver also
+	  provides the asynchronous callback API through the system workqueue.
