@@ -501,7 +501,7 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_equal(hpm_mcan_get_rx_filter_timestamp(mcan, filter_id, NULL), -EINVAL);
 	can_remove_rx_filter(mcan, filter_id);
 #endif
-#if DT_NODE_HAS_STATUS(DMA_NODE, okay)
+#if DT_NODE_HAS_STATUS(DMA_NODE, okay) && defined(CONFIG_DMA_HPMICRO)
 	uint32_t dma_attribute;
 	int dma_channel;
 
