@@ -508,7 +508,7 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_true(device_is_ready(DEVICE_DT_GET(DMA_NODE)));
 	zassert_ok(dma_get_attribute(DEVICE_DT_GET(DMA_NODE), DMA_ATTR_MAX_BLOCK_COUNT,
 				     &dma_attribute));
-	zassert_equal(dma_attribute, 1U);
+	zassert_equal(dma_attribute, CONFIG_DMA_HPMICRO_MAX_BLOCKS);
 	dma_channel = dma_request_channel(DEVICE_DT_GET(DMA_NODE), NULL);
 	zassert_true(dma_channel >= 0);
 	dma_release_channel(DEVICE_DT_GET(DMA_NODE), (uint32_t)dma_channel);
@@ -1700,5 +1700,40 @@ ZTEST(hpm5300evk, test_gpio_interrupt_config)
 	zassert_ok(gpio_pin_interrupt_configure(gpio, 0, GPIO_INT_EDGE_BOTH));
 	zassert_ok(gpio_pin_interrupt_configure(gpio, 0, GPIO_INT_DISABLE));
 }
+
+#if defined(CONFIG_PWM_CAPTURE) && DT_NODE_HAS_STATUS(DT_NODELABEL(pwm0), okay)
+static void hpm_pwm_capture_test_callback(const struct device *dev, uint32_t channel,
+					  uint32_t period_cycles, uint32_t pulse_cycles,
+					  int status, void *user_data)
+{
+	ARG_UNUSED(dev);
+	ARG_UNUSED(channel);
+	ARG_UNUSED(period_cycles);
+	ARG_UNUSED(pulse_cycles);
+	ARG_UNUSED(status);
+	ARG_UNUSED(user_data);
+}
+
+ZTEST(hpm5300evk, test_pwm_capture_api_contract)
+{
+	const struct device *pwm = DEVICE_DT_GET(DT_NODELABEL(pwm0));
+
+	zassert_true(device_is_ready(pwm));
+	zassert_ok(pwm_configure_capture(pwm, 0U,
+					 PWM_CAPTURE_TYPE_BOTH | PWM_CAPTURE_MODE_CONTINUOUS |
+						 PWM_POLARITY_NORMAL,
+					 hpm_pwm_capture_test_callback, NULL));
+	zassert_ok(pwm_enable_capture(pwm, 0U));
+	zassert_equal(pwm_enable_capture(pwm, 0U), -EBUSY);
+	zassert_equal(pwm_configure_capture(pwm, 0U, PWM_CAPTURE_TYPE_BOTH, NULL, NULL), -EBUSY);
+	zassert_ok(pwm_disable_capture(pwm, 0U));
+	zassert_ok(pwm_configure_capture(pwm, 0U, PWM_CAPTURE_TYPE_BOTH,
+					 hpm_pwm_capture_test_callback, NULL));
+	zassert_equal(pwm_configure_capture(pwm, HPM_PWM_COMPARATOR_COUNT,
+					    PWM_CAPTURE_TYPE_PERIOD,
+					    hpm_pwm_capture_test_callback, NULL),
+		      -EINVAL);
+}
+#endif
 
 ZTEST_SUITE(hpm5300evk, NULL, NULL, NULL, NULL, NULL);

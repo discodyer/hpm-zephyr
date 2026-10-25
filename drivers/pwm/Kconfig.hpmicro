@@ -12,5 +12,7 @@ config PWM_HPMICRO
 	select USE_HPMSDK_PWM
 	help
 	  Enable the HPMicro PWM driver. The standard PWM API provides basic
-	  edge-aligned outputs. The HPMicro extension API provides complementary
-	  outputs with dead-time insertion, fault handling, and input capture.
+	  edge-aligned outputs. When PWM_CAPTURE is enabled, comparators configured
+	  as capture inputs also support the standard Zephyr capture API. The
+	  HPMicro extension API provides complementary outputs with dead-time
+	  insertion, fault handling, and raw input-capture access.
