@@ -17,6 +17,8 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 
+#include <drivers/serial/hpmicro_uart.h>
+
 #include <hpm_common.h>
 #include <hpm_clock_drv.h>
 #include <hpm_soc.h>
@@ -1043,36 +1045,159 @@ static int hpm_uart_config_get(const struct device *dev, struct uart_config *cfg
 	return 0;
 }
 
-static const struct uart_driver_api hpm_uart_api = {
-	.poll_in = hpm_uart_poll_in,
-	.poll_out = hpm_uart_poll_out,
-	.err_check = hpm_uart_err_check,
-	.configure = hpm_uart_configure,
-	.config_get = hpm_uart_config_get,
+static int hpm_uart_configure_address_match_impl(const struct device *dev,
+						 const struct hpm_uart_address_match_config *config)
+{
+#if defined(HPM_IP_FEATURE_UART_ADDR_MATCH) && (HPM_IP_FEATURE_UART_ADDR_MATCH == 1)
+	const struct hpm_zephyr_uart_config *uart = dev->config;
+	struct hpm_zephyr_uart_data *data = dev->data;
+	uart_rxline_idle_config_t idle = {
+		.idle_cond = uart_rxline_idle_cond_state_machine_idle,
+		.threshold = 4U,
+	};
+	k_spinlock_key_t key;
+
+	if (config == NULL) {
+		return -EINVAL;
+	}
+	idle.detect_enable = config->enable;
+	if (config->nine_bit && !config->enable) {
+		return -EINVAL;
+	}
+	if (!config->nine_bit &&
+	    ((config->address0 & BIT(7)) != 0U || (config->address1 & BIT(7)) != 0U)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	if (config->nine_bit && ((uart_get_data_bits(uart->base) != word_length_8_bits) ||
+				 (uart_get_parity(uart->base) != parity_none))) {
+		k_spin_unlock(&data->lock, key);
+		return -ENOTSUP;
+	}
+
+	uart_disable_address_match(uart->base);
+	uart->base->ADDR_CFG &= ~(UART_ADDR_CFG_TXEN_9BIT_MASK | UART_ADDR_CFG_RXEN_ADDR_MSB_MASK |
+				  UART_ADDR_CFG_RXEN_9BIT_MASK);
+	if (config->enable) {
+		uint32_t addr_cfg = UART_ADDR_CFG_TXEN_9BIT_MASK | UART_ADDR_CFG_RXEN_ADDR_MSB_MASK;
+
+		if (config->nine_bit) {
+			addr_cfg |= UART_ADDR_CFG_RXEN_9BIT_MASK;
+		}
+		uart->base->ADDR_CFG |= addr_cfg;
+		uint8_t address0 = config->address0;
+		uint8_t address1 = config->address1;
+
+		if (!config->nine_bit) {
+			address0 |= BIT(7);
+			address1 |= BIT(7);
+		}
+		if (config->address1_enable) {
+			uart_enable_address1_match(uart->base, address1);
+		}
+		if (config->address0_enable) {
+			uart_enable_address0_match(uart->base, address0);
+		}
+	}
+	(void)uart_init_rxline_idle_detection(uart->base, idle);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+#else
+	ARG_UNUSED(dev);
+	ARG_UNUSED(config);
+
+	return -ENOTSUP;
+#endif
+}
+
+static int hpm_uart_get_address_match_impl(const struct device *dev, bool *matched)
+{
+#if defined(HPM_IP_FEATURE_UART_ADDR_MATCH) && (HPM_IP_FEATURE_UART_ADDR_MATCH == 1)
+	const struct hpm_zephyr_uart_config *uart = dev->config;
+	struct hpm_zephyr_uart_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (matched == NULL) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	*matched = uart_is_addr_match(uart->base);
+	uart_clear_addr_match_flag(uart->base);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+#else
+	ARG_UNUSED(dev);
+	ARG_UNUSED(matched);
+
+	return -ENOTSUP;
+#endif
+}
+
+static int hpm_uart_get_address_match_idle_impl(const struct device *dev, bool *matched)
+{
+#if defined(HPM_IP_FEATURE_UART_ADDR_MATCH) && (HPM_IP_FEATURE_UART_ADDR_MATCH == 1)
+	const struct hpm_zephyr_uart_config *uart = dev->config;
+	struct hpm_zephyr_uart_data *data = dev->data;
+	k_spinlock_key_t key;
+
+	if (matched == NULL) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	*matched = uart_is_addr_match_and_rxidle(uart->base);
+	uart_clear_addr_match_and_rxidle_flag(uart->base);
+	k_spin_unlock(&data->lock, key);
+
+	return 0;
+#else
+	ARG_UNUSED(dev);
+	ARG_UNUSED(matched);
+
+	return -ENOTSUP;
+#endif
+}
+
+static DEVICE_API(hpm_uart, hpm_uart_api) = {
+	.uart_api =
+		{
+			.poll_in = hpm_uart_poll_in,
+			.poll_out = hpm_uart_poll_out,
+			.err_check = hpm_uart_err_check,
+			.configure = hpm_uart_configure,
+			.config_get = hpm_uart_config_get,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
-	.fifo_fill = hpm_uart_fifo_fill,
-	.fifo_read = hpm_uart_fifo_read,
-	.irq_tx_enable = hpm_uart_irq_tx_enable,
-	.irq_tx_disable = hpm_uart_irq_tx_disable,
-	.irq_tx_ready = hpm_uart_irq_tx_ready,
-	.irq_rx_enable = hpm_uart_irq_rx_enable,
-	.irq_rx_disable = hpm_uart_irq_rx_disable,
-	.irq_tx_complete = hpm_uart_irq_tx_complete,
-	.irq_rx_ready = hpm_uart_irq_rx_ready,
-	.irq_err_enable = hpm_uart_irq_err_enable,
-	.irq_err_disable = hpm_uart_irq_err_disable,
-	.irq_is_pending = hpm_uart_irq_is_pending,
-	.irq_update = hpm_uart_irq_update,
-	.irq_callback_set = hpm_uart_irq_callback_set,
+			.fifo_fill = hpm_uart_fifo_fill,
+			.fifo_read = hpm_uart_fifo_read,
+			.irq_tx_enable = hpm_uart_irq_tx_enable,
+			.irq_tx_disable = hpm_uart_irq_tx_disable,
+			.irq_tx_ready = hpm_uart_irq_tx_ready,
+			.irq_rx_enable = hpm_uart_irq_rx_enable,
+			.irq_rx_disable = hpm_uart_irq_rx_disable,
+			.irq_tx_complete = hpm_uart_irq_tx_complete,
+			.irq_rx_ready = hpm_uart_irq_rx_ready,
+			.irq_err_enable = hpm_uart_irq_err_enable,
+			.irq_err_disable = hpm_uart_irq_err_disable,
+			.irq_is_pending = hpm_uart_irq_is_pending,
+			.irq_update = hpm_uart_irq_update,
+			.irq_callback_set = hpm_uart_irq_callback_set,
 #endif
 #ifdef CONFIG_UART_ASYNC_API
-	.callback_set = hpm_uart_async_callback_set,
-	.tx = hpm_uart_async_tx,
-	.tx_abort = hpm_uart_async_tx_abort,
-	.rx_enable = hpm_uart_async_rx_enable,
-	.rx_buf_rsp = hpm_uart_async_rx_buf_rsp,
-	.rx_disable = hpm_uart_async_rx_disable,
+			.callback_set = hpm_uart_async_callback_set,
+			.tx = hpm_uart_async_tx,
+			.tx_abort = hpm_uart_async_tx_abort,
+			.rx_enable = hpm_uart_async_rx_enable,
+			.rx_buf_rsp = hpm_uart_async_rx_buf_rsp,
+			.rx_disable = hpm_uart_async_rx_disable,
 #endif
+		},
+	.configure_address_match = hpm_uart_configure_address_match_impl,
+	.get_address_match = hpm_uart_get_address_match_impl,
+	.get_address_match_idle = hpm_uart_get_address_match_idle_impl,
 };
 
 #if defined(CONFIG_UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_ASYNC_API)

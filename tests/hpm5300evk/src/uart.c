@@ -10,6 +10,8 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/ztest.h>
 
+#include <drivers/serial/hpmicro_uart.h>
+
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(uart0), okay)
 ZTEST(hpm_uart, test_runtime_configuration_api)
 {
@@ -42,6 +44,31 @@ ZTEST(hpm_uart, test_runtime_configuration_api)
 
 	requested.flow_ctrl = UART_CFG_FLOW_CTRL_DTR_DSR;
 	zassert_equal(uart_configure(dev, &requested), -ENOTSUP);
+}
+
+ZTEST(hpm_uart, test_address_match_extension_validation)
+{
+	const struct device *dev = DEVICE_DT_GET(DT_NODELABEL(uart0));
+	const struct hpm_uart_address_match_config invalid_8bit = {
+		.enable = true,
+		.address0 = 0x80U,
+		.address0_enable = true,
+	};
+	const struct hpm_uart_address_match_config invalid_9bit = {
+		.address0 = 0x40U,
+		.address0_enable = true,
+		.nine_bit = true,
+	};
+	bool matched;
+
+	zassert_true(DEVICE_API_IS(hpm_uart, dev));
+	zassert_equal(hpm_uart_configure_address_match(dev, NULL), -EINVAL);
+	zassert_equal(hpm_uart_configure_address_match(dev, &invalid_8bit), -EINVAL);
+	zassert_equal(hpm_uart_configure_address_match(dev, &invalid_9bit), -EINVAL);
+	zassert_equal(hpm_uart_get_address_match(dev, NULL), -EINVAL);
+	zassert_equal(hpm_uart_get_address_match_idle(dev, NULL), -EINVAL);
+	zassert_ok(hpm_uart_get_address_match(dev, &matched));
+	zassert_ok(hpm_uart_get_address_match_idle(dev, &matched));
 }
 #endif
 
