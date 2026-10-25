@@ -218,7 +218,7 @@ static int hpm_spi_configure(const struct device *dev, const struct spi_config *
 		return -ENOTSUP;
 	}
 
-	if ((spi_cfg->operation & SPI_LINES_MASK) != SPI_LINES_SINGLE) {
+	if ((spi_cfg->operation & SPI_LINES_MASK) == SPI_LINES_OCTAL) {
 		return -ENOTSUP;
 	}
 
@@ -285,7 +285,9 @@ static int hpm_spi_configure(const struct device *dev, const struct spi_config *
 						   ? spi_sclk_sampling_even_clk_edges
 						   : spi_sclk_sampling_odd_clk_edges;
 	format_config.common_config.lsb = (spi_cfg->operation & SPI_TRANSFER_LSB) != 0U;
-	format_config.common_config.mosi_bidir = (spi_cfg->operation & SPI_HALF_DUPLEX) != 0U;
+	format_config.common_config.mosi_bidir =
+		((spi_cfg->operation & SPI_HALF_DUPLEX) != 0U) ||
+		((spi_cfg->operation & SPI_LINES_MASK) != SPI_LINES_SINGLE);
 	spi_format_init(config->base, &format_config);
 
 	((struct hpm_spi_data *)dev->data)->ctx.config = spi_cfg;
@@ -367,7 +369,7 @@ static void hpm_spi_store_next(const struct spi_buf_set *bufs, size_t *index, si
 
 static int hpm_spi_transfer_stream(const struct hpm_spi_config *config,
 				   spi_control_config_t *control_config, uint32_t frame_size,
-				   uint32_t frames, uint32_t tx_frames,
+				   uint32_t frames, uint32_t tx_frames, uint32_t rx_frames,
 				   const struct spi_buf_set *tx_bufs,
 				   const struct spi_buf_set *rx_bufs)
 {
@@ -399,26 +401,22 @@ static int hpm_spi_transfer_stream(const struct hpm_spi_config *config,
 		return -EIO;
 	}
 
-	while ((read < frames) || (written < frames)) {
+	while ((tx_frames != 0U && written < frames) || (rx_frames != 0U && read < frames)) {
 		uint32_t status = config->base->STATUS;
 
-		if ((written < frames) && !(status & SPI_STATUS_TXFULL_MASK)) {
-			if (written < tx_frames) {
-				hpm_spi_fill_next(tx_bufs, &tx_index, &tx_offset, frame_size,
-						  &tx_word);
-			} else {
-				tx_word = 0U;
-			}
+		if ((tx_frames != 0U) && (written < frames) && !(status & SPI_STATUS_TXFULL_MASK)) {
+			hpm_spi_fill_next(tx_bufs, &tx_index, &tx_offset, frame_size, &tx_word);
 			config->base->DATA = tx_word;
 			written++;
 		}
 
-		if ((read < frames) && !(status & SPI_STATUS_RXEMPTY_MASK)) {
+		if ((rx_frames != 0U) && (read < frames) && !(status & SPI_STATUS_RXEMPTY_MASK)) {
 			rx_word = config->base->DATA;
 			hpm_spi_store_next(rx_bufs, &rx_index, &rx_offset, frame_size, rx_word);
 			read++;
 			retry = 0U;
-		} else if ((written < frames) || (read < frames)) {
+		} else if ((tx_frames != 0U && written < frames) ||
+			   (rx_frames != 0U && read < frames)) {
 			if (retry++ > HPM_SPI_FIFO_DEPTH * 1024U) {
 				return -ETIMEDOUT;
 			}
@@ -429,7 +427,7 @@ static int hpm_spi_transfer_stream(const struct hpm_spi_config *config,
 		return -ETIMEDOUT;
 	}
 
-	if (read != frames) {
+	if ((tx_frames != 0U && written != frames) || (rx_frames != 0U && read != frames)) {
 		return -EIO;
 	}
 
@@ -477,6 +475,12 @@ static int hpm_spi_transceive(const struct device *dev, const struct spi_config 
 		goto out;
 	}
 
+	if (((spi_cfg->operation & SPI_LINES_MASK) != SPI_LINES_SINGLE) && (tx_len != 0U) &&
+	    (rx_len != 0U)) {
+		ret = -ENOTSUP;
+		goto out;
+	}
+
 	word_size = SPI_WORD_SIZE_GET(spi_cfg->operation);
 	if ((word_size != 8U) && (word_size != 16U) && (word_size != 24U) && (word_size != 32U)) {
 		ret = -ENOTSUP;
@@ -497,6 +501,17 @@ static int hpm_spi_transceive(const struct device *dev, const struct spi_config 
 	spi_master_get_default_control_config(&control_config);
 	control_config.common_config.cs_index =
 		spi_cs_is_gpio(spi_cfg) ? 0U : (spi_cs_index_t)BIT(spi_cfg->peripheral);
+	switch (spi_cfg->operation & SPI_LINES_MASK) {
+	case SPI_LINES_DUAL:
+		control_config.common_config.data_phase_fmt = spi_dual_io_mode;
+		break;
+	case SPI_LINES_QUAD:
+		control_config.common_config.data_phase_fmt = spi_quad_io_mode;
+		break;
+	default:
+		control_config.common_config.data_phase_fmt = spi_single_io_mode;
+		break;
+	}
 
 	if ((tx_frames > 0U) && (rx_frames > 0U)) {
 		control_config.common_config.trans_mode = spi_trans_write_read_together;
@@ -508,7 +523,7 @@ static int hpm_spi_transceive(const struct device *dev, const struct spi_config 
 
 	spi_context_cs_control(&data->ctx, true);
 	ret = hpm_spi_transfer_stream(config, &control_config, frame_size, frames, tx_frames,
-				      tx_bufs, rx_bufs);
+				      rx_frames, tx_bufs, rx_bufs);
 	spi_context_cs_control(&data->ctx, false);
 
 out:

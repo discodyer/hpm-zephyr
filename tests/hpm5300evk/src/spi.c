@@ -66,4 +66,30 @@ ZTEST(hpm_spi, test_async_dma_rejects_mismatched_buffers)
 #endif
 #endif
 
+#ifdef CONFIG_SPI_EXTENDED_MODES
+ZTEST(hpm_spi, test_quad_write_api)
+{
+	const struct spi_dt_spec spec = SPI_DT_SPEC_GET(DT_NODELABEL(spi_gpio_cs),
+							SPI_OP_MODE_CONTROLLER | SPI_WORD_SET(8) |
+								SPI_LINES_QUAD | SPI_HALF_DUPLEX);
+	static const uint8_t tx_data[4] = {0x5a, 0xa5, 0x3c, 0xc3};
+	const struct spi_buf tx_buf = {.buf = (void *)tx_data, .len = sizeof(tx_data)};
+	const struct spi_buf_set tx_bufs = {.buffers = &tx_buf, .count = 1};
+
+	zassert_equal(spi_write_dt(&spec, &tx_bufs), 0);
+}
+
+ZTEST(hpm_spi, test_dual_read_api)
+{
+	const struct spi_dt_spec spec = SPI_DT_SPEC_GET(DT_NODELABEL(spi_gpio_cs),
+							SPI_OP_MODE_CONTROLLER | SPI_WORD_SET(8) |
+								SPI_LINES_DUAL | SPI_HALF_DUPLEX);
+	uint8_t rx_data[4];
+	const struct spi_buf rx_buf = {.buf = rx_data, .len = sizeof(rx_data)};
+	const struct spi_buf_set rx_bufs = {.buffers = &rx_buf, .count = 1};
+
+	zassert_equal(spi_read_dt(&spec, &rx_bufs), 0);
+}
+#endif
+
 ZTEST_SUITE(hpm_spi, NULL, NULL, NULL, NULL, NULL);
