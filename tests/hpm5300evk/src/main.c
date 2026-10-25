@@ -34,6 +34,7 @@
 #include <drivers/mux/hpmicro_trgm.h>
 #include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/otp.h>
+#include <drivers/otp/hpmicro_otp.h>
 #include <zephyr/drivers/ptp_clock.h>
 #include <zephyr/drivers/pwm.h>
 #include <drivers/pwm/hpmicro_pwm.h>
@@ -378,10 +379,28 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_ptpc_set_event_callback(ptpc1, HPM_PTPC_EVENT_COMPARE, NULL, NULL));
 #endif
 #if DT_NODE_HAS_STATUS(OTP_NODE, okay)
+	const struct device *otp = DEVICE_DT_GET(OTP_NODE);
 	uint32_t otp_word;
 
-	zassert_true(device_is_ready(DEVICE_DT_GET(OTP_NODE)));
-	zassert_ok(otp_read(DEVICE_DT_GET(OTP_NODE), 0, &otp_word, sizeof(otp_word)));
+	zassert_true(device_is_ready(otp));
+	zassert_true(DEVICE_API_IS(otp, otp));
+	zassert_true(DEVICE_API_IS(hpm_otp, otp));
+	zassert_ok(otp_read(otp, 0, &otp_word, sizeof(otp_word)));
+	zassert_equal(hpm_otp_reload(otp, (enum hpm_otp_region)4), -EINVAL);
+	if (IS_ENABLED(CONFIG_OTP_HPMICRO_ALLOW_LOCK)) {
+		zassert_equal(hpm_otp_lock(otp, HPM_OTP_WORD_COUNT, HPM_OTP_READ_ONLY), -EINVAL);
+		zassert_equal(hpm_otp_lock_shadow(otp, HPM_OTP_WORD_COUNT, HPM_OTP_READ_ONLY),
+			      -EINVAL);
+	} else {
+		zassert_equal(hpm_otp_lock(otp, 0U, HPM_OTP_READ_ONLY), -ENOTSUP);
+		zassert_equal(hpm_otp_lock_shadow(otp, 0U, HPM_OTP_READ_ONLY), -ENOTSUP);
+	}
+	if (IS_ENABLED(CONFIG_OTP_HPMICRO_ALLOW_REGION_CONFIG)) {
+		zassert_equal(hpm_otp_set_configurable_region(otp, HPM_OTP_WORD_COUNT, 1U),
+			      -EINVAL);
+	} else {
+		zassert_equal(hpm_otp_set_configurable_region(otp, 0U, 1U), -ENOTSUP);
+	}
 #endif
 #if DT_NODE_HAS_STATUS(MBX0A_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(MBX0A_NODE)));

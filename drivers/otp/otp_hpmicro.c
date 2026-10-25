@@ -16,6 +16,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
+#include <drivers/otp/hpmicro_otp.h>
+
 #include <hpm_common.h>
 
 LOG_MODULE_REGISTER(otp_hpmicro, CONFIG_OTP_HPMICRO_LOG_LEVEL);
@@ -29,6 +31,12 @@ uint32_t hpm_sdk_otp_read_from_shadow(uint32_t addr) __asm__("otp_read_from_shad
 hpm_stat_t hpm_sdk_otp_program(uint32_t addr, const uint32_t *src,
 			       uint32_t num_of_words) __asm__("otp_program");
 void hpm_sdk_otp_init(void) __asm__("otp_init");
+hpm_stat_t hpm_sdk_otp_reload(uint32_t region) __asm__("otp_reload");
+hpm_stat_t hpm_sdk_otp_lock_otp(uint32_t addr, uint32_t option) __asm__("otp_lock_otp");
+hpm_stat_t hpm_sdk_otp_lock_shadow(uint32_t addr, uint32_t option) __asm__("otp_lock_shadow");
+hpm_stat_t
+hpm_sdk_otp_set_configurable_region(uint32_t start,
+				    uint32_t words) __asm__("otp_set_configurable_region");
 
 #define HPM_OTP_WORDS 128U
 #define HPM_OTP_BYTES (HPM_OTP_WORDS * sizeof(uint32_t))
@@ -137,10 +145,106 @@ static int hpm_otp_program(const struct device *dev, off_t offset, const void *b
 }
 #endif
 
-static DEVICE_API(otp, hpm_otp_api) = {
-	.read = hpm_otp_read,
+static int hpm_otp_status_to_errno(hpm_stat_t status)
+{
+	if (status == status_success) {
+		return 0;
+	}
+
+	if (status == status_invalid_argument) {
+		return -EINVAL;
+	}
+
+	return -EIO;
+}
+
+static int hpm_otp_reload_impl(const struct device *dev, enum hpm_otp_region region)
+{
+	struct hpm_otp_data *data = dev->data;
+	hpm_stat_t status;
+
+	if (region > HPM_OTP_REGION_3) {
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	status = hpm_sdk_otp_reload(BIT(region));
+	k_mutex_unlock(&data->lock);
+
+	return hpm_otp_status_to_errno(status);
+}
+
+#if defined(CONFIG_OTP_HPMICRO_ALLOW_LOCK)
+static int hpm_otp_lock_impl(const struct device *dev, uint32_t word_index,
+			     enum hpm_otp_lock_option option)
+{
+	struct hpm_otp_data *data = dev->data;
+	hpm_stat_t status;
+
+	if ((word_index >= HPM_OTP_WORD_COUNT) || (option > HPM_OTP_DISABLE_ACCESS)) {
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	status = hpm_sdk_otp_lock_otp(word_index, option);
+	k_mutex_unlock(&data->lock);
+
+	return hpm_otp_status_to_errno(status);
+}
+
+static int hpm_otp_lock_shadow_impl(const struct device *dev, uint32_t word_index,
+				    enum hpm_otp_lock_option option)
+{
+	struct hpm_otp_data *data = dev->data;
+	hpm_stat_t status;
+
+	if ((word_index >= HPM_OTP_WORD_COUNT) || (option > HPM_OTP_DISABLE_ACCESS)) {
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	status = hpm_sdk_otp_lock_shadow(word_index, option);
+	k_mutex_unlock(&data->lock);
+
+	return hpm_otp_status_to_errno(status);
+}
+#endif
+
+#if defined(CONFIG_OTP_HPMICRO_ALLOW_REGION_CONFIG)
+static int hpm_otp_set_configurable_region_impl(const struct device *dev, uint32_t start,
+						uint32_t word_count)
+{
+	struct hpm_otp_data *data = dev->data;
+	hpm_stat_t status;
+
+	if ((word_count == 0U) || (start >= HPM_OTP_WORD_COUNT) ||
+	    (word_count > HPM_OTP_WORD_COUNT - start)) {
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	status = hpm_sdk_otp_set_configurable_region(start, word_count);
+	k_mutex_unlock(&data->lock);
+
+	return hpm_otp_status_to_errno(status);
+}
+#endif
+
+static DEVICE_API(hpm_otp, hpm_otp_api) = {
+	.otp_api =
+		{
+			.read = hpm_otp_read,
 #if defined(CONFIG_OTP_PROGRAM)
-	.program = hpm_otp_program,
+			.program = hpm_otp_program,
+#endif
+		},
+	.reload = hpm_otp_reload_impl,
+#if defined(CONFIG_OTP_HPMICRO_ALLOW_LOCK)
+	.lock_otp = hpm_otp_lock_impl,
+	.lock_shadow = hpm_otp_lock_shadow_impl,
+#endif
+#if defined(CONFIG_OTP_HPMICRO_ALLOW_REGION_CONFIG)
+	.set_configurable_region = hpm_otp_set_configurable_region_impl,
 #endif
 };
 

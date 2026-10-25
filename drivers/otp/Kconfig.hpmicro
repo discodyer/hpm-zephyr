@@ -21,6 +21,22 @@ module = OTP_HPMICRO
 module-str = OTP_HPMICRO
 source "subsys/logging/Kconfig.template.log_config"
 
+config OTP_HPMICRO_ALLOW_LOCK
+	bool "Allow irreversible OTP lock operations"
+	default n
+	help
+	  Expose the HPMicro fuse and shadow lock APIs. Lock settings can be
+	  irreversible and may permanently disable fuse programming or reads.
+	  Leave this disabled unless the product provisioning flow explicitly
+	  requires it.
+
+config OTP_HPMICRO_ALLOW_REGION_CONFIG
+	bool "Allow configurable OTP region changes"
+	default n
+	help
+	  Expose the ROM helper that redefines OTP region 3. Changing the region
+	  can alter which fuse words are covered by provisioning and locks.
+
 config OTP_HPMICRO_SIZE
 	int "HPMicro OTP addressable bytes"
 	default 512
