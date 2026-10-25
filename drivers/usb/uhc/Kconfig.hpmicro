@@ -49,4 +49,13 @@ config UHC_HPMICRO_QTD_COUNT
 	  Number of qTDs available to host transfers. Each qTD carries at most
 	  4 KiB of transfer data.
 
+config UHC_HPMICRO_ITD_COUNT
+	int "Number of EHCI isochronous transfer descriptors"
+	range 1 32
+	default 8
+	help
+	  Number of high-speed isochronous transfer descriptors (iTDs). Each
+	  pending isochronous transfer consumes one iTD. Full-speed and low-speed
+	  isochronous split transactions are not supported.
+
 endif # UHC_HPMICRO
