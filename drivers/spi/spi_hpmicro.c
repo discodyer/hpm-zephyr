@@ -31,6 +31,19 @@ LOG_MODULE_REGISTER(spi_hpmicro, CONFIG_SPI_LOG_LEVEL);
 #define HPM_SPI_FIFO_DEPTH     8U
 #define HPM_SPI_DMA_NO_CHANNEL UINT32_MAX
 
+static bool hpm_spi_word_size_is_supported(uint32_t word_size)
+{
+	return (word_size == 8U) || (word_size == 16U) || (word_size == 24U) ||
+	       (word_size == 32U);
+}
+
+#if defined(CONFIG_SPI_HPMICRO_DMA)
+static bool hpm_spi_dma_word_size_is_supported(uint32_t word_size)
+{
+	return (word_size == 8U) || (word_size == 16U) || (word_size == 32U);
+}
+#endif
+
 struct hpm_spi_config {
 	SPI_Type *base;
 	const struct device *clock_dev;
@@ -247,8 +260,8 @@ static int hpm_spi_configure(const struct device *dev, const struct spi_config *
 	}
 
 	word_size = SPI_WORD_SIZE_GET(spi_cfg->operation);
-	if ((word_size == 0U) || (word_size > HPM_SPI_MAX_WORD_SIZE)) {
-		return -EINVAL;
+	if (!hpm_spi_word_size_is_supported(word_size)) {
+		return -ENOTSUP;
 	}
 
 	ret = clock_control_get_rate(config->clock_dev, config->clock_subsys, &clock_freq);
@@ -584,7 +597,7 @@ static bool hpm_spi_async_dma_supported(const struct device *dev, const struct s
 	}
 
 	word_size = SPI_WORD_SIZE_GET(spi_cfg->operation);
-	if ((word_size != 8U) && (word_size != 16U) && (word_size != 32U)) {
+	if (!hpm_spi_dma_word_size_is_supported(word_size)) {
 		return false;
 	}
 

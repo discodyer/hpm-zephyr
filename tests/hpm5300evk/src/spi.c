@@ -23,13 +23,31 @@ ZTEST(hpm_spi, test_gpio_cs_configuration)
 	zassert_true(spi_is_ready_dt(&spec));
 }
 
+ZTEST(hpm_spi, test_rejects_unsupported_word_size)
+{
+	const struct spi_dt_spec spec =
+		SPI_DT_SPEC_GET(DT_NODELABEL(spi_gpio_cs),
+				SPI_OP_MODE_CONTROLLER | SPI_WORD_SET(4));
+	const uint8_t tx_data[2] = {0x5a, 0xa5};
+	const struct spi_buf tx_buf = {
+		.buf = (void *)tx_data,
+		.len = sizeof(tx_data),
+	};
+	const struct spi_buf_set tx_bufs = {.buffers = &tx_buf, .count = 1};
+
+	zassert_equal(spi_write_dt(&spec, &tx_bufs), -ENOTSUP);
+}
+
 ZTEST(hpm_spi, test_half_duplex_api)
 {
 	const struct spi_dt_spec spec =
 		SPI_DT_SPEC_GET(DT_NODELABEL(spi_gpio_cs),
 				SPI_OP_MODE_CONTROLLER | SPI_WORD_SET(8) | SPI_HALF_DUPLEX);
 	const uint8_t tx_data[2] = {0x5a, 0xa5};
-	const struct spi_buf tx_buf = {.buf = (void *)tx_data, .len = sizeof(tx_data)};
+	const struct spi_buf tx_buf = {
+		.buf = (void *)tx_data,
+		.len = sizeof(tx_data),
+	};
 	const struct spi_buf_set tx_bufs = {.buffers = &tx_buf, .count = 1};
 
 	zassert_equal(spi_write_dt(&spec, &tx_bufs), 0);
@@ -41,7 +59,10 @@ ZTEST(hpm_spi, test_async_submit)
 	const struct spi_dt_spec spec = SPI_DT_SPEC_GET(DT_NODELABEL(spi_gpio_cs),
 							SPI_OP_MODE_CONTROLLER | SPI_WORD_SET(8));
 	static const uint8_t tx_data[2] = {0x5a, 0xa5};
-	const struct spi_buf tx_buf = {.buf = (void *)tx_data, .len = sizeof(tx_data)};
+	const struct spi_buf tx_buf = {
+		.buf = (void *)tx_data,
+		.len = sizeof(tx_data),
+	};
 	const struct spi_buf_set tx_bufs = {.buffers = &tx_buf, .count = 1};
 
 	zassert_ok(spi_write_cb_dt(&spec, &tx_bufs, spi_async_callback, NULL));
@@ -54,7 +75,10 @@ ZTEST(hpm_spi, test_async_dma_rejects_mismatched_buffers)
 							SPI_OP_MODE_CONTROLLER | SPI_WORD_SET(8));
 	static const uint8_t tx_data[4] = {0x5a, 0xa5, 0x3c, 0xc3};
 	static uint8_t rx_data[3];
-	const struct spi_buf tx_buf = {.buf = (void *)tx_data, .len = sizeof(tx_data)};
+	const struct spi_buf tx_buf = {
+		.buf = (void *)tx_data,
+		.len = sizeof(tx_data),
+	};
 	const struct spi_buf rx_buf = {.buf = rx_data, .len = sizeof(rx_data)};
 	const struct spi_buf_set tx_bufs = {.buffers = &tx_buf, .count = 1};
 	const struct spi_buf_set rx_bufs = {.buffers = &rx_buf, .count = 1};
@@ -89,7 +113,10 @@ ZTEST(hpm_spi, test_quad_write_api)
 							SPI_OP_MODE_CONTROLLER | SPI_WORD_SET(8) |
 								SPI_LINES_QUAD | SPI_HALF_DUPLEX);
 	static const uint8_t tx_data[4] = {0x5a, 0xa5, 0x3c, 0xc3};
-	const struct spi_buf tx_buf = {.buf = (void *)tx_data, .len = sizeof(tx_data)};
+	const struct spi_buf tx_buf = {
+		.buf = (void *)tx_data,
+		.len = sizeof(tx_data),
+	};
 	const struct spi_buf_set tx_bufs = {.buffers = &tx_buf, .count = 1};
 
 	zassert_equal(spi_write_dt(&spec, &tx_bufs), 0);
