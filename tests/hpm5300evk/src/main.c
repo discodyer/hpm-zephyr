@@ -10,6 +10,7 @@
 #include <zephyr/drivers/crc.h>
 #include <zephyr/drivers/comparator.h>
 #include <zephyr/drivers/dac.h>
+#include <drivers/dac/hpmicro_dac.h>
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/entropy.h>
 #include <zephyr/drivers/flash.h>
@@ -203,6 +204,53 @@ ZTEST(hpm5300evk, test_devices_ready)
 #endif
 #if DT_NODE_HAS_STATUS(SPI_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(SPI_NODE)));
+#endif
+#if DT_NODE_HAS_STATUS(DAC_NODE, okay)
+	const struct device *dac = DEVICE_DT_GET(DAC_NODE);
+	const struct dac_channel_cfg dac_cfg = {
+		.channel_id = 0U,
+		.resolution = 12U,
+	};
+	const struct hpm_dac_step_config dac_step = {
+		.direction = HPM_DAC_STEP_UP,
+		.round_mode = HPM_DAC_STEP_LOOP,
+		.start = 0U,
+		.end = HPM_DAC_MAX_VALUE,
+		.step = 1U,
+	};
+	static uint32_t dac_buffer0[2] __aligned(32) = {0U, 1U};
+	static uint32_t dac_buffer1[2] __aligned(32) = {2U, 3U};
+	const struct hpm_dac_buffer_config dac_buffer = {
+		.data_mode = HPM_DAC_BUFFER_ONE_POINT,
+		.burst = HPM_DAC_BUFFER_BURST_SINGLE,
+		.buffer0 = dac_buffer0,
+		.buffer0_len = ARRAY_SIZE(dac_buffer0),
+		.buffer1 = dac_buffer1,
+		.buffer1_len = ARRAY_SIZE(dac_buffer1),
+	};
+	struct hpm_dac_buffer_config dac_buffer_invalid = dac_buffer;
+	uint32_t dac_status;
+
+	zassert_true(device_is_ready(dac));
+	zassert_true(DEVICE_API_IS(dac, dac));
+	zassert_true(DEVICE_API_IS(hpm_dac, dac));
+	zassert_ok(dac_channel_setup(dac, &dac_cfg));
+	zassert_ok(dac_write_value(dac, 0U, HPM_DAC_MAX_VALUE));
+	zassert_equal(dac_write_value(dac, 0U, HPM_DAC_MAX_VALUE + 1U), -EINVAL);
+	zassert_ok(hpm_dac_set_mode(dac, 0U, HPM_DAC_MODE_STEP));
+	zassert_ok(hpm_dac_configure_step(dac, 0U, &dac_step));
+	zassert_ok(hpm_dac_trigger_step(dac, 0U));
+	zassert_equal(hpm_dac_trigger_step(dac, HPM_DAC_STEP_COUNT), -EINVAL);
+	zassert_ok(hpm_dac_set_hardware_trigger(dac, true));
+	zassert_ok(hpm_dac_get_status(dac, &dac_status));
+	zassert_ok(hpm_dac_clear_status(dac, dac_status));
+	dac_buffer_invalid.buffer1 = NULL;
+	zassert_equal(hpm_dac_configure_buffer(dac, &dac_buffer_invalid), -EINVAL);
+	zassert_ok(hpm_dac_set_mode(dac, 0U, HPM_DAC_MODE_BUFFER));
+	zassert_ok(hpm_dac_configure_buffer(dac, &dac_buffer));
+	zassert_ok(hpm_dac_trigger_buffer(dac));
+	zassert_ok(hpm_dac_set_mode(dac, 0U, HPM_DAC_MODE_TRIGGER));
+	zassert_ok(hpm_dac_set_mode(dac, 0U, HPM_DAC_MODE_DIRECT));
 #endif
 #if DT_NODE_HAS_STATUS(COMPARATOR_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(COMPARATOR_NODE)));

@@ -11,4 +11,7 @@ config DAC_HPMICRO
 	depends on HAS_HPMSDK_DAC
 	select USE_HPMSDK_DAC
 	help
-	  Enable the HPMicro 12-bit DAC driver.
+	  Enable the HPMicro 12-bit DAC driver. The standard DAC API exposes
+	  direct mode. The HPMicro extension API also exposes the four step
+	  generators, dual internal buffers, software/hardware triggers and
+	  completion status flags.
