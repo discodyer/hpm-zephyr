@@ -7,6 +7,7 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/clock_control.h>
@@ -14,6 +15,8 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/irq.h>
 #include <zephyr/kernel.h>
+
+#include <drivers/i2c/hpmicro_i2c.h>
 
 #include <hpm_clock_drv.h>
 #include <hpm_i2c_drv.h>
@@ -196,6 +199,134 @@ static int hpm_i2c_transfer_frame(const struct hpm_i2c_config *config,
 		i2c_master_transfer(config->base, addr, msg->buf, msg->len, flags));
 }
 
+static int hpm_i2c_smbus_quick_impl(const struct device *dev, uint16_t addr, bool read)
+{
+	const struct hpm_i2c_config *config = dev->config;
+	struct hpm_i2c_data *data = dev->data;
+	uint32_t retry = 0U;
+	uint32_t ctrl;
+	int ret = 0;
+
+	if (addr > BIT_MASK(7)) {
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+#ifdef CONFIG_I2C_TARGET
+	if (data->target != NULL) {
+		ret = -EBUSY;
+		goto unlock;
+	}
+#endif
+
+	while ((config->base->STATUS & I2C_STATUS_BUSBUSY_MASK) != 0U) {
+		if (retry++ > 5000U) {
+			ret = -EBUSY;
+			goto unlock;
+		}
+	}
+
+	i2c_clear_status(config->base, I2C_STATUS_CMPL_MASK);
+	i2c_clear_fifo(config->base);
+	i2c_master_set_slave_address(config->base, addr);
+	ctrl = I2C_CTRL_PHASE_START_SET(true) | I2C_CTRL_PHASE_ADDR_SET(true) |
+	       I2C_CTRL_PHASE_DATA_SET(false) | I2C_CTRL_PHASE_STOP_SET(true) |
+	       I2C_CTRL_DIR_SET(read ? I2C_DIR_MASTER_READ : I2C_DIR_MASTER_WRITE);
+	config->base->CTRL = ctrl;
+	i2c_master_issue_data_transmission(config->base);
+
+	retry = 0U;
+	while (!i2c_is_addrhit(config->base)) {
+		if (retry++ > 5000U) {
+			ret = -ENXIO;
+			goto unlock;
+		}
+	}
+	i2c_clear_status(config->base, I2C_STATUS_ADDRHIT_MASK);
+
+	retry = 0U;
+	while ((config->base->STATUS & I2C_STATUS_CMPL_MASK) == 0U) {
+		if (retry++ > 5000U) {
+			ret = -ETIMEDOUT;
+			goto unlock;
+		}
+	}
+	i2c_clear_status(config->base, I2C_STATUS_CMPL_MASK);
+
+unlock:
+	k_mutex_unlock(&data->lock);
+	return ret;
+}
+
+static int hpm_i2c_smbus_block_transfer_impl(const struct device *dev, uint16_t addr,
+					     const uint8_t *tx_buf, uint8_t tx_len, uint8_t *count,
+					     uint8_t *rx_buf, uint8_t *pec)
+{
+	const struct hpm_i2c_config *config = dev->config;
+	struct hpm_i2c_data *data = dev->data;
+	uint8_t read_len;
+	uint8_t block[HPM_I2C_SMBUS_BLOCK_BYTES_MAX + 1U];
+	hpm_stat_t status;
+
+	if ((tx_buf == NULL) || (tx_len == 0U) || (count == NULL) || (rx_buf == NULL) ||
+	    (addr > BIT_MASK(7))) {
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+#ifdef CONFIG_I2C_TARGET
+	if (data->target != NULL) {
+		k_mutex_unlock(&data->lock);
+		return -EBUSY;
+	}
+#endif
+
+	status = i2c_master_seq_transmit_check_ack(config->base, addr, (uint8_t *)tx_buf, tx_len,
+						   i2c_frist_frame, true);
+	if (status != status_success) {
+		goto unlock;
+	}
+
+	status = i2c_master_seq_receive(config->base, addr, count, 1U, i2c_frist_frame);
+	if (status != status_success) {
+		goto unlock;
+	}
+
+	if (*count > HPM_I2C_SMBUS_BLOCK_BYTES_MAX) {
+		i2c_clear_status(config->base, I2C_STATUS_CMPL_MASK);
+		i2c_master_enable_stop_phase(config->base);
+		i2c_master_issue_data_transmission(config->base);
+		status = status_invalid_argument;
+		goto unlock;
+	}
+
+	read_len = *count + (pec != NULL ? 1U : 0U);
+	if (read_len == 0U) {
+		i2c_clear_status(config->base, I2C_STATUS_CMPL_MASK);
+		i2c_master_enable_stop_phase(config->base);
+		i2c_master_issue_data_transmission(config->base);
+		status = status_success;
+		goto unlock;
+	}
+
+	status = i2c_master_seq_receive(config->base, addr, block, read_len, i2c_last_frame);
+	if (status == status_success) {
+		memcpy(rx_buf, block, *count);
+		if (pec != NULL) {
+			*pec = block[*count];
+		}
+	}
+
+unlock:
+	k_mutex_unlock(&data->lock);
+
+	if (status == status_invalid_argument) {
+		return -ENODATA;
+	}
+
+	return hpm_i2c_status_to_errno(status);
+}
+
 static int hpm_i2c_transfer(const struct device *dev, struct i2c_msg *msgs, uint8_t num_msgs,
 			    uint16_t addr)
 {
@@ -214,41 +345,6 @@ static int hpm_i2c_transfer(const struct device *dev, struct i2c_msg *msgs, uint
 		goto unlock;
 	}
 #endif
-
-	for (uint8_t i = 0U; i < num_msgs; i++) {
-		if ((i != 0U) && (hpm_i2c_msg_is_10bit(data, &msgs[i]) !=
-				  hpm_i2c_msg_is_10bit(data, &msgs[0]))) {
-			ret = -EINVAL;
-			goto unlock;
-		}
-		if ((msgs[i].len > I2C_SOC_TRANSFER_COUNT_MAX) ||
-		    ((msgs[i].buf == NULL) && (msgs[i].len != 0U))) {
-			ret = -EINVAL;
-			goto unlock;
-		}
-		if ((msgs[i].len == 0U) && (i != (uint8_t)(num_msgs - 1U))) {
-			ret = -ENOTSUP;
-			goto unlock;
-		}
-	}
-
-	if (num_msgs == 1U) {
-		uint16_t hal_flags = i2c_is_read_op(&msgs[0]) ? I2C_RD : I2C_WRITE_CHECK_ACK;
-
-		if (hpm_i2c_msg_is_10bit(data, &msgs[0])) {
-			hal_flags |= I2C_ADDR_10BIT;
-		}
-		if (msgs[0].len == 0U) {
-			ret = 0;
-			goto unlock;
-		}
-		if (!i2c_is_stop_op(&msgs[0])) {
-			hal_flags |= I2C_NO_STOP;
-		}
-		ret = hpm_i2c_status_to_errno(i2c_master_transfer(config->base, addr, msgs[0].buf,
-								  msgs[0].len, hal_flags));
-		goto unlock;
-	}
 
 	for (uint8_t i = 0U; i < num_msgs; i++) {
 		ret = hpm_i2c_transfer_frame(config, data, addr, &msgs[i]);
@@ -592,15 +688,20 @@ static int hpm_i2c_init(const struct device *dev)
 				 I2C_MODE_CONTROLLER | I2C_SPEED_SET(hpm_i2c_mode_to_speed(mode)));
 }
 
-static const struct i2c_driver_api hpm_i2c_api = {
-	.configure = hpm_i2c_configure,
-	.get_config = hpm_i2c_get_config,
-	.transfer = hpm_i2c_transfer,
-	.recover_bus = hpm_i2c_recover_bus,
+static DEVICE_API(hpm_i2c, hpm_i2c_api) = {
+	.i2c_api =
+		{
+			.configure = hpm_i2c_configure,
+			.get_config = hpm_i2c_get_config,
+			.transfer = hpm_i2c_transfer,
+			.recover_bus = hpm_i2c_recover_bus,
 #ifdef CONFIG_I2C_TARGET
-	.target_register = hpm_i2c_target_register,
-	.target_unregister = hpm_i2c_target_unregister,
+			.target_register = hpm_i2c_target_register,
+			.target_unregister = hpm_i2c_target_unregister,
 #endif
+		},
+	.smbus_quick = hpm_i2c_smbus_quick_impl,
+	.smbus_block_transfer = hpm_i2c_smbus_block_transfer_impl,
 };
 
 #ifdef CONFIG_I2C_TARGET

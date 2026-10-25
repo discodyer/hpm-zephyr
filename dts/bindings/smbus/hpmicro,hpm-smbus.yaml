@@ -1,0 +1,14 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: HPMicro SMBus controller layered on the I2C peripheral
+
+compatible: "hpmicro,hpm-smbus"
+
+include: [smbus-controller.yaml]
+
+properties:
+  i2c:
+    type: phandle
+    required: true
+    description: I2C controller implementing the same physical bus

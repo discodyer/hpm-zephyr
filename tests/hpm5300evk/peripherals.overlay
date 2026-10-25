@@ -236,3 +236,7 @@
 &plb {
 	status = "okay";
 };
+
+&smbus0 {
+	status = "okay";
+};

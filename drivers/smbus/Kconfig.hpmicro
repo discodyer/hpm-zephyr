@@ -1,0 +1,24 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_SMBUS := hpmicro,hpm-smbus
+
+config SMBUS_HPMICRO
+	bool "HPMicro SMBus driver"
+	default y
+	depends on SMBUS
+	depends on DT_HAS_HPMICRO_HPM_SMBUS_ENABLED
+	depends on I2C_HPMICRO
+	select SMBUS_SOFT_PEC
+	help
+	  Enable SMBus protocol support on top of the HPMicro I2C controller.
+	  Byte, word, process-call and block transfers are supported through the
+	  Zephyr SMBus API. Hardware SMBALERT and Host Notify are not exposed.
+
+if SMBUS_HPMICRO
+
+module = SMBUS_HPMICRO
+module-str = SMBUS_HPMICRO
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # SMBUS_HPMICRO

@@ -42,6 +42,8 @@
 #include <zephyr/drivers/sensor.h>
 #include <drivers/sensor/hpmicro_qeiv2.h>
 #include <zephyr/drivers/i2c.h>
+#include <drivers/i2c/hpmicro_i2c.h>
+#include <zephyr/drivers/smbus.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/storage/flash_map.h>
@@ -55,6 +57,7 @@
 #define FLASH_NODE        DT_NODELABEL(xpi0)
 #define FLASH_MEM_NODE    DT_NODELABEL(flash0)
 #define I2C_NODE          DT_NODELABEL(i2c0)
+#define SMBUS_NODE        DT_NODELABEL(smbus0)
 #define SPI_NODE          DT_NODELABEL(spi1)
 #define PACKAGE_NODE      DT_NODELABEL(hpm5361_package)
 #define ADC_NODE          DT_NODELABEL(adc0)
@@ -203,7 +206,32 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_true(device_is_ready(DEVICE_DT_GET(FLASH_NODE)));
 
 #if DT_NODE_HAS_STATUS(I2C_NODE, okay)
-	zassert_true(device_is_ready(DEVICE_DT_GET(I2C_NODE)));
+	const struct device *i2c = DEVICE_DT_GET(I2C_NODE);
+
+	zassert_true(device_is_ready(i2c));
+	zassert_true(DEVICE_API_IS(i2c, i2c));
+	zassert_true(DEVICE_API_IS(hpm_i2c, i2c));
+	zassert_equal(hpm_i2c_smbus_quick(i2c, 0x80U, false), -EINVAL);
+#endif
+#if DT_NODE_HAS_STATUS(SMBUS_NODE, okay)
+	const struct device *smbus = DEVICE_DT_GET(SMBUS_NODE);
+	uint32_t smbus_config;
+	uint8_t smbus_block[32];
+	uint8_t smbus_count = 0U;
+
+	zassert_true(device_is_ready(smbus));
+	zassert_true(DEVICE_API_IS(smbus, smbus));
+	zassert_ok(smbus_configure(smbus, SMBUS_MODE_CONTROLLER | SMBUS_MODE_PEC));
+	zassert_ok(smbus_get_config(smbus, &smbus_config));
+	zassert_equal(smbus_config, SMBUS_MODE_CONTROLLER | SMBUS_MODE_PEC);
+	zassert_equal(smbus_configure(smbus, SMBUS_MODE_CONTROLLER | SMBUS_MODE_SMBALERT),
+		      -ENOTSUP);
+	zassert_equal(smbus_quick(smbus, 0x80U, SMBUS_MSG_READ), -EINVAL);
+	zassert_equal(smbus_byte_read(smbus, 0x50U, NULL), -EINVAL);
+	zassert_equal(smbus_word_data_read(smbus, 0x50U, 0U, NULL), -EINVAL);
+	zassert_equal(smbus_block_write(smbus, 0x50U, 0U, 0U, NULL), -EINVAL);
+	zassert_equal(smbus_block_read(smbus, 0x50U, 0U, NULL, smbus_block), -EINVAL);
+	zassert_equal(smbus_block_read(smbus, 0x50U, 0U, &smbus_count, NULL), -EINVAL);
 #endif
 #if DT_NODE_HAS_STATUS(SPI_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(SPI_NODE)));

@@ -337,6 +337,14 @@
 			status = "disabled";
 		};
 
+		smbus0: smbus0 {
+			compatible = "hpmicro,hpm-smbus";
+			i2c = <&i2c0>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "disabled";
+		};
+
 		i2c1: i2c@f0064000 {
 			compatible = "hpmicro,hpm-i2c";
 			reg = <0xf0064000 0x4000>;
