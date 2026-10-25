@@ -55,7 +55,16 @@ config UHC_HPMICRO_ITD_COUNT
 	default 8
 	help
 	  Number of high-speed isochronous transfer descriptors (iTDs). Each
-	  pending isochronous transfer consumes one iTD. Full-speed and low-speed
-	  isochronous split transactions are not supported.
+	  pending isochronous transfer consumes one iTD.
+
+config UHC_HPMICRO_SITD_COUNT
+	int "Number of EHCI split isochronous transfer descriptors"
+	range 1 32
+	default 8
+	help
+	  Number of full-speed isochronous split transfer descriptors (siTDs).
+	  Each pending full-speed isochronous transfer consumes one siTD. The
+	  transfer contains one start split and its complete splits in the same
+	  frame.
 
 endif # UHC_HPMICRO

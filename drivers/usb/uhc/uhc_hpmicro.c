@@ -53,6 +53,28 @@ LOG_MODULE_REGISTER(uhc_hpmicro, CONFIG_UHC_DRIVER_LOG_LEVEL);
 #define HPM_USB_ITD_DIRECTION_IN   BIT(11)
 #define HPM_USB_ITD_MPS_MASK       BIT_MASK(11)
 
+#define HPM_USB_PERIODIC_LINK_MASK  0xFFFFFFE0U
+#define HPM_USB_PERIODIC_TYPE_MASK  0x6U
+#define HPM_USB_PERIODIC_TYPE_QH    0x2U
+#define HPM_USB_PERIODIC_TYPE_SITD  0x4U
+#define HPM_USB_PERIODIC_END        0x1U
+#define HPM_USB_SITD_STATUS_MASK    0xFFU
+#define HPM_USB_SITD_STATUS_ACTIVE  BIT(7)
+#define HPM_USB_SITD_STATUS_ERR     BIT(6)
+#define HPM_USB_SITD_STATUS_DBERR   BIT(5)
+#define HPM_USB_SITD_STATUS_BABBLE  BIT(4)
+#define HPM_USB_SITD_STATUS_XACTERR BIT(3)
+#define HPM_USB_SITD_STATUS_MMF     BIT(2)
+#define HPM_USB_SITD_IOC            BIT(31)
+#define HPM_USB_SITD_LENGTH_SHIFT   16U
+#define HPM_USB_SITD_LENGTH_MASK    (BIT_MASK(10) << HPM_USB_SITD_LENGTH_SHIFT)
+#define HPM_USB_SITD_SMASK_SHIFT    0U
+#define HPM_USB_SITD_CMASK_SHIFT    8U
+#define HPM_USB_SITD_PORT_SHIFT     24U
+#define HPM_USB_SITD_HUB_SHIFT      16U
+#define HPM_USB_SITD_EP_SHIFT       8U
+#define HPM_USB_SITD_DIRECTION_IN   BIT(31)
+
 #define HPM_USB_QTD_STATUS_ACTIVE  BIT(7)
 #define HPM_USB_QTD_STATUS_HALTED  BIT(6)
 #define HPM_USB_QTD_STATUS_DBERR   BIT(5)
@@ -108,6 +130,15 @@ struct hpm_ehci_itd {
 	uint32_t bpl[7];
 } __aligned(64);
 
+struct hpm_ehci_sitd {
+	uint32_t next_sitd;
+	uint32_t epchar;
+	uint32_t uframe;
+	uint32_t transfer;
+	uint32_t bpl[2];
+	uint32_t back;
+} __aligned(32);
+
 struct uhc_hpmicro_qtd {
 	struct hpm_ehci_qtd hw;
 	bool in_use;
@@ -134,6 +165,15 @@ struct uhc_hpmicro_itd {
 	bool in_use;
 	bool count_bytes;
 } __aligned(64);
+
+struct uhc_hpmicro_sitd {
+	struct hpm_ehci_sitd hw;
+	struct uhc_transfer *xfer;
+	uint16_t frame_slot;
+	uint16_t length;
+	bool in_use;
+	bool count_bytes;
+} __aligned(32);
 
 struct hpm_usb_toggle {
 	const struct usb_device *udev;
@@ -163,6 +203,7 @@ struct uhc_hpmicro_data {
 	struct uhc_hpmicro_qh *qh_pool;
 	struct uhc_hpmicro_qtd *qtd_pool;
 	struct uhc_hpmicro_itd *itd_pool;
+	struct uhc_hpmicro_sitd *sitd_pool;
 	uint32_t *frame_list;
 	struct hpm_usb_toggle toggles[CONFIG_UHC_HPMICRO_QH_COUNT];
 	bool port_connected;
@@ -581,33 +622,190 @@ static int itd_schedule_point(const struct device *dev, uint16_t interval, uint1
 	return 0;
 }
 
+static void periodic_link_insert(struct uhc_hpmicro_data *data, uint16_t frame_slot,
+				 void *descriptor, uint32_t type)
+{
+	uint32_t *entry = &data->frame_list[frame_slot];
+	uint32_t *next = descriptor;
+
+	*next = *entry;
+	*entry = ((uint32_t)(uintptr_t)descriptor & HPM_USB_PERIODIC_LINK_MASK) | type;
+}
+
+static void periodic_link_remove(struct uhc_hpmicro_data *data, uint16_t frame_slot,
+				 uint32_t target)
+{
+	uint32_t *link = &data->frame_list[frame_slot];
+	uint32_t node = *link;
+	uint32_t previous = 0U;
+	uint32_t max_nodes = CONFIG_UHC_HPMICRO_QH_COUNT + CONFIG_UHC_HPMICRO_ITD_COUNT +
+			     CONFIG_UHC_HPMICRO_SITD_COUNT + 1U;
+
+	target &= HPM_USB_PERIODIC_LINK_MASK;
+	for (uint32_t i = 0U; i < max_nodes; i++) {
+		if ((node & HPM_USB_PERIODIC_LINK_MASK) == target) {
+			uint32_t next = *(uint32_t *)(uintptr_t)target;
+
+			if (previous == 0U) {
+				*link = next;
+			} else {
+				*(uint32_t *)(uintptr_t)(previous & HPM_USB_PERIODIC_LINK_MASK) =
+					next;
+			}
+			return;
+		}
+
+		if ((node == 0U) || ((node & HPM_USB_PERIODIC_END) != 0U)) {
+			return;
+		}
+
+		previous = node;
+		link = (uint32_t *)(uintptr_t)(node & HPM_USB_PERIODIC_LINK_MASK);
+		node = *link;
+	}
+}
+
 static void itd_link_insert(struct uhc_hpmicro_data *data, struct uhc_hpmicro_itd *itd)
 {
-	uint32_t *entry = &data->frame_list[itd->frame_slot];
-
-	itd->hw.next_itd = *entry;
-	*entry = (uint32_t)(uintptr_t)&itd->hw;
+	periodic_link_insert(data, itd->frame_slot, &itd->hw, 0U);
 }
 
 static void itd_link_remove(struct uhc_hpmicro_data *data, struct uhc_hpmicro_itd *itd)
 {
-	uint32_t *link = &data->frame_list[itd->frame_slot];
-	uint32_t target = (uint32_t)(uintptr_t)&itd->hw;
-	uint32_t node = *link;
+	periodic_link_remove(data, itd->frame_slot, (uint32_t)(uintptr_t)&itd->hw);
+}
 
-	for (uint32_t i = 0U; i < CONFIG_UHC_HPMICRO_ITD_COUNT; i++) {
-		if ((node & HPM_USB_QTD_MASK) == target) {
-			*link = itd->hw.next_itd;
-			return;
+static struct uhc_hpmicro_sitd *sitd_alloc(struct uhc_hpmicro_data *data)
+{
+	for (uint32_t i = 0U; i < CONFIG_UHC_HPMICRO_SITD_COUNT; i++) {
+		if (!data->sitd_pool[i].in_use) {
+			data->sitd_pool[i].in_use = true;
+			return &data->sitd_pool[i];
 		}
-
-		if ((node == 0U) || ((node & BIT_MASK(2)) != 0U)) {
-			return;
-		}
-
-		link = (uint32_t *)(uintptr_t)(node & HPM_USB_QTD_MASK);
-		node = *link;
 	}
+
+	return NULL;
+}
+
+static void sitd_free(struct uhc_hpmicro_sitd *sitd)
+{
+	if (sitd == NULL) {
+		return;
+	}
+
+	sitd->in_use = false;
+	sitd->xfer = NULL;
+	sitd->length = 0U;
+}
+
+static inline bool sitd_is_active(const struct uhc_hpmicro_sitd *sitd)
+{
+	return (sitd->hw.transfer & HPM_USB_SITD_STATUS_ACTIVE) != 0U;
+}
+
+static int sitd_completion_status(const struct uhc_hpmicro_sitd *sitd)
+{
+	uint32_t status = sitd->hw.transfer & HPM_USB_SITD_STATUS_MASK;
+
+	if ((status & HPM_USB_SITD_STATUS_ACTIVE) != 0U) {
+		return -EINPROGRESS;
+	}
+
+	return (status &
+		(HPM_USB_SITD_STATUS_ERR | HPM_USB_SITD_STATUS_DBERR | HPM_USB_SITD_STATUS_BABBLE |
+		 HPM_USB_SITD_STATUS_XACTERR | HPM_USB_SITD_STATUS_MMF)) != 0U
+		       ? -EIO
+		       : 0;
+}
+
+static uint16_t sitd_schedule_point(const struct device *dev, uint16_t interval)
+{
+	const struct uhc_hpmicro_config *config = dev->config;
+	uint32_t frame = (usb_hcd_get_frame_index(config->base) >> 3U) + MAX(2U, interval);
+
+	return (uint16_t)(frame & BIT_MASK(10));
+}
+
+static uint8_t sitd_smask_out(uint32_t length)
+{
+	uint32_t transfers = DIV_ROUND_UP(length, 188U);
+
+	return (uint8_t)BIT_MASK(MIN(transfers, 6U));
+}
+
+static uint8_t sitd_cmask_in(uint32_t mps)
+{
+	uint32_t transfers = MIN(DIV_ROUND_UP(mps, 188U), 6U);
+	uint32_t mask = GENMASK(transfers + 1U, 2U);
+
+	/* Complete splits begin two microframes after the start split. */
+	return (uint8_t)mask;
+}
+
+static int submit_isochronous_sitd(const struct device *dev, struct uhc_transfer *xfer,
+				   uint8_t *buffer, size_t length)
+{
+	struct uhc_hpmicro_data *data = uhc_get_private(dev);
+	struct uhc_hpmicro_sitd *sitd;
+	bool in = USB_EP_DIR_IS_IN(xfer->ep);
+	uint8_t hub_address = xfer->udev->hub == NULL ? 0U : xfer->udev->hub->addr;
+	uint8_t hub_port = xfer->udev->hub == NULL ? 1U : xfer->udev->hub_port;
+	uint32_t offset = (uint32_t)(uintptr_t)buffer & BIT_MASK(12);
+	uint32_t end = (uint32_t)(uintptr_t)(buffer + length - 1U);
+	uint32_t buffer_page = (uint32_t)(uintptr_t)buffer & ~BIT_MASK(12);
+	uint32_t end_page = end & ~BIT_MASK(12);
+	uint16_t frame_slot;
+
+	if ((length == 0U) || (length > BIT_MASK(10)) || (xfer->interval == 0U)) {
+		return -EINVAL;
+	}
+
+	frame_slot = sitd_schedule_point(dev, xfer->interval);
+	sitd = sitd_alloc(data);
+	if (sitd == NULL) {
+		return -ENOMEM;
+	}
+
+	memset(&sitd->hw, 0, sizeof(sitd->hw));
+	sitd->xfer = xfer;
+	sitd->length = length;
+	sitd->frame_slot = frame_slot;
+
+	sitd->hw.epchar =
+		(in ? HPM_USB_SITD_DIRECTION_IN : 0U) |
+		FIELD_PREP(BIT_MASK(7) << HPM_USB_SITD_PORT_SHIFT, hub_port) |
+		FIELD_PREP(BIT_MASK(7) << HPM_USB_SITD_HUB_SHIFT, hub_address) |
+		FIELD_PREP(BIT_MASK(4) << HPM_USB_SITD_EP_SHIFT, USB_EP_GET_IDX(xfer->ep)) |
+		FIELD_PREP(BIT_MASK(7), xfer->udev->addr);
+
+	if (in) {
+		sitd->hw.uframe = FIELD_PREP(BIT_MASK(8) << HPM_USB_SITD_SMASK_SHIFT, BIT(0)) |
+				  FIELD_PREP(BIT_MASK(8) << HPM_USB_SITD_CMASK_SHIFT,
+					     sitd_cmask_in(USB_MPS_EP_SIZE(xfer->mps)));
+		sitd->hw.bpl[1] = end_page;
+	} else {
+		uint32_t transfers = MIN(DIV_ROUND_UP(length, 188U), 6U);
+
+		sitd->hw.uframe =
+			FIELD_PREP(BIT_MASK(8) << HPM_USB_SITD_SMASK_SHIFT, sitd_smask_out(length));
+		sitd->hw.bpl[1] = end_page | transfers | (transfers > 1U ? BIT(3) : 0U);
+	}
+
+	sitd->hw.transfer = HPM_USB_SITD_IOC | FIELD_PREP(HPM_USB_SITD_LENGTH_MASK, length) |
+			    offset | (end_page != buffer_page ? BIT(30) : 0U) |
+			    HPM_USB_SITD_STATUS_ACTIVE;
+	sitd->hw.bpl[0] = (uint32_t)(uintptr_t)buffer;
+	sitd->hw.back = HPM_USB_PERIODIC_END;
+
+	if (in) {
+		(void)sys_cache_data_invd_range(buffer, length);
+	} else {
+		(void)sys_cache_data_flush_range(buffer, length);
+	}
+	compiler_barrier();
+	periodic_link_insert(data, frame_slot, &sitd->hw, HPM_USB_PERIODIC_TYPE_SITD);
+
+	return 0;
 }
 
 static int submit_isochronous(const struct device *dev, struct uhc_transfer *xfer)
@@ -628,8 +826,23 @@ static int submit_isochronous(const struct device *dev, struct uhc_transfer *xfe
 	uint8_t microframe;
 	int ret;
 
-	if ((xfer->buf == NULL) || (xfer->udev->speed != USB_SPEED_SPEED_HS) || (mps == 0U) ||
-	    (mps > HPM_USB_ITD_MPS_MASK)) {
+	if ((xfer->buf == NULL) || (mps == 0U) || (xfer->udev->speed == USB_SPEED_SPEED_LS)) {
+		return -ENOTSUP;
+	}
+
+	if (xfer->udev->speed != USB_SPEED_SPEED_HS) {
+		if (in) {
+			buffer = net_buf_tail(xfer->buf);
+			length = MIN(net_buf_tailroom(xfer->buf), (size_t)mps);
+		} else {
+			buffer = xfer->buf->data;
+			length = MIN(xfer->buf->len, (size_t)mps);
+		}
+
+		return submit_isochronous_sitd(dev, xfer, buffer, length);
+	}
+
+	if (mps > HPM_USB_ITD_MPS_MASK) {
 		return -ENOTSUP;
 	}
 
@@ -919,6 +1132,21 @@ static int uhc_hpmicro_dequeue(const struct device *dev, struct uhc_transfer *xf
 		}
 	}
 
+	if (!found) {
+		for (uint32_t i = 0U; i < CONFIG_UHC_HPMICRO_SITD_COUNT; i++) {
+			struct uhc_hpmicro_sitd *sitd = &data->sitd_pool[i];
+
+			if (sitd->in_use && (sitd->xfer == xfer)) {
+				sitd->hw.transfer &= ~HPM_USB_SITD_STATUS_ACTIVE;
+				periodic_link_remove(data, sitd->frame_slot,
+						     (uint32_t)(uintptr_t)&sitd->hw);
+				sitd_free(sitd);
+				found = true;
+				break;
+			}
+		}
+	}
+
 	k_spin_unlock(&data->lock, key);
 	qh_schedule_enable(dev);
 
@@ -1028,7 +1256,34 @@ static struct uhc_transfer *itd_complete(const struct device *dev, struct uhc_hp
 	return xfer;
 }
 
-static bool uhc_hpmicro_has_completed_itd(const struct device *dev)
+static struct uhc_transfer *sitd_complete(const struct device *dev, struct uhc_hpmicro_sitd *sitd,
+					  int *err_out)
+{
+	struct uhc_hpmicro_data *data = uhc_get_private(dev);
+	struct uhc_transfer *xfer = sitd->xfer;
+	uint32_t transfer = sitd->hw.transfer;
+	size_t transferred;
+
+	*err_out = sitd_completion_status(sitd);
+	if (*err_out == -EINPROGRESS) {
+		return NULL;
+	}
+
+	if ((*err_out == 0) && USB_EP_DIR_IS_IN(xfer->ep)) {
+		transferred = MIN((size_t)((transfer & HPM_USB_SITD_LENGTH_MASK) >>
+					   HPM_USB_SITD_LENGTH_SHIFT),
+				  (size_t)sitd->length);
+		(void)sys_cache_data_invd_range(net_buf_tail(xfer->buf), transferred);
+		net_buf_add(xfer->buf, MIN(transferred, net_buf_tailroom(xfer->buf)));
+	}
+
+	periodic_link_remove(data, sitd->frame_slot, (uint32_t)(uintptr_t)&sitd->hw);
+	sitd_free(sitd);
+
+	return xfer;
+}
+
+static bool uhc_hpmicro_has_completed_periodic(const struct device *dev)
 {
 	struct uhc_hpmicro_data *data = uhc_get_private(dev);
 	k_spinlock_key_t key;
@@ -1043,6 +1298,16 @@ static bool uhc_hpmicro_has_completed_itd(const struct device *dev)
 			break;
 		}
 	}
+	if (!completed) {
+		for (uint32_t i = 0U; i < CONFIG_UHC_HPMICRO_SITD_COUNT; i++) {
+			struct uhc_hpmicro_sitd *sitd = &data->sitd_pool[i];
+
+			if (sitd->in_use && !sitd_is_active(sitd)) {
+				completed = true;
+				break;
+			}
+		}
+	}
 	k_spin_unlock(&data->lock, key);
 
 	return completed;
@@ -1052,14 +1317,14 @@ static void uhc_hpmicro_scan_itd(const struct device *dev)
 {
 	struct uhc_hpmicro_data *data = uhc_get_private(dev);
 
-	if (!uhc_hpmicro_has_completed_itd(dev)) {
+	if (!uhc_hpmicro_has_completed_periodic(dev)) {
 		return;
 	}
 
 	/*
-	 * The iTD is linked directly from the periodic frame list. Stop both
-	 * schedules before changing that chain so the controller cannot follow
-	 * a next pointer while it is being rewritten.
+	 * iTDs and siTDs are linked directly from the periodic frame list. Stop
+	 * both schedules before changing that chain so the controller cannot
+	 * follow a next pointer while it is being rewritten.
 	 */
 	qh_schedule_disable(dev);
 
@@ -1075,6 +1340,16 @@ static void uhc_hpmicro_scan_itd(const struct device *dev)
 			if (itd->in_use && !itd_is_active(itd)) {
 				completed = itd_complete(dev, itd, &err);
 				break;
+			}
+		}
+		if (completed == NULL) {
+			for (uint32_t i = 0U; i < CONFIG_UHC_HPMICRO_SITD_COUNT; i++) {
+				struct uhc_hpmicro_sitd *sitd = &data->sitd_pool[i];
+
+				if (sitd->in_use && !sitd_is_active(sitd)) {
+					completed = sitd_complete(dev, sitd, &err);
+					break;
+				}
 			}
 		}
 		k_spin_unlock(&data->lock, key);
@@ -1215,6 +1490,21 @@ static void uhc_hpmicro_flush_xfers(const struct device *dev, int err)
 				}
 			}
 		}
+
+		if (xfer == NULL) {
+			for (uint32_t i = 0U; i < CONFIG_UHC_HPMICRO_SITD_COUNT; i++) {
+				struct uhc_hpmicro_sitd *sitd = &data->sitd_pool[i];
+
+				if (sitd->in_use) {
+					xfer = sitd->xfer;
+					sitd->hw.transfer &= ~HPM_USB_SITD_STATUS_ACTIVE;
+					periodic_link_remove(data, sitd->frame_slot,
+							     (uint32_t)(uintptr_t)&sitd->hw);
+					sitd_free(sitd);
+					break;
+				}
+			}
+		}
 		k_spin_unlock(&data->lock, key);
 
 		if (xfer == NULL) {
@@ -1349,6 +1639,7 @@ static int uhc_hpmicro_init(const struct device *dev)
 	memset(data->qh_pool, 0, sizeof(*data->qh_pool) * CONFIG_UHC_HPMICRO_QH_COUNT);
 	memset(data->qtd_pool, 0, sizeof(*data->qtd_pool) * CONFIG_UHC_HPMICRO_QTD_COUNT);
 	memset(data->itd_pool, 0, sizeof(*data->itd_pool) * CONFIG_UHC_HPMICRO_ITD_COUNT);
+	memset(data->sitd_pool, 0, sizeof(*data->sitd_pool) * CONFIG_UHC_HPMICRO_SITD_COUNT);
 	memset(data->toggles, 0, sizeof(data->toggles));
 	data->port_connected = false;
 
@@ -1509,6 +1800,8 @@ static DEVICE_API(uhc, uhc_hpmicro_api) = {
 		uhc_hpmicro_qtd_pool_##n[CONFIG_UHC_HPMICRO_QTD_COUNT] __nocache __aligned(32);    \
 	static struct uhc_hpmicro_itd                                                              \
 		uhc_hpmicro_itd_pool_##n[CONFIG_UHC_HPMICRO_ITD_COUNT] __nocache __aligned(64);    \
+	static struct uhc_hpmicro_sitd                                                             \
+		uhc_hpmicro_sitd_pool_##n[CONFIG_UHC_HPMICRO_SITD_COUNT] __nocache __aligned(32);  \
 	static uint32_t uhc_hpmicro_frame_list_##n[HPM_USB_FRAME_LIST_SIZE] __nocache              \
 		__aligned(4096);
 
@@ -1532,6 +1825,7 @@ static DEVICE_API(uhc, uhc_hpmicro_api) = {
 		.qh_pool = uhc_hpmicro_qh_pool_##n,                                                \
 		.qtd_pool = uhc_hpmicro_qtd_pool_##n,                                              \
 		.itd_pool = uhc_hpmicro_itd_pool_##n,                                              \
+		.sitd_pool = uhc_hpmicro_sitd_pool_##n,                                            \
 		.frame_list = uhc_hpmicro_frame_list_##n,                                          \
 	};                                                                                         \
                                                                                                    \
