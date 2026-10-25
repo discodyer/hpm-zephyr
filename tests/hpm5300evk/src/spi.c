@@ -62,6 +62,22 @@ ZTEST(hpm_spi, test_async_dma_rejects_mismatched_buffers)
 	zassert_equal(spi_transceive_cb_dt(&spec, &tx_bufs, &rx_bufs, spi_async_callback, NULL),
 		      -EINVAL);
 }
+
+ZTEST(hpm_spi, test_async_dma_multiblock_submit)
+{
+	const struct spi_dt_spec spec = SPI_DT_SPEC_GET(DT_NODELABEL(spi_gpio_cs),
+							SPI_OP_MODE_CONTROLLER | SPI_WORD_SET(8));
+	static const uint8_t tx_first[3] = {0x5a, 0xa5, 0x3c};
+	static const uint8_t tx_second[2] = {0xc3, 0x99};
+	const struct spi_buf tx_bufs_data[] = {
+		{.buf = (void *)tx_first, .len = sizeof(tx_first)},
+		{.buf = (void *)tx_second, .len = sizeof(tx_second)},
+	};
+	const struct spi_buf_set tx_bufs = {.buffers = tx_bufs_data,
+					    .count = ARRAY_SIZE(tx_bufs_data)};
+
+	zassert_ok(spi_write_cb_dt(&spec, &tx_bufs, spi_async_callback, NULL));
+}
 #endif
 #endif
 #endif

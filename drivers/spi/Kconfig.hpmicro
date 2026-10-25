@@ -39,4 +39,14 @@ config SPI_HPMICRO_DMA_TIMEOUT_MS
 	  Maximum time to wait for the SPI end interrupt and DMA channel
 	  callbacks before completing an asynchronous transfer with -ETIMEDOUT.
 
+config SPI_HPMICRO_DMA_MAX_BLOCKS
+	int "Maximum SPI DMA buffer blocks per direction"
+	depends on SPI_HPMICRO_DMA
+	default 8
+	range 1 16
+	help
+	  Maximum number of entries in each spi_buf_set that can be submitted as
+	  one DMA-backed asynchronous transfer. TX and RX descriptor chains are
+	  independent and are built with the HPM DMAV2 linked-descriptor engine.
+
 endif # SPI_HPMICRO
