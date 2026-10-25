@@ -30,7 +30,17 @@ ZTEST(hpm_uart, test_runtime_configuration_api)
 	zassert_equal(current.stop_bits, requested.stop_bits);
 	zassert_equal(current.data_bits, requested.data_bits);
 
+	requested.flow_ctrl = UART_CFG_FLOW_CTRL_RTS_CTS;
+	zassert_ok(uart_configure(dev, &requested));
+	zassert_ok(uart_config_get(dev, &current));
+	zassert_equal(current.flow_ctrl, UART_CFG_FLOW_CTRL_RTS_CTS);
+
 	requested.flow_ctrl = UART_CFG_FLOW_CTRL_RS485;
+	zassert_ok(uart_configure(dev, &requested));
+	zassert_ok(uart_config_get(dev, &current));
+	zassert_equal(current.flow_ctrl, UART_CFG_FLOW_CTRL_RS485);
+
+	requested.flow_ctrl = UART_CFG_FLOW_CTRL_DTR_DSR;
 	zassert_equal(uart_configure(dev, &requested), -ENOTSUP);
 }
 #endif

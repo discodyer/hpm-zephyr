@@ -19,6 +19,13 @@
 	status = "okay";
 };
 
+&uart0 {
+	pinctrl-0 = <&pa00_uart0_txd &pa01_uart0_rxd>;
+	pinctrl-1 = <&pa02_uart0_rts &pa03_uart0_cts>;
+	pinctrl-2 = <&pa02_uart0_de>;
+	pinctrl-names = "default", "flow_control", "rs485";
+};
+
 / {
 	aliases {
 		counter0 = &gptmr0;

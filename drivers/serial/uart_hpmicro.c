@@ -19,6 +19,9 @@
 #include <hpm_soc.h>
 #include <hpm_uart_drv.h>
 
+#define PINCTRL_STATE_FLOW_CONTROL PINCTRL_STATE_PRIV_START
+#define PINCTRL_STATE_RS485        (PINCTRL_STATE_PRIV_START + 1U)
+
 struct hpm_zephyr_uart_config {
 	UART_Type *base;
 	const struct device *clock_dev;
@@ -37,6 +40,7 @@ struct hpm_zephyr_uart_data {
 	struct k_spinlock lock;
 	uint32_t clock_freq;
 	uint32_t baudrate;
+	enum uart_config_flow_control flow_ctrl;
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	uart_irq_callback_user_data_t callback;
 	void *callback_data;
@@ -91,6 +95,35 @@ static num_of_stop_bits_t hpm_uart_stop_bits(enum uart_config_stop_bits stop_bit
 	}
 }
 
+static int hpm_uart_apply_flow_pinctrl(const struct device *dev,
+				       enum uart_config_flow_control flow_ctrl)
+{
+	const struct hpm_zephyr_uart_config *config = dev->config;
+	uint8_t state;
+	int ret;
+
+	switch (flow_ctrl) {
+	case UART_CFG_FLOW_CTRL_NONE:
+		state = PINCTRL_STATE_DEFAULT;
+		break;
+	case UART_CFG_FLOW_CTRL_RTS_CTS:
+		state = PINCTRL_STATE_FLOW_CONTROL;
+		break;
+	case UART_CFG_FLOW_CTRL_RS485:
+		state = PINCTRL_STATE_RS485;
+		break;
+	default:
+		return -ENOTSUP;
+	}
+
+	ret = pinctrl_apply_state(config->pincfg, state);
+	if (ret == -ENOENT) {
+		return -ENOTSUP;
+	}
+
+	return ret;
+}
+
 static int hpm_uart_configure(const struct device *dev, const struct uart_config *cfg)
 {
 	const struct hpm_zephyr_uart_config *config = dev->config;
@@ -100,15 +133,21 @@ static int hpm_uart_configure(const struct device *dev, const struct uart_config
 	num_of_stop_bits_t stop_bits;
 	k_spinlock_key_t key;
 	hpm_stat_t status;
+	int ret;
 
 	if (cfg == NULL) {
 		return -EINVAL;
 	}
 
-	if ((cfg->flow_ctrl != UART_CFG_FLOW_CTRL_NONE) ||
-	    (cfg->data_bits == UART_CFG_DATA_BITS_9) ||
+	if ((cfg->data_bits == UART_CFG_DATA_BITS_9) ||
 	    ((cfg->data_bits == UART_CFG_DATA_BITS_5) &&
 	     (cfg->stop_bits == UART_CFG_STOP_BITS_2))) {
+		return -ENOTSUP;
+	}
+
+	if ((cfg->flow_ctrl != UART_CFG_FLOW_CTRL_NONE) &&
+	    (cfg->flow_ctrl != UART_CFG_FLOW_CTRL_RTS_CTS) &&
+	    (cfg->flow_ctrl != UART_CFG_FLOW_CTRL_RS485)) {
 		return -ENOTSUP;
 	}
 
@@ -124,6 +163,11 @@ static int hpm_uart_configure(const struct device *dev, const struct uart_config
 		return -EINVAL;
 	}
 
+	ret = hpm_uart_apply_flow_pinctrl(dev, cfg->flow_ctrl);
+	if (ret < 0) {
+		return ret;
+	}
+
 	key = k_spin_lock(&data->lock);
 	status = uart_set_baudrate(config->base, cfg->baudrate, data->clock_freq);
 	if (status != status_success) {
@@ -133,6 +177,14 @@ static int hpm_uart_configure(const struct device *dev, const struct uart_config
 	uart_set_data_bits(config->base, word_length);
 	uart_set_parity(config->base, parity);
 	uart_set_stop_bits(config->base, stop_bits);
+	if (cfg->flow_ctrl == UART_CFG_FLOW_CTRL_RTS_CTS) {
+		/* AFE with RTS=1 enables both auto-CTS and auto-RTS. */
+		config->base->MCR |= UART_MCR_RTS_MASK;
+		uart_enable_flow_control(config->base);
+	} else {
+		uart_disable_flow_control(config->base);
+	}
+	data->flow_ctrl = cfg->flow_ctrl;
 	data->baudrate = cfg->baudrate;
 	k_spin_unlock(&data->lock, key);
 
@@ -190,6 +242,8 @@ static int hpm_uart_init(const struct device *dev)
 	key = k_spin_lock(&data->lock);
 	data->clock_freq = clock_freq;
 	data->baudrate = config->current_speed;
+	data->flow_ctrl = uart_is_flow_control_enabled(config->base) ? UART_CFG_FLOW_CTRL_RTS_CTS
+								     : UART_CFG_FLOW_CTRL_NONE;
 	k_spin_unlock(&data->lock, key);
 
 	return 0;
@@ -382,6 +436,7 @@ static int hpm_uart_config_get(const struct device *dev, struct uart_config *cfg
 	parity = uart_get_parity(config->base);
 	stop_bits = uart_get_stop_bits(config->base);
 	cfg->baudrate = data->baudrate;
+	cfg->flow_ctrl = data->flow_ctrl;
 	k_spin_unlock(&data->lock, key);
 
 	switch (word_length) {
@@ -435,7 +490,6 @@ static int hpm_uart_config_get(const struct device *dev, struct uart_config *cfg
 		return -EIO;
 	}
 
-	cfg->flow_ctrl = UART_CFG_FLOW_CTRL_NONE;
 	return 0;
 }
 
