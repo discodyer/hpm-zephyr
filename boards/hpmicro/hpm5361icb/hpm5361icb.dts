@@ -5,6 +5,7 @@
 
 /dts-v1/;
 
+#include <dt-bindings/dma/hpmicro-hpm5300-dma.h>
 #include <hpmicro/hpm5361.dtsi>
 #include "hpm5361icb-pinctrl.dtsi"
 
@@ -26,6 +27,8 @@
 &uart0 {
 	status = "okay";
 	current-speed = <115200>;
+	dmas = <&hdma 0 HPM_DMA_SRC_UART0_RX>, <&hdma 1 HPM_DMA_SRC_UART0_TX>;
+	dma-names = "rx", "tx";
 	pinctrl-0 = <&pa00_uart0_txd &pa01_uart0_rxd>;
 	pinctrl-names = "default";
 };

@@ -63,6 +63,20 @@ tests:
       - EXTRA_CONF_FILE=peripherals.conf
       - EXTRA_CONF_FILE=spi_async.conf
 
+  boards.hpmicro.hpm5300evk.uart_async:
+    tags:
+      - hpmicro
+      - drivers
+      - uart
+    platform_allow:
+      - hpm5300evk/hpm5361
+      - hpm5361icb/hpm5361
+    build_only: true
+    extra_args:
+      - EXTRA_DTC_OVERLAY_FILE=peripherals.overlay
+      - EXTRA_CONF_FILE=peripherals.conf
+      - EXTRA_CONF_FILE=uart_async.conf
+
   boards.hpmicro.hpm5300evk.adc_polling:
     tags:
       - hpmicro

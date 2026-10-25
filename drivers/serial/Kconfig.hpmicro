@@ -12,5 +12,8 @@ config UART_HPMICRO
 	select USE_HPMSDK_UART
 	select SERIAL_HAS_DRIVER
 	select SERIAL_SUPPORT_INTERRUPT
+	select SERIAL_SUPPORT_ASYNC if DT_HAS_HPMICRO_HPM_DMA_ENABLED
+	select DMA if UART_ASYNC_API
 	help
-	  Enable the HPMicro UART driver.
+	  Enable the HPMicro UART driver. DMA-backed asynchronous operation is
+	  available when both the UART and HDMA devicetree nodes are enabled.

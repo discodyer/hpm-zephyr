@@ -611,16 +611,23 @@ static bool hpm_dma_chan_filter(const struct device *dev, int channel, void *fil
 	const struct hpm_dma_data *data = dev->data;
 	struct hpm_dma_channel_data *channel_data;
 	k_spinlock_key_t key;
+	uint32_t requested;
 	bool available;
 
 	if (!hpm_dma_channel_is_valid(dev, (uint32_t)channel)) {
 		return false;
 	}
 
+	if (filter_param == NULL) {
+		requested = BIT(channel);
+	} else {
+		requested = *(const uint32_t *)filter_param;
+	}
+
 	channel_data = &data->channels[channel];
 	key = k_spin_lock(&channel_data->lock);
-	available = !channel_data->busy && ((filter_param == NULL) ||
-					    (*(const uint32_t *)filter_param == (uint32_t)channel));
+	available = !channel_data->busy &&
+		    (((requested & BIT(channel)) != 0U) || (requested == (uint32_t)channel));
 	k_spin_unlock(&channel_data->lock, key);
 
 	return available;

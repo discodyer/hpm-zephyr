@@ -45,4 +45,18 @@ ZTEST(hpm_uart, test_runtime_configuration_api)
 }
 #endif
 
+#if defined(CONFIG_UART_ASYNC_API) && DT_NODE_HAS_STATUS(DT_NODELABEL(uart0), okay)
+ZTEST(hpm_uart, test_async_operations_reject_invalid_arguments)
+{
+	const struct device *dev = DEVICE_DT_GET(DT_NODELABEL(uart0));
+	static uint8_t buffer[8];
+
+	zassert_ok(uart_callback_set(dev, NULL, NULL));
+	zassert_equal(uart_tx(dev, NULL, sizeof(buffer), SYS_FOREVER_US), -EINVAL);
+	zassert_equal(uart_rx_enable(dev, NULL, sizeof(buffer), SYS_FOREVER_US), -EINVAL);
+	zassert_equal(uart_tx_abort(dev), -EFAULT);
+	zassert_equal(uart_rx_disable(dev), -EFAULT);
+}
+#endif
+
 ZTEST_SUITE(hpm_uart, NULL, NULL, NULL, NULL, NULL);
