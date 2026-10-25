@@ -189,6 +189,55 @@ out:
 	return ret;
 }
 
+static int hpm_pwm_set_reference_cycles_impl(const struct device *dev, uint8_t comparator,
+					     uint8_t reference, uint32_t period_cycles,
+					     uint32_t pulse_cycles, pwm_flags_t flags)
+{
+	const struct hpm_pwm_config *config = dev->config;
+	struct hpm_pwm_data *data = dev->data;
+	pwm_output_channel_t ch_config;
+	pwm_cmp_config_t cmp_config;
+	uint32_t reload;
+	uint32_t compare;
+
+	if ((comparator >= HPM_PWM_COMPARATOR_COUNT) ||
+	    (reference < HPM_PWM_REFERENCE_OUTPUT_FIRST) ||
+	    (reference > HPM_PWM_REFERENCE_OUTPUT_LAST) ||
+	    (period_cycles == 0U) || (pulse_cycles > period_cycles) ||
+	    (period_cycles > HPM_PWM_MAX_PERIOD)) {
+		return -EINVAL;
+	}
+	if ((flags & ~PWM_POLARITY_MASK) != 0U) {
+		return -ENOTSUP;
+	}
+
+	reload = period_cycles - 1U;
+	compare = pulse_cycles == 0U ? period_cycles : period_cycles - pulse_cycles;
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	pwm_stop_counter(config->base);
+	pwm_set_start_count(config->base, 0U, 0U);
+	pwm_set_reload(config->base, 0U, reload);
+
+	pwm_get_default_cmp_config(config->base, &cmp_config);
+	cmp_config.cmp = compare;
+	cmp_config.mode = pwm_cmp_mode_output_compare;
+	cmp_config.update_trigger = pwm_shadow_register_update_on_modify;
+	pwm_config_cmp(config->base, comparator, &cmp_config);
+
+	pwm_get_default_output_channel_config(config->base, &ch_config);
+	ch_config.cmp_start_index = comparator;
+	ch_config.cmp_end_index = comparator;
+	ch_config.invert_output = (flags & PWM_POLARITY_INVERTED) != 0U;
+	pwm_config_output_channel(config->base, reference, &ch_config);
+
+	pwm_issue_shadow_register_lock_event(config->base);
+	pwm_start_counter(config->base);
+	k_mutex_unlock(&data->lock);
+
+	return 0;
+}
+
 static int hpm_pwm_configure_fault_impl(const struct device *dev,
 					const struct hpm_pwm_fault_config *config)
 {
@@ -509,6 +558,7 @@ static DEVICE_API(hpm_pwm, hpm_pwm_api) = {
 	.clear_fault = hpm_pwm_clear_fault_impl,
 	.configure_capture = hpm_pwm_configure_capture_impl,
 	.get_capture = hpm_pwm_get_capture_impl,
+	.set_reference_cycles = hpm_pwm_set_reference_cycles_impl,
 };
 
 #ifdef CONFIG_PWM_CAPTURE

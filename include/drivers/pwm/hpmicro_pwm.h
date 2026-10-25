@@ -28,6 +28,10 @@ extern "C" {
 #define HPM_PWM_COMPARATOR_COUNT 24U
 /** Maximum dead-zone value in PWM clock half-cycles. */
 #define HPM_PWM_DEAD_ZONE_MAX    0xFFFFFU
+/** First general-purpose reference output used by TRGM. */
+#define HPM_PWM_REFERENCE_OUTPUT_FIRST 8U
+/** Last general-purpose reference output exposed by HPM5361 TRGM. */
+#define HPM_PWM_REFERENCE_OUTPUT_LAST  15U
 
 /** Fault output behavior. */
 enum hpm_pwm_fault_mode {
@@ -80,6 +84,9 @@ __subsystem struct hpm_pwm_driver_api {
 	int (*configure_capture)(const struct device *dev, uint8_t comparator,
 				 enum hpm_pwm_capture_edge edge);
 	int (*get_capture)(const struct device *dev, uint8_t comparator, uint32_t *capture);
+	int (*set_reference_cycles)(const struct device *dev, uint8_t comparator,
+				    uint8_t reference, uint32_t period_cycles,
+				    uint32_t pulse_cycles, pwm_flags_t flags);
 };
 
 DEVICE_API_EXTENDS(hpm_pwm, pwm, pwm_api);
@@ -160,6 +167,39 @@ static inline int hpm_pwm_get_capture(const struct device *dev, uint8_t comparat
 				      uint32_t *capture)
 {
 	return DEVICE_API_GET(hpm_pwm, dev)->get_capture(dev, comparator, capture);
+}
+
+/**
+ * @brief Configure a general-purpose PWM reference output for TRGM.
+ *
+ * HPM5361 channels 8 through 15 expose CHxREF without passing through the
+ * complementary, dead-time, force and fault output stage. A single comparator
+ * is assigned to @p reference. The resulting reference output can be selected
+ * as `HPM_TRGM_INPUT_PWM0_CHnREF` by the TRGM mux driver and used as an ADC,
+ * QEIV2 or other peripheral trigger.
+ *
+ * All PWM channels in one block share the counter period. This function resets
+ * and restarts that counter, as the standard set_cycles() API does.
+ *
+ * @param dev PWM device.
+ * @param comparator Comparator index from 0 through HPM_PWM_COMPARATOR_COUNT - 1.
+ * @param reference Reference output from HPM_PWM_REFERENCE_OUTPUT_FIRST through
+ *                  HPM_PWM_REFERENCE_OUTPUT_LAST.
+ * @param period_cycles PWM period in cycles.
+ * @param pulse_cycles High pulse width in cycles.
+ * @param flags PWM_POLARITY_NORMAL or PWM_POLARITY_INVERTED.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for an invalid comparator, reference, period or pulse.
+ * @retval -ENOTSUP for unsupported flags or an unrepresentable period.
+ */
+static inline int hpm_pwm_set_reference_cycles(const struct device *dev, uint8_t comparator,
+					       uint8_t reference, uint32_t period_cycles,
+					       uint32_t pulse_cycles, pwm_flags_t flags)
+{
+	return DEVICE_API_GET(hpm_pwm, dev)
+		->set_reference_cycles(dev, comparator, reference, period_cycles, pulse_cycles,
+				       flags);
 }
 
 /** @} */
