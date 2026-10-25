@@ -16,6 +16,8 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
+#include <drivers/pwm/hpmicro_pwm.h>
+
 #include <hpm_clock_drv.h>
 #include <hpm_pwm_drv.h>
 
@@ -107,6 +109,205 @@ out:
 	return ret;
 }
 
+static int hpm_pwm_set_complementary_impl(const struct device *dev, uint32_t channel,
+					  uint32_t period_cycles, uint32_t pulse_cycles,
+					  pwm_flags_t flags, uint32_t dead_zone_half_cycles)
+{
+	const struct hpm_pwm_config *config = dev->config;
+	struct hpm_pwm_data *data = dev->data;
+	pwm_cmp_config_t cmp_config[2];
+	pwm_pair_config_t pair_config;
+	uint32_t reload;
+	uint32_t compare;
+	bool inverted;
+	int ret = 0;
+
+	if ((channel >= HPM_PWM_CHANNELS) || ((channel & 1U) != 0U)) {
+		return -EINVAL;
+	}
+
+	if ((flags & ~PWM_POLARITY_MASK) != 0U) {
+		return -ENOTSUP;
+	}
+
+	if ((period_cycles == 0U) || (pulse_cycles > period_cycles) ||
+	    (period_cycles > HPM_PWM_MAX_PERIOD) ||
+	    (dead_zone_half_cycles > HPM_PWM_DEAD_ZONE_MAX)) {
+		return -EINVAL;
+	}
+
+	reload = period_cycles - 1U;
+	compare = pulse_cycles == 0U ? period_cycles : period_cycles - pulse_cycles;
+	inverted = (flags & PWM_POLARITY_INVERTED) != 0U;
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+
+	pwm_stop_counter(config->base);
+	pwm_set_start_count(config->base, 0U, 0U);
+	pwm_set_reload(config->base, 0U, reload);
+
+	pwm_get_default_cmp_config(config->base, &cmp_config[0]);
+	cmp_config[0].cmp = compare;
+	cmp_config[0].mode = pwm_cmp_mode_output_compare;
+	cmp_config[0].update_trigger = pwm_shadow_register_update_on_modify;
+	cmp_config[1] = cmp_config[0];
+
+	pwm_get_default_pwm_pair_config(config->base, &pair_config);
+	pair_config.pwm[0].enable_output = true;
+	pair_config.pwm[0].invert_output = inverted;
+	pair_config.pwm[0].dead_zone_in_half_cycle = dead_zone_half_cycles;
+	pair_config.pwm[1].enable_output = true;
+	pair_config.pwm[1].invert_output = inverted;
+	pair_config.pwm[1].dead_zone_in_half_cycle = dead_zone_half_cycles;
+
+	if (pwm_setup_waveform_in_pair(config->base, channel, &pair_config, channel, cmp_config,
+				       ARRAY_SIZE(cmp_config)) != status_success) {
+		ret = -EIO;
+		goto out;
+	}
+
+	pwm_issue_shadow_register_lock_event(config->base);
+	pwm_start_counter(config->base);
+
+out:
+	k_mutex_unlock(&data->lock);
+	return ret;
+}
+
+static int hpm_pwm_configure_fault_impl(const struct device *dev,
+					const struct hpm_pwm_fault_config *config)
+{
+	const struct hpm_pwm_config *pwm = dev->config;
+	struct hpm_pwm_data *data = dev->data;
+	pwm_fault_source_config_t source = {0};
+	uint32_t source_mask;
+	pwm_config_t output_config;
+	uint32_t channel;
+
+	if ((config == NULL) ||
+	    ((config->source_mask &
+	      ~(HPM_PWM_FAULT_SOURCE_INTERNAL0 | HPM_PWM_FAULT_SOURCE_INTERNAL1 |
+		HPM_PWM_FAULT_SOURCE_INTERNAL2 | HPM_PWM_FAULT_SOURCE_INTERNAL3 |
+		HPM_PWM_FAULT_SOURCE_EXTERNAL0 | HPM_PWM_FAULT_SOURCE_EXTERNAL1 |
+		HPM_PWM_FAULT_SOURCE_DEBUG)) != 0U) ||
+	    (config->output_mode > HPM_PWM_FAULT_FORCE_HIGH_Z) ||
+	    (config->recovery > HPM_PWM_FAULT_RECOVER_ON_CLEAR)) {
+		return -EINVAL;
+	}
+
+	source_mask = config->source_mask;
+	source.source_mask = 0U;
+	if ((source_mask & HPM_PWM_FAULT_SOURCE_INTERNAL0) != 0U) {
+		source.source_mask |= pwm_fault_source_internal_0;
+	}
+	if ((source_mask & HPM_PWM_FAULT_SOURCE_INTERNAL1) != 0U) {
+		source.source_mask |= pwm_fault_source_internal_1;
+	}
+	if ((source_mask & HPM_PWM_FAULT_SOURCE_INTERNAL2) != 0U) {
+		source.source_mask |= pwm_fault_source_internal_2;
+	}
+	if ((source_mask & HPM_PWM_FAULT_SOURCE_INTERNAL3) != 0U) {
+		source.source_mask |= pwm_fault_source_internal_3;
+	}
+	if ((source_mask & HPM_PWM_FAULT_SOURCE_EXTERNAL0) != 0U) {
+		source.source_mask |= pwm_fault_source_external_0;
+	}
+	if ((source_mask & HPM_PWM_FAULT_SOURCE_EXTERNAL1) != 0U) {
+		source.source_mask |= pwm_fault_source_external_1;
+	}
+	if ((source_mask & HPM_PWM_FAULT_SOURCE_DEBUG) != 0U) {
+		source.source_mask |= pwm_fault_source_debug;
+	}
+
+	source.fault_recover_at_rising_edge = config->recover_at_rising_edge;
+	source.fault_external_0_active_low = config->external0_active_low;
+	source.fault_external_1_active_low = config->external1_active_low;
+	source.fault_output_recovery_trigger = config->recovery;
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	pwm_config_fault_source(pwm->base, &source);
+
+	for (channel = 0U; channel < HPM_PWM_CHANNELS; channel++) {
+		output_config.enable_output = true;
+		output_config.invert_output = false;
+		output_config.force_cmd_shadow_update_trigger =
+			pwm_shadow_register_update_on_modify;
+		output_config.fault_mode = config->output_mode;
+		output_config.fault_recovery_trigger = config->recovery;
+		output_config.force_source = pwm_force_source_software;
+		output_config.dead_zone_in_half_cycle =
+			PWM_PWMCFG_DEADAREA_GET(pwm->base->PWMCFG[channel]);
+		pwm_config_pwm(pwm->base, channel, &output_config,
+			       PWM_PWMCFG_PAIR_GET(pwm->base->PWMCFG[channel]) != 0U);
+	}
+	k_mutex_unlock(&data->lock);
+
+	return 0;
+}
+
+static int hpm_pwm_clear_fault_impl(const struct device *dev)
+{
+	const struct hpm_pwm_config *config = dev->config;
+	struct hpm_pwm_data *data = dev->data;
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	pwm_clear_fault(config->base);
+	k_mutex_unlock(&data->lock);
+
+	return 0;
+}
+
+static int hpm_pwm_configure_capture_impl(const struct device *dev, uint8_t comparator,
+					  enum hpm_pwm_capture_edge edge)
+{
+	const struct hpm_pwm_config *config = dev->config;
+	struct hpm_pwm_data *data = dev->data;
+	pwm_cmp_config_t cmp_config;
+	uint32_t irq_mask;
+
+	if ((comparator >= HPM_PWM_COMPARATOR_COUNT) ||
+	    ((edge != HPM_PWM_CAPTURE_RISING) && (edge != HPM_PWM_CAPTURE_FALLING))) {
+		return -EINVAL;
+	}
+
+	irq_mask = PWM_IRQ_CMP(comparator);
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	pwm_get_default_cmp_config(config->base, &cmp_config);
+	cmp_config.mode = pwm_cmp_mode_input_capture;
+	pwm_config_cmp(config->base, comparator, &cmp_config);
+
+	if (edge == HPM_PWM_CAPTURE_FALLING) {
+		pwm_set_capture_irq_falling_edge(config->base, irq_mask);
+	} else {
+		pwm_set_capture_irq_rising_edge(config->base, irq_mask);
+	}
+
+	pwm_clear_status(config->base, irq_mask);
+	pwm_enable_irq(config->base, irq_mask);
+	k_mutex_unlock(&data->lock);
+
+	return 0;
+}
+
+static int hpm_pwm_get_capture_impl(const struct device *dev, uint8_t comparator, uint32_t *capture)
+{
+	const struct hpm_pwm_config *config = dev->config;
+	struct hpm_pwm_data *data = dev->data;
+
+	if ((comparator >= HPM_PWM_COMPARATOR_COUNT) || (capture == NULL)) {
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	/* Read both edge queues; each queue exposes its latest captured value. */
+	pwm_get_captured_count(config->base, capture, pwm_counter_type_capture_rising_edge,
+			       comparator, 1U);
+	k_mutex_unlock(&data->lock);
+
+	return 0;
+}
+
 static int hpm_pwm_get_cycles_per_sec(const struct device *dev, uint32_t channel, uint64_t *cycles)
 {
 	struct hpm_pwm_data *data = dev->data;
@@ -124,9 +325,17 @@ static int hpm_pwm_get_cycles_per_sec(const struct device *dev, uint32_t channel
 	return 0;
 }
 
-static DEVICE_API(pwm, hpm_pwm_api) = {
-	.set_cycles = hpm_pwm_set_cycles,
-	.get_cycles_per_sec = hpm_pwm_get_cycles_per_sec,
+static DEVICE_API(hpm_pwm, hpm_pwm_api) = {
+	.pwm_api =
+		{
+			.set_cycles = hpm_pwm_set_cycles,
+			.get_cycles_per_sec = hpm_pwm_get_cycles_per_sec,
+		},
+	.set_complementary = hpm_pwm_set_complementary_impl,
+	.configure_fault = hpm_pwm_configure_fault_impl,
+	.clear_fault = hpm_pwm_clear_fault_impl,
+	.configure_capture = hpm_pwm_configure_capture_impl,
+	.get_capture = hpm_pwm_get_capture_impl,
 };
 
 #define HPM_PWM_INIT(n)                                                                            \

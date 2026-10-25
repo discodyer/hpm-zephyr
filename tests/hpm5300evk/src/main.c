@@ -35,6 +35,8 @@
 #include <zephyr/drivers/opamp.h>
 #include <zephyr/drivers/otp.h>
 #include <zephyr/drivers/ptp_clock.h>
+#include <zephyr/drivers/pwm.h>
+#include <drivers/pwm/hpmicro_pwm.h>
 #include <drivers/ptp_clock/hpmicro_ptpc.h>
 #include <zephyr/drivers/sensor.h>
 #include <drivers/sensor/hpmicro_qeiv2.h>
@@ -204,6 +206,36 @@ ZTEST(hpm5300evk, test_devices_ready)
 #endif
 #if DT_NODE_HAS_STATUS(SPI_NODE, okay)
 	zassert_true(device_is_ready(DEVICE_DT_GET(SPI_NODE)));
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm0), okay)
+	const struct device *pwm = DEVICE_DT_GET(DT_NODELABEL(pwm0));
+	const struct hpm_pwm_fault_config pwm_fault = {
+		.source_mask = HPM_PWM_FAULT_SOURCE_DEBUG,
+		.output_mode = HPM_PWM_FAULT_FORCE_LOW,
+		.recovery = HPM_PWM_FAULT_RECOVER_ON_CLEAR,
+	};
+	struct hpm_pwm_fault_config pwm_fault_invalid = pwm_fault;
+	uint32_t pwm_capture;
+
+	zassert_true(device_is_ready(pwm));
+	zassert_true(DEVICE_API_IS(pwm, pwm));
+	zassert_true(DEVICE_API_IS(hpm_pwm, pwm));
+	zassert_ok(pwm_set_cycles(pwm, 0U, 1000U, 250U, PWM_POLARITY_NORMAL));
+	zassert_ok(hpm_pwm_set_complementary(pwm, 0U, 1000U, 250U, PWM_POLARITY_NORMAL, 16U));
+	zassert_equal(hpm_pwm_set_complementary(pwm, 1U, 1000U, 250U, PWM_POLARITY_NORMAL, 16U),
+		      -EINVAL);
+	zassert_equal(hpm_pwm_set_complementary(pwm, 0U, 1000U, 250U, PWM_POLARITY_NORMAL,
+						HPM_PWM_DEAD_ZONE_MAX + 1U),
+		      -EINVAL);
+	zassert_ok(hpm_pwm_configure_fault(pwm, &pwm_fault));
+	zassert_ok(hpm_pwm_clear_fault(pwm));
+	pwm_fault_invalid.output_mode = (enum hpm_pwm_fault_mode)3;
+	zassert_equal(hpm_pwm_configure_fault(pwm, &pwm_fault_invalid), -EINVAL);
+	zassert_ok(hpm_pwm_configure_capture(pwm, 8U, HPM_PWM_CAPTURE_RISING));
+	zassert_equal(
+		hpm_pwm_configure_capture(pwm, HPM_PWM_COMPARATOR_COUNT, HPM_PWM_CAPTURE_RISING),
+		-EINVAL);
+	zassert_ok(hpm_pwm_get_capture(pwm, 8U, &pwm_capture));
 #endif
 #if DT_NODE_HAS_STATUS(DAC_NODE, okay)
 	const struct device *dac = DEVICE_DT_GET(DAC_NODE);

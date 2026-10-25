@@ -11,4 +11,6 @@ config PWM_HPMICRO
 	depends on HAS_HPMSDK_PWM
 	select USE_HPMSDK_PWM
 	help
-	  Enable the HPMicro PWM driver.
+	  Enable the HPMicro PWM driver. The standard PWM API provides basic
+	  edge-aligned outputs. The HPMicro extension API provides complementary
+	  outputs with dead-time insertion, fault handling, and input capture.
