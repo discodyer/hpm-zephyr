@@ -84,6 +84,17 @@ add_subdirectory(${HPM_SDK_DIR}/arch ${HPM_SDK_BINARY_DIR}/arch)
 add_subdirectory(${HPM_SDK_DIR}/soc ${HPM_SDK_BINARY_DIR}/soc)
 add_subdirectory(${HPM_SDK_DIR}/drivers ${HPM_SDK_BINARY_DIR}/drivers)
 
+if(CONFIG_CRYPTO_HPMICRO)
+  # hpm_sdp_drv.c calls sdp_wait_done() from the same translation unit, so
+  # --wrap cannot intercept it. Weaken only the archived vendor definition;
+  # the crypto driver then supplies a bounded implementation with the same
+  # status semantics. The upstream source itself remains untouched.
+  add_custom_command(TARGET hpm_sdk POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} --weaken-symbol=sdp_wait_done $<TARGET_FILE:hpm_sdk>
+    COMMENT "Weakening SDK sdp_wait_done for bounded Zephyr implementation"
+    VERBATIM)
+endif()
+
 # The pinned vendor QEIV2 driver promotes float to double in two places.
 # Suppress only that warning class for this source, whether it is selected by
 # the QEIV2 driver or by the all-HAL regression; all other SDK sources retain

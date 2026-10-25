@@ -190,5 +190,4 @@ tests:
     build_only: true
     extra_args:
       - EXTRA_DTC_OVERLAY_FILE=crypto.overlay
-      - EXTRA_CONF_FILE=crypto.conf
-      - EXTRA_CONF_FILE=crypto_xip.conf
+      - EXTRA_CONF_FILE=crypto.conf;crypto_xip.conf

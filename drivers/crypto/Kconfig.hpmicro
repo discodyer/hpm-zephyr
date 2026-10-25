@@ -38,4 +38,14 @@ config CRYPTO_HPMICRO_BOUNCE_SIZE
 	  output. Larger requests are processed in chunks. The buffers are
 	  placed in the Zephyr nocache RAM region.
 
+config CRYPTO_HPMICRO_TIMEOUT_US
+	int "SDP operation timeout (microseconds)"
+	range 1 60000000
+	default 1000000
+	help
+	  Maximum time to wait for an SDP operation to complete. SDP HAL calls
+	  are synchronous and poll the hardware status. A timeout prevents a
+	  stalled or misconfigured controller from blocking the calling thread
+	  indefinitely.
+
 endif # CRYPTO_HPMICRO

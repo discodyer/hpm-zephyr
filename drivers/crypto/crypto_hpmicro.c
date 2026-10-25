@@ -16,6 +16,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/linker/section_tags.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/time_units.h>
 #include <zephyr/sys/util.h>
 
 #include <drivers/crypto/hpmicro_sdp.h>
@@ -89,9 +90,49 @@ static int hpm_crypto_status_to_errno(hpm_stat_t status)
 	case status_sdp_aes_busy:
 	case status_sdp_hash_busy:
 		return -EBUSY;
+	case status_timeout:
+		return -ETIMEDOUT;
 	default:
 		return -EIO;
 	}
+}
+
+/*
+ * The pinned SDK's sdp_wait_done() has no timeout. The SDK glue weakens that
+ * definition in its archive, so this strong definition replaces it without
+ * modifying vendor sources. Preserve the vendor error-status precedence.
+ */
+hpm_stat_t sdp_wait_done(SDP_Type *base)
+{
+	const uint64_t timeout_cycles = k_us_to_cyc_ceil64(CONFIG_CRYPTO_HPMICRO_TIMEOUT_US);
+	const uint64_t start = k_cycle_get_64();
+	hpm_stat_t status;
+	uint32_t sdp_sta;
+
+	do {
+		sdp_sta = base->STA;
+		if (IS_HPM_BITMASK_SET(sdp_sta, SDP_STA_ERRSET_MASK)) {
+			status = status_sdp_error_setup;
+		} else if (IS_HPM_BITMASK_SET(sdp_sta, SDP_STA_ERRPKT_MASK)) {
+			status = status_sdp_error_packet;
+		} else if (IS_HPM_BITMASK_SET(sdp_sta, SDP_STA_ERRSRC_MASK)) {
+			status = status_sdp_error_src;
+		} else if (IS_HPM_BITMASK_SET(sdp_sta, SDP_STA_ERRDST_MASK)) {
+			status = status_sdp_error_dst;
+		} else if (IS_HPM_BITMASK_SET(sdp_sta, SDP_STA_ERRHAS_MASK)) {
+			status = status_sdp_error_hash;
+		} else if (IS_HPM_BITMASK_SET(sdp_sta, SDP_STA_ERRCHAIN_MASK)) {
+			status = status_sdp_error_chain;
+		} else {
+			status = status_success;
+		}
+
+		if (IS_HPM_BITMASK_SET(sdp_sta, SDP_STA_PKTCNT0_MASK)) {
+			return status;
+		}
+	} while ((k_cycle_get_64() - start) < timeout_cycles);
+
+	return status_timeout;
 }
 
 static struct hpm_crypto_session *hpm_crypto_get_session(const struct device *dev)
