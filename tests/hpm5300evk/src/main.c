@@ -5,6 +5,7 @@
 
 #include <zephyr/devicetree.h>
 #include <zephyr/drivers/adc.h>
+#include <drivers/adc/hpmicro_adc16.h>
 #include <zephyr/drivers/can.h>
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/crc.h>
@@ -1700,6 +1701,64 @@ ZTEST(hpm5300evk, test_gpio_interrupt_config)
 	zassert_ok(gpio_pin_interrupt_configure(gpio, 0, GPIO_INT_EDGE_BOTH));
 	zassert_ok(gpio_pin_interrupt_configure(gpio, 0, GPIO_INT_DISABLE));
 }
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm0), okay) && DT_NODE_HAS_STATUS(DT_NODELABEL(adc0), okay) && \
+	DT_NODE_HAS_STATUS(DT_NODELABEL(adc1), okay) && DT_NODE_HAS_STATUS(DT_NODELABEL(trgm0), okay) && \
+	DT_NODE_HAS_STATUS(DT_NODELABEL(qei0), okay) && defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION) && \
+	defined(CONFIG_MUX) && defined(CONFIG_QEIV2_HPMICRO)
+ZTEST(hpm5300evk, test_qeiv2_sincos_adc_trgm_contract)
+{
+	const struct device *pwm = DEVICE_DT_GET(DT_NODELABEL(pwm0));
+	const struct device *adc0 = DEVICE_DT_GET(DT_NODELABEL(adc0));
+	const struct device *adc1 = DEVICE_DT_GET(DT_NODELABEL(adc1));
+	const struct device *qei = DEVICE_DT_GET(DT_NODELABEL(qei0));
+	const struct device *trgm = MUX_CONTROL_DT_DEV_GET(MUX_CONSUMER_NODE);
+	struct hpm_adc16_preemption_config adc_cfg = {
+		.trigger = 0U,
+		.channel_count = 1U,
+		.channels = {0U},
+		.sample_cycle = 20U,
+		.motor_enable = true,
+	};
+	struct hpm_qeiv2_mode_config mode_cfg = {
+		.mode = HPM_QEIV2_MODE_SIN_COS,
+		.counts_per_revolution = 4096U,
+	};
+	struct hpm_qeiv2_sincos_config sincos_cfg = {
+		.x = {.adc = 0U, .channel = 0U, .param0 = 0x4000, .offset = 0x80000000U},
+		.y = {.adc = 1U, .channel = 1U, .param1 = 0x4000, .offset = 0x80000000U},
+		.enable_y = true,
+	};
+	const struct hpm_trgm_matrix_config adc0_matrix = {
+		.source = HPM_TRGM_ADC_SOURCE_ADC0,
+	};
+	const struct hpm_trgm_matrix_config adc1_matrix = {
+		.source = HPM_TRGM_ADC_SOURCE_ADC1,
+	};
+	const struct hpm_trgm_output_config trigger = {
+		.source = HPM_TRGM_INPUT_PWM0_CH8REF,
+		.type = HPM_TRGM_OUTPUT_RISING_EDGE_PULSE,
+	};
+
+	zassert_true(device_is_ready(pwm));
+	zassert_true(device_is_ready(adc0));
+	zassert_true(device_is_ready(adc1));
+	zassert_true(device_is_ready(qei));
+	zassert_true(device_is_ready(trgm));
+	zassert_ok(hpm_pwm_set_reference_cycles(pwm, 8U, HPM_PWM_REFERENCE_OUTPUT_FIRST,
+						1000U, 500U, PWM_POLARITY_NORMAL));
+	zassert_ok(hpm_trgm_configure_output(trgm, HPM_TRGM_OUTPUT_ADCX_PTRGI0A, &trigger));
+	zassert_ok(hpm_trgm_configure_adc_matrix(trgm, HPM_TRGM_ADC_CONSUMER_QEI0_ADC0,
+						 &adc0_matrix));
+	zassert_ok(hpm_trgm_configure_adc_matrix(trgm, HPM_TRGM_ADC_CONSUMER_QEI0_ADC1,
+						 &adc1_matrix));
+	zassert_ok(hpm_qeiv2_configure_mode(qei, &mode_cfg));
+	zassert_ok(hpm_qeiv2_configure_sincos(qei, &sincos_cfg));
+	zassert_ok(hpm_adc16_configure_preemption(adc0, &adc_cfg));
+	adc_cfg.channels[0] = 1U;
+	zassert_ok(hpm_adc16_configure_preemption(adc1, &adc_cfg));
+}
+#endif
 
 #if defined(CONFIG_PWM_CAPTURE) && DT_NODE_HAS_STATUS(DT_NODELABEL(pwm0), okay)
 static void hpm_pwm_capture_test_callback(const struct device *dev, uint32_t channel,

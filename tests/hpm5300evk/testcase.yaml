@@ -37,6 +37,18 @@ tests:
       - EXTRA_DTC_OVERLAY_FILE=peripherals.overlay
       - EXTRA_CONF_FILE=peripherals.conf
 
+  boards.hpmicro.hpm5300evk.qeiv2_sincos:
+    tags:
+      - hpmicro
+      - drivers
+      - qeiv2
+    platform_allow:
+      - hpm5300evk/hpm5361
+    build_only: true
+    extra_args:
+      - EXTRA_DTC_OVERLAY_FILE=peripherals.overlay;qeiv2_sincos.overlay
+      - EXTRA_CONF_FILE=peripherals.conf
+
   boards.hpmicro.hpm5300evk.otp_control:
     tags:
       - hpmicro

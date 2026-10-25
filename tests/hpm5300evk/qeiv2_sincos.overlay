@@ -1,0 +1,19 @@
+/*
+ * Copyright (c) 2026 The HPM Zephyr Module Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&adc1 {
+	status = "okay";
+	vref-mv = <3300>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel@1 {
+		reg = <1>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <0>;
+		zephyr,resolution = <12>;
+	};
+};
