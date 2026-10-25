@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include <zephyr/crypto/crypto.h>
+#include <drivers/crypto/hpmicro_sdp.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/kernel.h>
@@ -219,6 +220,179 @@ static int aes_ctr_run(void)
 	return memcmp(output, ctr_ciphertext, sizeof(output));
 }
 
+static int aes_ccm_run(void)
+{
+	const struct device *dev = DEVICE_DT_GET(SDP_NODE);
+	static const uint8_t key[] = {
+		0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7,
+		0xc8, 0xc9, 0xca, 0xcb, 0xcc, 0xcd, 0xce, 0xcf,
+	};
+	static const uint8_t nonce[] = {0x00, 0x00, 0x00, 0x03, 0x02, 0x01, 0x00,
+					0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5};
+	static const uint8_t aad[] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07};
+	static const uint8_t plaintext[] = {
+		0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13,
+		0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e,
+	};
+	static const uint8_t ciphertext[] = {
+		0x58, 0x8c, 0x97, 0x9a, 0x61, 0xc6, 0x63, 0xd2, 0xf0, 0x66, 0xd0,
+		0xc2, 0xc0, 0xf9, 0x89, 0x80, 0x6d, 0x5f, 0x6b, 0x61, 0xda, 0xc3,
+		0x84, 0x17, 0xe8, 0xd1, 0x2c, 0xfd, 0xf9, 0x26, 0xe0,
+	};
+	uint8_t output[sizeof(plaintext)];
+	uint8_t tag[8];
+	uint8_t decrypted[sizeof(plaintext)];
+	uint8_t nonce_copy[sizeof(nonce)];
+	struct cipher_ctx ctx = {
+		.keylen = sizeof(key),
+		.key.bit_stream = key,
+		.mode_params.ccm_info =
+			{
+				.nonce_len = sizeof(nonce),
+				.tag_len = sizeof(tag),
+			},
+		.flags = CAP_RAW_KEY | CAP_SYNC_OPS | CAP_SEPARATE_IO_BUFS,
+	};
+	struct cipher_pkt pkt = {
+		.in_buf = (uint8_t *)plaintext,
+		.in_len = sizeof(plaintext),
+		.out_buf = output,
+		.out_buf_max = sizeof(output),
+	};
+	struct cipher_aead_pkt aead = {
+		.pkt = &pkt,
+		.ad = (uint8_t *)aad,
+		.ad_len = sizeof(aad),
+		.tag = tag,
+	};
+	int ret;
+
+	memcpy(nonce_copy, nonce, sizeof(nonce_copy));
+	ret = cipher_begin_session(dev, &ctx, CRYPTO_CIPHER_ALGO_AES, CRYPTO_CIPHER_MODE_CCM,
+				   CRYPTO_CIPHER_OP_ENCRYPT);
+	if (ret != 0) {
+		return ret;
+	}
+
+	ret = cipher_ccm_op(&ctx, &aead, nonce_copy);
+	(void)cipher_free_session(dev, &ctx);
+	if (ret != 0) {
+		return ret;
+	}
+
+	zassert_mem_equal(output, ciphertext, sizeof(output));
+	zassert_mem_equal(tag, ciphertext + sizeof(output), sizeof(tag));
+
+	ctx.key.bit_stream = key;
+	ctx.flags = CAP_RAW_KEY | CAP_SYNC_OPS | CAP_SEPARATE_IO_BUFS;
+	pkt.in_buf = output;
+	pkt.out_buf = decrypted;
+	pkt.out_buf_max = sizeof(decrypted);
+	aead.tag = tag;
+	memcpy(nonce_copy, nonce, sizeof(nonce_copy));
+	ret = cipher_begin_session(dev, &ctx, CRYPTO_CIPHER_ALGO_AES, CRYPTO_CIPHER_MODE_CCM,
+				   CRYPTO_CIPHER_OP_DECRYPT);
+	if (ret != 0) {
+		return ret;
+	}
+
+	ret = cipher_ccm_op(&ctx, &aead, nonce_copy);
+	(void)cipher_free_session(dev, &ctx);
+	if (ret != 0) {
+		return ret;
+	}
+
+	return memcmp(decrypted, plaintext, sizeof(decrypted));
+}
+
+static int hpm_sdp_hashes_run(void)
+{
+	const struct device *dev = DEVICE_DT_GET(SDP_NODE);
+	static const uint8_t message[] = "abc";
+	static const uint8_t sha1_abc[] = {
+		0xa9, 0x99, 0x3e, 0x36, 0x47, 0x06, 0x81, 0x6a, 0xba, 0x3e,
+		0x25, 0x71, 0x78, 0x50, 0xc2, 0x6c, 0x9c, 0xd0, 0xd8, 0x9d,
+	};
+	static const uint8_t crc32_abc[] = {0xff, 0x7c, 0x12, 0x7d};
+	static const uint8_t sm3_abc[] = {
+		0x66, 0xc7, 0xf0, 0xf4, 0x62, 0xee, 0xed, 0xd9, 0xd1, 0xf2, 0xd4,
+		0x6b, 0xdc, 0x10, 0xe4, 0xe2, 0x41, 0x67, 0xc4, 0x87, 0x5c, 0xf2,
+		0xf7, 0xa2, 0x29, 0x7d, 0xa0, 0x2b, 0x8f, 0x4b, 0xa8, 0xe0,
+	};
+	uint8_t digest[32];
+
+	zassert_ok(hpm_sdp_hash_compute(dev, HPM_SDP_HASH_SHA1, message, sizeof(message) - 1U,
+					digest, sizeof(sha1_abc)));
+	zassert_mem_equal(digest, sha1_abc, sizeof(sha1_abc));
+
+	zassert_ok(hpm_sdp_hash_compute(dev, HPM_SDP_HASH_CRC32, message, sizeof(message) - 1U,
+					digest, sizeof(crc32_abc)));
+	zassert_mem_equal(digest, crc32_abc, sizeof(crc32_abc));
+
+	zassert_ok(hpm_sdp_hash_compute(dev, HPM_SDP_HASH_SM3, message, sizeof(message) - 1U,
+					digest, sizeof(sm3_abc)));
+	zassert_mem_equal(digest, sm3_abc, sizeof(sm3_abc));
+
+	zassert_equal(hpm_sdp_hash_compute(dev, HPM_SDP_HASH_SHA1, message, sizeof(message) - 1U,
+					   digest, sizeof(digest)),
+		      -EINVAL);
+	zassert_equal(
+		hpm_sdp_hash_compute(dev, HPM_SDP_HASH_SHA256, NULL, 0U, digest, sizeof(digest)),
+		-EINVAL);
+
+	return 0;
+}
+
+static int sm4_run(void)
+{
+	const struct device *dev = DEVICE_DT_GET(SDP_NODE);
+	static const uint8_t key[] = {
+		0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
+		0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10,
+	};
+	static const uint8_t plaintext[] = {
+		0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
+		0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10,
+	};
+	static const uint8_t ecb_ciphertext[] = {
+		0x68, 0x1e, 0xdf, 0x34, 0xd2, 0x06, 0x96, 0x5e,
+		0x86, 0xb3, 0xe9, 0x4f, 0x53, 0x6e, 0x42, 0x46,
+	};
+	static const uint8_t cbc_iv[] = {
+		0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+		0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
+	};
+	static const uint8_t cbc_ciphertext[] = {
+		0x5d, 0x1f, 0xee, 0x63, 0xf5, 0xeb, 0x8b, 0xb5,
+		0x03, 0x58, 0x0a, 0xb8, 0x23, 0x92, 0x5d, 0x55,
+	};
+	uint8_t output[sizeof(plaintext)];
+	uint8_t decrypted[sizeof(plaintext)];
+
+	zassert_ok(hpm_sdp_sm4_crypt(dev, HPM_SDP_CIPHER_ENCRYPT, HPM_SDP_SM4_ECB, key, NULL,
+				     plaintext, sizeof(plaintext), output));
+	zassert_mem_equal(output, ecb_ciphertext, sizeof(output));
+	zassert_ok(hpm_sdp_sm4_crypt(dev, HPM_SDP_CIPHER_DECRYPT, HPM_SDP_SM4_ECB, key, NULL,
+				     output, sizeof(output), decrypted));
+	zassert_mem_equal(decrypted, plaintext, sizeof(decrypted));
+
+	zassert_ok(hpm_sdp_sm4_crypt(dev, HPM_SDP_CIPHER_ENCRYPT, HPM_SDP_SM4_CBC, key, cbc_iv,
+				     plaintext, sizeof(plaintext), output));
+	zassert_mem_equal(output, cbc_ciphertext, sizeof(output));
+	zassert_ok(hpm_sdp_sm4_crypt(dev, HPM_SDP_CIPHER_DECRYPT, HPM_SDP_SM4_CBC, key, cbc_iv,
+				     output, sizeof(output), decrypted));
+	zassert_mem_equal(decrypted, plaintext, sizeof(decrypted));
+
+	zassert_equal(hpm_sdp_sm4_crypt(dev, HPM_SDP_CIPHER_ENCRYPT, HPM_SDP_SM4_CBC, key, NULL,
+					plaintext, sizeof(plaintext), output),
+		      -EINVAL);
+	zassert_equal(hpm_sdp_sm4_crypt(dev, HPM_SDP_CIPHER_ENCRYPT, HPM_SDP_SM4_ECB, key, NULL,
+					plaintext, sizeof(plaintext) - 1U, output),
+		      -EINVAL);
+
+	return 0;
+}
+
 static int sha256_run(void)
 {
 	const struct device *dev = DEVICE_DT_GET(SDP_NODE);
@@ -302,4 +476,19 @@ ZTEST(hpm5300evk, test_sdp_aes_kat)
 ZTEST(hpm5300evk, test_sdp_sha256_kat)
 {
 	zassert_ok(sha256_run());
+}
+
+ZTEST(hpm5300evk, test_sdp_ccm_kat)
+{
+	zassert_ok(aes_ccm_run());
+}
+
+ZTEST(hpm5300evk, test_sdp_extended_hash_kat)
+{
+	zassert_ok(hpm_sdp_hashes_run());
+}
+
+ZTEST(hpm5300evk, test_sdp_sm4_kat)
+{
+	zassert_ok(sm4_run());
 }

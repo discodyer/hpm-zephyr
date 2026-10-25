@@ -18,6 +18,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
+#include <drivers/crypto/hpmicro_sdp.h>
+
 #include <hpm_sdp_drv.h>
 
 LOG_MODULE_REGISTER(crypto_hpmicro, CONFIG_CRYPTO_LOG_LEVEL);
@@ -25,7 +27,11 @@ LOG_MODULE_REGISTER(crypto_hpmicro, CONFIG_CRYPTO_LOG_LEVEL);
 #define HPM_CRYPTO_AES_BLOCK_SIZE  16U
 #define HPM_CRYPTO_AES_KEY_LEN_128 16U
 #define HPM_CRYPTO_AES_KEY_LEN_256 32U
+#define HPM_CRYPTO_SHA1_LEN        20U
 #define HPM_CRYPTO_SHA256_LEN      32U
+#define HPM_CRYPTO_CRC32_LEN       4U
+#define HPM_CRYPTO_SM3_LEN         32U
+#define HPM_CRYPTO_SM4_KEY_LEN     16U
 #define HPM_CRYPTO_AES_CHUNK_SIZE                                                                  \
 	ROUND_DOWN(CONFIG_CRYPTO_HPMICRO_BOUNCE_SIZE, HPM_CRYPTO_AES_BLOCK_SIZE)
 
@@ -78,6 +84,8 @@ static int hpm_crypto_status_to_errno(hpm_stat_t status)
 	case status_sdp_no_crypto_support:
 	case status_sdp_no_hash_support:
 		return -ENOTSUP;
+	case status_sdp_error_invalid_mac:
+		return -EBADMSG;
 	case status_sdp_aes_busy:
 	case status_sdp_hash_busy:
 		return -EBUSY;
@@ -363,6 +371,234 @@ unlock:
 	return ret;
 }
 
+static int hpm_crypto_aes_ccm(struct cipher_ctx *ctx, struct cipher_aead_pkt *aead, uint8_t *nonce)
+{
+	const struct hpm_crypto_config *config = ctx->device->config;
+	struct hpm_crypto_data *data = ctx->device->data;
+	struct hpm_crypto_session *session = ctx->drv_sessn_state;
+	struct cipher_pkt *pkt;
+	sdp_aes_key_bits_t key_bits = session->key_len == HPM_CRYPTO_AES_KEY_LEN_128
+					      ? sdp_aes_keybits_128
+					      : sdp_aes_keybits_256;
+	uint32_t nonce_len = ctx->mode_params.ccm_info.nonce_len;
+	uint32_t tag_len = ctx->mode_params.ccm_info.tag_len;
+	hpm_stat_t status;
+	int ret;
+
+	if ((aead == NULL) || (aead->pkt == NULL) || (nonce == NULL) || (aead->tag == NULL)) {
+		return -EINVAL;
+	}
+
+	pkt = aead->pkt;
+	if ((pkt->in_len < 0) || (pkt->out_buf_max < 0) || (pkt->out_buf_max < pkt->in_len) ||
+	    ((pkt->in_len != 0) && ((pkt->in_buf == NULL) || (pkt->out_buf == NULL)))) {
+		return -EINVAL;
+	}
+
+	if (((nonce_len < 7U) || (nonce_len > 13U)) ||
+	    ((tag_len < 4U) || (tag_len > 16U) || ((tag_len & 1U) != 0U))) {
+		return -EINVAL;
+	}
+
+	if ((aead->ad_len != 0U) && (aead->ad == NULL)) {
+		return -EINVAL;
+	}
+
+	if ((size_t)pkt->in_len > CONFIG_CRYPTO_HPMICRO_BOUNCE_SIZE ||
+	    (size_t)aead->ad_len > CONFIG_CRYPTO_HPMICRO_BOUNCE_SIZE) {
+		return -ENOTSUP;
+	}
+
+	k_mutex_lock(&data->hw_lock, K_FOREVER);
+
+	status = sdp_aes_set_key(config->base, &session->aes_ctx, session->key, key_bits, 0U);
+	if (status != status_success) {
+		ret = hpm_crypto_status_to_errno(status);
+		goto unlock;
+	}
+
+	if (pkt->in_len != 0) {
+		memcpy(data->bounce_in, pkt->in_buf, pkt->in_len);
+	}
+
+	if (session->cipher_op == CRYPTO_CIPHER_OP_ENCRYPT) {
+		status = sdp_aes_ccm_generate_encrypt(config->base, &session->aes_ctx,
+						      (uint32_t)pkt->in_len, nonce, nonce_len,
+						      aead->ad, aead->ad_len, data->bounce_in,
+						      data->bounce_out, aead->tag, tag_len);
+		if (status == status_success) {
+			memcpy(pkt->out_buf, data->bounce_out, pkt->in_len);
+		}
+	} else {
+		status = sdp_aes_ccm_decrypt_verify(config->base, &session->aes_ctx,
+						    (uint32_t)pkt->in_len, nonce, nonce_len,
+						    aead->ad, aead->ad_len, data->bounce_in,
+						    data->bounce_out, aead->tag, tag_len);
+		if (status == status_success) {
+			memcpy(pkt->out_buf, data->bounce_out, pkt->in_len);
+		}
+	}
+
+	if (status == status_success) {
+		pkt->out_len = pkt->in_len;
+	}
+	ret = hpm_crypto_status_to_errno(status);
+
+unlock:
+	k_mutex_unlock(&data->hw_lock);
+
+	return ret;
+}
+
+static int hpm_crypto_hash_compute(const struct device *dev, enum hpm_sdp_hash_algorithm algorithm,
+				   const uint8_t *input, size_t input_len, uint8_t *digest,
+				   size_t digest_len)
+{
+	const struct hpm_crypto_config *config = dev->config;
+	struct hpm_crypto_data *data = dev->data;
+	sdp_hash_alg_t hal_algorithm;
+	sdp_hash_ctx_t hash_ctx;
+	size_t expected_len;
+	size_t offset = 0U;
+	hpm_stat_t status = status_success;
+
+	switch (algorithm) {
+	case HPM_SDP_HASH_SHA1:
+		hal_algorithm = sdp_hash_alg_sha1;
+		expected_len = HPM_CRYPTO_SHA1_LEN;
+		break;
+	case HPM_SDP_HASH_CRC32:
+		hal_algorithm = sdp_hash_alg_crc32;
+		expected_len = HPM_CRYPTO_CRC32_LEN;
+		break;
+	case HPM_SDP_HASH_SHA256:
+		hal_algorithm = sdp_hash_alg_sha256;
+		expected_len = HPM_CRYPTO_SHA256_LEN;
+		break;
+#if defined(SDP_HAS_SM3_SUPPORT) && (SDP_HAS_SM3_SUPPORT == 1)
+	case HPM_SDP_HASH_SM3:
+		hal_algorithm = sdp_hash_alg_sm3;
+		expected_len = HPM_CRYPTO_SM3_LEN;
+		break;
+#endif
+	default:
+		return -ENOTSUP;
+	}
+
+	if ((digest == NULL) || (digest_len != expected_len) ||
+	    ((input == NULL) && (input_len != 0U))) {
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&data->hw_lock, K_FOREVER);
+	status = sdp_hash_init(config->base, &hash_ctx, hal_algorithm);
+	if (status != status_success) {
+		goto unlock;
+	}
+
+	while (offset < input_len) {
+		size_t chunk = MIN(input_len - offset, (size_t)CONFIG_CRYPTO_HPMICRO_BOUNCE_SIZE);
+
+		memcpy(data->bounce_in, input + offset, chunk);
+		status = sdp_hash_update(config->base, &hash_ctx, data->bounce_in, chunk);
+		if (status != status_success) {
+			goto unlock;
+		}
+		offset += chunk;
+	}
+
+	status = sdp_hash_finish(config->base, &hash_ctx, digest);
+
+unlock:
+	k_mutex_unlock(&data->hw_lock);
+
+	return hpm_crypto_status_to_errno(status);
+}
+
+static int hpm_crypto_sm4_crypt(const struct device *dev, enum hpm_sdp_cipher_op op,
+				enum hpm_sdp_sm4_mode mode, const uint8_t *key, const uint8_t *iv,
+				const uint8_t *input, size_t input_len, uint8_t *output)
+{
+#if defined(SDP_HAS_SM4_SUPPORT) && (SDP_HAS_SM4_SUPPORT == 1)
+	const struct hpm_crypto_config *config = dev->config;
+	struct hpm_crypto_data *data = dev->data;
+	sdp_sm4_ctx_t sm4_ctx;
+	sdp_sm4_op_t hal_op;
+	uint8_t ctr[HPM_CRYPTO_AES_BLOCK_SIZE];
+	hpm_stat_t status;
+	int ret = 0;
+
+	if ((key == NULL) || (input == NULL) || (output == NULL) ||
+	    ((op != HPM_SDP_CIPHER_ENCRYPT) && (op != HPM_SDP_CIPHER_DECRYPT))) {
+		return -EINVAL;
+	}
+
+	if ((mode != HPM_SDP_SM4_CTR) && ((input_len % HPM_CRYPTO_AES_BLOCK_SIZE) != 0U)) {
+		return -EINVAL;
+	}
+
+	if ((mode != HPM_SDP_SM4_ECB) && (iv == NULL)) {
+		return -EINVAL;
+	}
+
+	if (input_len > CONFIG_CRYPTO_HPMICRO_BOUNCE_SIZE) {
+		return -ENOTSUP;
+	}
+
+	hal_op = op == HPM_SDP_CIPHER_ENCRYPT ? sdp_sm4_op_encrypt : sdp_sm4_op_decrypt;
+
+	k_mutex_lock(&data->hw_lock, K_FOREVER);
+	status = sdp_sm4_set_key(config->base, &sm4_ctx, key, sdp_sm4_keybits_128, 0U);
+	if (status != status_success) {
+		goto unlock;
+	}
+
+	if (input_len != 0U) {
+		memcpy(data->bounce_in, input, input_len);
+	}
+
+	switch (mode) {
+	case HPM_SDP_SM4_ECB:
+		status = sdp_sm4_crypt_ecb(config->base, &sm4_ctx, hal_op, (uint32_t)input_len,
+					   data->bounce_in, data->bounce_out);
+		break;
+	case HPM_SDP_SM4_CBC:
+		status = sdp_sm4_crypt_cbc(config->base, &sm4_ctx, hal_op, (uint32_t)input_len, iv,
+					   data->bounce_in, data->bounce_out);
+		break;
+	case HPM_SDP_SM4_CTR:
+		memcpy(ctr, iv, sizeof(ctr));
+		status = sdp_sm4_crypt_ctr(config->base, &sm4_ctx, ctr, data->bounce_in,
+					   data->bounce_out, (uint32_t)input_len);
+		break;
+	default:
+		status = status_invalid_argument;
+		break;
+	}
+
+	if (status == status_success) {
+		memcpy(output, data->bounce_out, input_len);
+	}
+
+unlock:
+	k_mutex_unlock(&data->hw_lock);
+	ret = hpm_crypto_status_to_errno(status);
+
+	return ret;
+#else
+	ARG_UNUSED(dev);
+	ARG_UNUSED(op);
+	ARG_UNUSED(mode);
+	ARG_UNUSED(key);
+	ARG_UNUSED(iv);
+	ARG_UNUSED(input);
+	ARG_UNUSED(input_len);
+	ARG_UNUSED(output);
+
+	return -ENOTSUP;
+#endif
+}
+
 static int hpm_crypto_cipher_begin_session(const struct device *dev, struct cipher_ctx *ctx,
 					   enum cipher_algo algo, enum cipher_mode mode,
 					   enum cipher_op op_type)
@@ -387,7 +623,7 @@ static int hpm_crypto_cipher_begin_session(const struct device *dev, struct ciph
 	}
 
 	if ((mode != CRYPTO_CIPHER_MODE_ECB) && (mode != CRYPTO_CIPHER_MODE_CBC) &&
-	    (mode != CRYPTO_CIPHER_MODE_CTR)) {
+	    (mode != CRYPTO_CIPHER_MODE_CTR) && (mode != CRYPTO_CIPHER_MODE_CCM)) {
 		return -ENOTSUP;
 	}
 
@@ -419,6 +655,9 @@ static int hpm_crypto_cipher_begin_session(const struct device *dev, struct ciph
 		break;
 	case CRYPTO_CIPHER_MODE_CTR:
 		ctx->ops.ctr_crypt_hndlr = hpm_crypto_aes_ctr;
+		break;
+	case CRYPTO_CIPHER_MODE_CCM:
+		ctx->ops.ccm_crypt_hndlr = hpm_crypto_aes_ccm;
 		break;
 	default:
 		hpm_crypto_free_session(dev->data, session);
@@ -576,12 +815,17 @@ static int hpm_crypto_hash_free_session(const struct device *dev, struct hash_ct
 	return 0;
 }
 
-static DEVICE_API(crypto, hpm_crypto_api) = {
-	.query_hw_caps = hpm_crypto_query_hw_caps,
-	.cipher_begin_session = hpm_crypto_cipher_begin_session,
-	.cipher_free_session = hpm_crypto_cipher_free_session,
-	.hash_begin_session = hpm_crypto_hash_begin_session,
-	.hash_free_session = hpm_crypto_hash_free_session,
+static DEVICE_API(hpm_sdp, hpm_crypto_api) = {
+	.crypto_api =
+		{
+			.query_hw_caps = hpm_crypto_query_hw_caps,
+			.cipher_begin_session = hpm_crypto_cipher_begin_session,
+			.cipher_free_session = hpm_crypto_cipher_free_session,
+			.hash_begin_session = hpm_crypto_hash_begin_session,
+			.hash_free_session = hpm_crypto_hash_free_session,
+		},
+	.hash_compute = hpm_crypto_hash_compute,
+	.sm4_crypt = hpm_crypto_sm4_crypt,
 };
 
 static int hpm_crypto_init(const struct device *dev)
