@@ -82,6 +82,8 @@ struct hpm_spi_data {
 #define HPM_SPI_DMA_SPI_DONE BIT(2)
 #endif
 
+static void hpm_spi_cs_deassert(struct hpm_spi_data *data);
+
 #ifdef CONFIG_SPI_HPMICRO_DMA
 static void hpm_spi_dma_finish(const struct device *dev, int status);
 static void hpm_spi_dma_try_finish(const struct device *dev, uint32_t event);
@@ -181,7 +183,7 @@ static void hpm_spi_dma_finish(const struct device *dev, int status)
 	spi_disable_rx_dma(config->base);
 	(void)dma_stop(config->dma_dev, config->tx_dma_channel);
 	(void)dma_stop(config->dma_dev, config->rx_dma_channel);
-	spi_context_cs_control(&data->ctx, false);
+	hpm_spi_cs_deassert(data);
 
 	if (status == 0) {
 		for (uint32_t i = 0U; i < data->rx_dma_blocks_count; i++) {
@@ -200,11 +202,15 @@ static void hpm_spi_dma_finish(const struct device *dev, int status)
 static int hpm_spi_configure(const struct device *dev, const struct spi_config *spi_cfg)
 {
 	const struct hpm_spi_config *config = dev->config;
+	struct hpm_spi_data *data = dev->data;
 	spi_timing_config_t timing_config = {0};
 	spi_format_config_t format_config = {0};
 	uint32_t clock_freq;
 	uint32_t word_size;
 	int ret;
+
+	/* spi_context_cs_control() uses the saved config to drive GPIO CS. */
+	data->ctx.config = spi_cfg;
 
 	if (SPI_OP_MODE_GET(spi_cfg->operation) != SPI_OP_MODE_CONTROLLER) {
 		return -ENOTSUP;
@@ -235,7 +241,7 @@ static int hpm_spi_configure(const struct device *dev, const struct spi_config *
 			return -ENOTSUP;
 		}
 
-		if ((spi_cfg->peripheral > 3U) || (spi_cfg->cs.hold_ns != 0U)) {
+		if (spi_cfg->peripheral > 3U) {
 			return -ENOTSUP;
 		}
 	}
@@ -269,6 +275,23 @@ static int hpm_spi_configure(const struct device *dev, const struct spi_config *
 			return -ENOTSUP;
 		}
 		timing_config.master_config.cs2sclk = cs2sclk;
+	}
+
+	if (!spi_cs_is_gpio(spi_cfg) && (spi_cfg->cs.hold_ns != 0U)) {
+		uint64_t hold_ns = spi_cfg->cs.hold_ns;
+		uint64_t period_ns = DIV_ROUND_UP(NSEC_PER_SEC, spi_cfg->frequency);
+		uint8_t csht;
+
+		for (csht = 0U; csht < 16U; csht++) {
+			if ((period_ns * (csht + 1U)) / 2U >= hold_ns) {
+				break;
+			}
+		}
+
+		if (csht >= 16U) {
+			return -ENOTSUP;
+		}
+		timing_config.master_config.csht = csht;
 	}
 
 	if (spi_master_timing_init(config->base, &timing_config) != status_success) {
@@ -434,6 +457,16 @@ static int hpm_spi_transfer_stream(const struct hpm_spi_config *config,
 	return 0;
 }
 
+static void hpm_spi_cs_deassert(struct hpm_spi_data *data)
+{
+	/*
+	 * spi_context_cs_control() drives only GPIO chip selects and honors
+	 * SPI_HOLD_ON_CS. Native controller CS is deasserted by the hardware
+	 * when the programmed transfer count reaches zero.
+	 */
+	spi_context_cs_control(&data->ctx, false);
+}
+
 static int hpm_spi_transceive(const struct device *dev, const struct spi_config *spi_cfg,
 			      const struct spi_buf_set *tx_bufs, const struct spi_buf_set *rx_bufs)
 {
@@ -524,7 +557,7 @@ static int hpm_spi_transceive(const struct device *dev, const struct spi_config 
 	spi_context_cs_control(&data->ctx, true);
 	ret = hpm_spi_transfer_stream(config, &control_config, frame_size, frames, tx_frames,
 				      rx_frames, tx_bufs, rx_bufs);
-	spi_context_cs_control(&data->ctx, false);
+	hpm_spi_cs_deassert(data);
 
 out:
 	spi_context_release(&data->ctx, ret);
@@ -765,7 +798,7 @@ static int hpm_spi_transceive_dma_async(const struct device *dev, const struct s
 
 error_active:
 	(void)k_work_cancel_delayable(&data->dma_timeout_work);
-	spi_context_cs_control(&data->ctx, false);
+	hpm_spi_cs_deassert(data);
 	data->dma_active = false;
 	spi_disable_interrupt(config->base,
 			      spi_end_int | spi_rx_fifo_overflow_int | spi_tx_fifo_underflow_int);
