@@ -1028,9 +1028,40 @@ static struct uhc_transfer *itd_complete(const struct device *dev, struct uhc_hp
 	return xfer;
 }
 
+static bool uhc_hpmicro_has_completed_itd(const struct device *dev)
+{
+	struct uhc_hpmicro_data *data = uhc_get_private(dev);
+	k_spinlock_key_t key;
+	bool completed = false;
+
+	key = k_spin_lock(&data->lock);
+	for (uint32_t i = 0U; i < CONFIG_UHC_HPMICRO_ITD_COUNT; i++) {
+		struct uhc_hpmicro_itd *itd = &data->itd_pool[i];
+
+		if (itd->in_use && !itd_is_active(itd)) {
+			completed = true;
+			break;
+		}
+	}
+	k_spin_unlock(&data->lock, key);
+
+	return completed;
+}
+
 static void uhc_hpmicro_scan_itd(const struct device *dev)
 {
 	struct uhc_hpmicro_data *data = uhc_get_private(dev);
+
+	if (!uhc_hpmicro_has_completed_itd(dev)) {
+		return;
+	}
+
+	/*
+	 * The iTD is linked directly from the periodic frame list. Stop both
+	 * schedules before changing that chain so the controller cannot follow
+	 * a next pointer while it is being rewritten.
+	 */
+	qh_schedule_disable(dev);
 
 	while (true) {
 		struct uhc_transfer *completed = NULL;
@@ -1054,6 +1085,9 @@ static void uhc_hpmicro_scan_itd(const struct device *dev)
 
 		uhc_xfer_return(dev, completed, err);
 	}
+
+	compiler_barrier();
+	qh_schedule_enable(dev);
 }
 
 static bool uhc_hpmicro_has_completed_qh(const struct device *dev)
