@@ -59,4 +59,37 @@ ZTEST(hpm_adc, test_external_trigger_selection)
 }
 #endif
 
+#if defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION) && DT_NODE_HAS_STATUS(DT_NODELABEL(adc0), okay)
+ZTEST(hpm_adc, test_preemption_api_contract)
+{
+	const struct device *dev = DEVICE_DT_GET(DT_NODELABEL(adc0));
+	struct hpm_adc16_preemption_config config = {
+		.trigger = 0U,
+		.channel_count = 1U,
+		.channels = {0U},
+		.sample_cycle = 20U,
+	};
+	struct hpm_adc16_preemption_result result;
+
+	zassert_true(device_is_ready(dev));
+	zassert_true(DEVICE_API_IS(hpm_adc16, dev));
+	zassert_ok(hpm_adc16_configure_preemption(dev, &config));
+	zassert_ok(hpm_adc16_trigger_preemption(dev));
+	zassert_ok(hpm_adc16_stop_preemption(dev));
+	zassert_equal(hpm_adc16_configure_preemption(dev, &config), 0);
+	zassert_ok(hpm_adc16_stop_preemption(dev));
+	zassert_equal(hpm_adc16_stop_preemption(dev), -EINVAL);
+	zassert_equal(hpm_adc16_read_preemption(dev, &result, 1U), -EINVAL);
+	config.channel_count = HPM_ADC16_PREEMPTION_MAX_CHANNELS + 1U;
+	zassert_equal(hpm_adc16_configure_preemption(dev, &config), -EINVAL);
+	config.channel_count = 1U;
+	config.trigger = 12U;
+	zassert_equal(hpm_adc16_configure_preemption(dev, &config), -EINVAL);
+	config.trigger = 0U;
+	config.sample_cycle = 0x200U;
+	zassert_equal(hpm_adc16_configure_preemption(dev, &config), -EINVAL);
+	zassert_equal(hpm_adc16_configure_preemption(dev, NULL), -EINVAL);
+}
+#endif
+
 ZTEST_SUITE(hpm_adc, NULL, NULL, NULL, NULL, NULL);

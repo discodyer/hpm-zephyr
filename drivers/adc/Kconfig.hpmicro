@@ -46,4 +46,15 @@ config ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER
 	  TRGM to the ADC STRGI signal; this option does not acquire or configure
 	  any trigger source.
 
+config ADC_HPMICRO_ADC16_PREEMPTION
+	bool "Enable ADC16 preemption and motor sample streaming"
+	default y
+	depends on ARCH_HAS_NOCACHE_MEMORY_SUPPORT
+	select NOCACHE_MEMORY
+	help
+	  Enable the HPM-specific preemption API. Each trigger queue converts up
+	  to four channels and stores results in the ADC's internal 192-byte DMA
+	  buffer. Optional motor output forwards samples to the connected QEIV2
+	  or RDC unit. This does not alter the generic ADC asynchronous API.
+
 endif # ADC_HPMICRO_ADC16

@@ -7,6 +7,7 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
@@ -24,7 +25,8 @@
 #include <hpm_adc16_drv.h>
 #include <hpm_clock_drv.h>
 
-#if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
+#if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER) ||                                          \
+	defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION) || defined(__DOXYGEN__)
 #include <drivers/adc/hpmicro_adc16.h>
 #endif
 
@@ -36,6 +38,8 @@ LOG_MODULE_REGISTER(adc_hpmicro_adc16, CONFIG_ADC_LOG_LEVEL);
 #define HPM_ADC16_CONV_CLK_MAX         ADC16_SOC_CONV_CLK_FREQ_MAX
 #define HPM_ADC16_SEQ_MAX_SAMPLES      ADC_SOC_SEQ_MAX_LEN
 #define HPM_ADC16_DMA_ALIGNMENT        ADC_SOC_DMA_ADDR_ALIGNMENT
+#define HPM_ADC16_PMT_BUFFER_WORDS     ADC_SOC_PMT_MAX_DMA_BUFF_LEN_IN_4BYTES
+#define HPM_ADC16_PMT_TRIGGER_COUNT    12U
 
 struct hpm_adc16_config {
 	ADC16_Type *base;
@@ -47,7 +51,7 @@ struct hpm_adc16_config {
 	clock_source_t ana_clock_src;
 	uint32_t ana_clock_div;
 	const struct pinctrl_dev_config *pincfg;
-#ifdef CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA
+#if defined(CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA) || defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION)
 	void (*irq_config_func)(const struct device *dev);
 #endif
 };
@@ -65,7 +69,6 @@ struct hpm_adc16_data {
 	uint8_t seq_channels[HPM_ADC16_SEQ_MAX_SAMPLES];
 	uint8_t seq_samples;
 	bool seq_error;
-	bool sequence_irq_ready;
 	uint32_t *seq_buffer;
 #if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
 	enum hpm_adc16_trigger_source trigger_source;
@@ -73,7 +76,52 @@ struct hpm_adc16_data {
 #endif
 	uint8_t resolution;
 	uint8_t clock_divider;
+#if defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION)
+	uint32_t *preemption_buffer;
+	uint8_t preemption_trigger;
+	uint8_t preemption_channels;
+	uint8_t preemption_channel_list[HPM_ADC16_PREEMPTION_MAX_CHANNELS];
+	bool preemption_active;
+	atomic_t preemption_completion;
+	atomic_t preemption_error;
+#endif
 };
+
+#if defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION)
+static uint32_t hpm_adc16_preemption_status_mask(void)
+{
+	return adc16_event_trig_complete | adc16_event_trig_sw_conflict |
+	       adc16_event_trig_hw_conflict | adc16_event_read_conflict |
+	       adc16_event_dma_fifo_full | ADC16_INT_STS_AHB_ERR_MASK;
+}
+
+static void hpm_adc16_preemption_handler(const struct device *dev, uint32_t status)
+{
+	const struct hpm_adc16_config *config = dev->config;
+	struct hpm_adc16_data *data = dev->data;
+	uint32_t event_mask = hpm_adc16_preemption_status_mask();
+	uint32_t error_mask = adc16_event_trig_sw_conflict | adc16_event_trig_hw_conflict |
+			      adc16_event_read_conflict | adc16_event_dma_fifo_full |
+			      ADC16_INT_STS_AHB_ERR_MASK;
+
+	if (!data->preemption_active) {
+		return;
+	}
+
+	status &= event_mask;
+	if (status == 0U) {
+		return;
+	}
+
+	adc16_clear_status_flags(config->base, status);
+	if ((status & error_mask) != 0U) {
+		atomic_set(&data->preemption_error, 1);
+	}
+	if ((status & adc16_event_trig_complete) != 0U) {
+		atomic_inc(&data->preemption_completion);
+	}
+}
+#endif
 
 static int hpm_adc16_channel_setup(const struct device *dev,
 				   const struct adc_channel_cfg *channel_cfg)
@@ -143,7 +191,8 @@ static uint8_t hpm_adc16_resolution(uint8_t resolution)
 	}
 }
 
-static int hpm_adc16_validate_sequence(const struct adc_sequence *sequence)
+static int hpm_adc16_validate_sequence(const struct device *dev,
+				       const struct adc_sequence *sequence)
 {
 	size_t samples;
 
@@ -165,6 +214,12 @@ static int hpm_adc16_validate_sequence(const struct adc_sequence *sequence)
 	if ((sequence->oversampling != 0U) || sequence->calibrate) {
 		return -ENOTSUP;
 	}
+
+#if defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION)
+	if (((struct hpm_adc16_data *)dev->data)->preemption_active) {
+		return -EBUSY;
+	}
+#endif
 
 	if (hpm_adc16_resolution(sequence->resolution) == 0U) {
 		return -EINVAL;
@@ -188,22 +243,26 @@ static uint32_t hpm_adc16_sequence_status_mask(void)
 {
 	return adc16_event_seq_single_complete | adc16_event_seq_dma_abort |
 	       adc16_event_seq_sw_conflict | adc16_event_seq_hw_conflict |
-	       adc16_event_read_conflict | adc16_event_dma_fifo_full;
+	       adc16_event_read_conflict | adc16_event_dma_fifo_full | ADC16_INT_STS_AHB_ERR_MASK;
 }
 
-static void hpm_adc16_sequence_isr(const struct device *dev)
+static void hpm_adc16_sequence_handler(const struct device *dev, uint32_t status)
 {
 	const struct hpm_adc16_config *config = dev->config;
 	struct hpm_adc16_data *data = dev->data;
 	struct k_poll_signal *async_signal;
-	uint32_t status = adc16_get_status_flags(config->base);
 	uint32_t event_mask = hpm_adc16_sequence_status_mask();
 	uint16_t *output;
 	uint32_t error_mask = adc16_event_seq_dma_abort | adc16_event_seq_sw_conflict |
 			      adc16_event_seq_hw_conflict | adc16_event_read_conflict |
-			      adc16_event_dma_fifo_full;
+			      adc16_event_dma_fifo_full | ADC16_INT_STS_AHB_ERR_MASK;
 
-	if ((status & event_mask) == 0U) {
+	if (atomic_get(&data->async_busy) == 0) {
+		return;
+	}
+
+	status &= event_mask;
+	if (status == 0U) {
 		return;
 	}
 
@@ -252,6 +311,12 @@ static int hpm_adc16_start_sequence(const struct device *dev, const struct adc_s
 	int ret = 0;
 
 	k_mutex_lock(&data->lock, K_FOREVER);
+#if defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION)
+	if (data->preemption_active) {
+		k_mutex_unlock(&data->lock);
+		return -EBUSY;
+	}
+#endif
 
 	while (channels != 0U) {
 		uint8_t channel = find_lsb_set(channels) - 1U;
@@ -309,16 +374,10 @@ static int hpm_adc16_start_sequence(const struct device *dev, const struct adc_s
 		goto out;
 	}
 
-	if (!data->sequence_irq_ready) {
-		config->irq_config_func(dev);
-		data->sequence_irq_ready = true;
-	}
-
 	k_sem_reset(&data->seq_done);
 	adc16_enable_interrupts(config->base, hpm_adc16_sequence_status_mask());
 #if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
-	status = seq_config.sw_trig_en ? adc16_trigger_seq_by_sw(config->base)
-					 : status_success;
+	status = seq_config.sw_trig_en ? adc16_trigger_seq_by_sw(config->base) : status_success;
 #else
 	status = adc16_trigger_seq_by_sw(config->base);
 #endif
@@ -339,7 +398,7 @@ static int hpm_adc16_read(const struct device *dev, const struct adc_sequence *s
 	struct hpm_adc16_data *data = dev->data;
 	int ret;
 
-	ret = hpm_adc16_validate_sequence(sequence);
+	ret = hpm_adc16_validate_sequence(dev, sequence);
 	if (ret < 0) {
 		return ret;
 	}
@@ -374,7 +433,7 @@ static int hpm_adc16_read_async(const struct device *dev, const struct adc_seque
 	struct hpm_adc16_data *data = dev->data;
 	int ret;
 
-	ret = hpm_adc16_validate_sequence(sequence);
+	ret = hpm_adc16_validate_sequence(dev, sequence);
 	if (ret < 0) {
 		return ret;
 	}
@@ -408,6 +467,12 @@ static int hpm_adc16_read_sequence(const struct device *dev, const struct adc_se
 	int ret = 0;
 
 	k_mutex_lock(&data->lock, K_FOREVER);
+#if defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION)
+	if (data->preemption_active) {
+		k_mutex_unlock(&data->lock);
+		return -EBUSY;
+	}
+#endif
 
 	adc_resolution = hpm_adc16_resolution(sequence->resolution);
 	if (data->resolution != sequence->resolution) {
@@ -454,7 +519,7 @@ static int hpm_adc16_read(const struct device *dev, const struct adc_sequence *s
 	struct hpm_adc16_data *data = dev->data;
 	int ret;
 
-	ret = hpm_adc16_validate_sequence(sequence);
+	ret = hpm_adc16_validate_sequence(dev, sequence);
 	if (ret < 0) {
 		return ret;
 	}
@@ -488,7 +553,7 @@ static int hpm_adc16_read_async(const struct device *dev, const struct adc_seque
 	struct hpm_adc16_data *data = dev->data;
 	int ret;
 
-	ret = hpm_adc16_validate_sequence(sequence);
+	ret = hpm_adc16_validate_sequence(dev, sequence);
 	if (ret < 0) {
 		return ret;
 	}
@@ -510,6 +575,205 @@ static int hpm_adc16_read_async(const struct device *dev, const struct adc_seque
 }
 #endif /* CONFIG_ADC_ASYNC */
 #endif /* CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA */
+
+#if defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION)
+static int hpm_adc16_configure_preemption_impl(const struct device *dev,
+					       const struct hpm_adc16_preemption_config *config)
+{
+	const struct hpm_adc16_config *adc = dev->config;
+	struct hpm_adc16_data *data = dev->data;
+	adc16_channel_config_t channel_config;
+	adc16_pmt_config_t pmt_config = {0};
+	adc16_config_t adc_config;
+	hpm_stat_t status;
+
+	if ((config == NULL) || (config->trigger >= HPM_ADC16_PMT_TRIGGER_COUNT) ||
+	    (config->channel_count == 0U) ||
+	    (config->channel_count > HPM_ADC16_PREEMPTION_MAX_CHANNELS) ||
+	    (config->sample_cycle > HPM_ADC16_SAMPLE_CYCLE_MAX)) {
+		return -EINVAL;
+	}
+
+	for (uint8_t i = 0U; i < config->channel_count; i++) {
+		if (config->channels[i] >= HPM_ADC16_MAX_CHANNELS) {
+			return -EINVAL;
+		}
+	}
+
+#if !defined(HPM_IP_FEATURE_ADC16_HAS_MOT_EN) || !HPM_IP_FEATURE_ADC16_HAS_MOT_EN
+	if (config->motor_enable) {
+		return -ENOTSUP;
+	}
+#endif
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	if ((atomic_get(&data->async_busy) != 0) || data->preemption_active) {
+		k_mutex_unlock(&data->lock);
+		return -EBUSY;
+	}
+
+#ifdef CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA
+	adc16_disable_interrupts(adc->base, hpm_adc16_sequence_status_mask());
+#endif
+	adc16_clear_status_flags(adc->base, UINT32_MAX);
+
+	adc16_get_default_config(&adc_config);
+	adc_config.res = adc16_res_16_bits;
+	adc_config.adc_clk_div = data->clock_divider;
+	adc_config.conv_mode = adc16_conv_mode_preemption;
+	adc_config.wait_dis = false;
+	status = adc16_init(adc->base, &adc_config);
+	if (status != status_success) {
+		k_mutex_unlock(&data->lock);
+		return -EIO;
+	}
+	adc16_disable_oneshot_mode(adc->base);
+
+	for (uint8_t i = 0U; i < config->channel_count; i++) {
+		adc16_get_channel_default_config(&channel_config);
+		channel_config.ch = config->channels[i];
+		channel_config.sample_cycle = config->sample_cycle == 0U
+						      ? HPM_ADC16_SAMPLE_CYCLE_DEFAULT
+						      : config->sample_cycle;
+		status = adc16_init_channel(adc->base, &channel_config);
+		if (status != status_success) {
+			k_mutex_unlock(&data->lock);
+			return -EINVAL;
+		}
+	}
+
+	pmt_config.trig_ch = config->trigger;
+	pmt_config.trig_len = config->channel_count;
+	for (uint8_t i = 0U; i < config->channel_count; i++) {
+		pmt_config.adc_ch[i] = config->channels[i];
+		pmt_config.inten[i] = i == (uint8_t)(config->channel_count - 1U);
+	}
+	status = adc16_set_pmt_config(adc->base, &pmt_config);
+	if (status != status_success) {
+		k_mutex_unlock(&data->lock);
+		return -EINVAL;
+	}
+
+	memset(data->preemption_buffer, 0, HPM_ADC16_PMT_BUFFER_WORDS * sizeof(uint32_t));
+	adc16_init_pmt_dma(adc->base, (uint32_t)(uintptr_t)data->preemption_buffer);
+#if defined(HPM_IP_FEATURE_ADC16_HAS_MOT_EN) && HPM_IP_FEATURE_ADC16_HAS_MOT_EN
+	if (config->motor_enable) {
+		adc16_enable_motor(adc->base);
+	} else {
+		adc->base->ANA_CTRL0 &= ~ADC16_ANA_CTRL0_MOTO_EN_MASK;
+	}
+#endif
+	status = adc16_enable_pmt_queue(adc->base, config->trigger);
+	if (status != status_success) {
+		k_mutex_unlock(&data->lock);
+		return -EIO;
+	}
+
+	atomic_clear(&data->preemption_completion);
+	atomic_clear(&data->preemption_error);
+	data->preemption_trigger = config->trigger;
+	data->preemption_channels = config->channel_count;
+	memcpy(data->preemption_channel_list, config->channels, config->channel_count);
+	data->preemption_active = true;
+	adc16_enable_interrupts(adc->base, hpm_adc16_preemption_status_mask());
+	k_mutex_unlock(&data->lock);
+
+	return 0;
+}
+
+static int hpm_adc16_trigger_preemption_impl(const struct device *dev)
+{
+	const struct hpm_adc16_config *config = dev->config;
+	struct hpm_adc16_data *data = dev->data;
+	int ret;
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	if (!data->preemption_active) {
+		k_mutex_unlock(&data->lock);
+		return -EINVAL;
+	}
+
+	ret = adc16_trigger_pmt_by_sw(config->base, data->preemption_trigger) == status_success
+		      ? 0
+		      : -EBUSY;
+	k_mutex_unlock(&data->lock);
+
+	return ret;
+}
+
+static int hpm_adc16_read_preemption_impl(const struct device *dev,
+					  struct hpm_adc16_preemption_result *results,
+					  uint8_t result_count)
+{
+	struct hpm_adc16_data *data = dev->data;
+	adc16_pmt_dma_data_t *samples;
+	uint32_t offset;
+	int ret = 0;
+
+	if (results == NULL) {
+		return -EINVAL;
+	}
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	if (!data->preemption_active || (result_count != data->preemption_channels)) {
+		ret = -EINVAL;
+		goto out;
+	}
+	if (atomic_get(&data->preemption_error) != 0) {
+		atomic_clear(&data->preemption_error);
+		ret = -EIO;
+		goto out;
+	}
+	if (atomic_get(&data->preemption_completion) == 0) {
+		ret = -EAGAIN;
+		goto out;
+	}
+
+	/* The internal DMA buffer only retains the latest sequence per trigger. */
+	offset = (uint32_t)data->preemption_trigger * HPM_ADC16_PREEMPTION_MAX_CHANNELS;
+	samples = (adc16_pmt_dma_data_t *)data->preemption_buffer + offset;
+	for (uint8_t i = 0U; i < result_count; i++) {
+		if ((samples[i].adc_ch != data->preemption_channel_list[i]) ||
+		    (samples[i].trig_ch != data->preemption_trigger)) {
+			ret = -EIO;
+			goto out;
+		}
+		results[i].value = samples[i].result;
+		results[i].channel = samples[i].adc_ch;
+		results[i].sequence = samples[i].seq_num;
+		results[i].cycle = samples[i].cycle_bit != 0U;
+	}
+	atomic_clear(&data->preemption_completion);
+
+out:
+	k_mutex_unlock(&data->lock);
+	return ret;
+}
+
+static int hpm_adc16_stop_preemption_impl(const struct device *dev)
+{
+	const struct hpm_adc16_config *config = dev->config;
+	struct hpm_adc16_data *data = dev->data;
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	if (!data->preemption_active) {
+		k_mutex_unlock(&data->lock);
+		return -EINVAL;
+	}
+
+	(void)adc16_disable_pmt_queue(config->base, data->preemption_trigger);
+	adc16_disable_interrupts(config->base, hpm_adc16_preemption_status_mask());
+	adc16_clear_status_flags(config->base, hpm_adc16_preemption_status_mask());
+#if defined(HPM_IP_FEATURE_ADC16_HAS_MOT_EN) && HPM_IP_FEATURE_ADC16_HAS_MOT_EN
+	config->base->ANA_CTRL0 &= ~ADC16_ANA_CTRL0_MOTO_EN_MASK;
+#endif
+	memset(data->preemption_buffer, 0, HPM_ADC16_PMT_BUFFER_WORDS * sizeof(uint32_t));
+	data->preemption_active = false;
+	k_mutex_unlock(&data->lock);
+
+	return 0;
+}
+#endif /* CONFIG_ADC_HPMICRO_ADC16_PREEMPTION */
 
 #if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
 static int hpm_adc16_set_trigger_source_impl(const struct device *dev,
@@ -543,23 +807,47 @@ static int hpm_adc16_get_trigger_source_impl(const struct device *dev,
 }
 #endif
 
+#if defined(CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA) || defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION)
+static void hpm_adc16_isr(const struct device *dev)
+{
+	const struct hpm_adc16_config *config = dev->config;
+	uint32_t status = adc16_get_status_flags(config->base);
+
 #ifdef CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA
+	hpm_adc16_sequence_handler(dev, status);
+#endif
+#ifdef CONFIG_ADC_HPMICRO_ADC16_PREEMPTION
+	hpm_adc16_preemption_handler(dev, status);
+#endif
+}
+#endif
+
+#if defined(CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA) || defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION)
 #define HPM_ADC16_IRQ_CONFIG(n)                                                                    \
 	static void hpm_adc16_irq_config_##n(const struct device *dev)                             \
 	{                                                                                          \
-		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), hpm_adc16_sequence_isr,     \
+		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), hpm_adc16_isr,              \
 			    DEVICE_DT_INST_GET(n), 0);                                             \
 		irq_enable(DT_INST_IRQN(n));                                                       \
 	}
 #define HPM_ADC16_IRQ_CONFIG_FIELD(n) .irq_config_func = hpm_adc16_irq_config_##n,
+#define HPM_ADC16_RUNTIME_IRQ_INIT(dev, config)                                                    \
+	do {                                                                                       \
+		(config)->irq_config_func(dev);                                                    \
+	} while (false)
+#else
+#define HPM_ADC16_IRQ_CONFIG(n)
+#define HPM_ADC16_IRQ_CONFIG_FIELD(n)
+#define HPM_ADC16_RUNTIME_IRQ_INIT(dev, config)
+#endif
+
+#ifdef CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA
 #define HPM_ADC16_RUNTIME_INIT(n)                                                                  \
 	do {                                                                                       \
 		k_sem_init(&data->seq_done, 0, 1);                                                 \
 		data->seq_buffer = hpm_adc16_seq_buffer_##n;                                       \
 	} while (false)
 #else
-#define HPM_ADC16_IRQ_CONFIG(n)
-#define HPM_ADC16_IRQ_CONFIG_FIELD(n)
 #if defined(CONFIG_ADC_ASYNC)
 #define HPM_ADC16_RUNTIME_INIT(n)                                                                  \
 	do {                                                                                       \
@@ -570,21 +858,15 @@ static int hpm_adc16_get_trigger_source_impl(const struct device *dev,
 #endif
 #endif
 
-#if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
-#define HPM_ADC16_API(n)                                                                           \
-	static DEVICE_API(hpm_adc16, hpm_adc16_api_##n) = {                                        \
-		.adc_api =                                                                         \
-			{                                                                          \
-				.channel_setup = hpm_adc16_channel_setup,                          \
-				.read = hpm_adc16_read,                                            \
-				IF_ENABLED(CONFIG_ADC_ASYNC,                                       \
-					   (.read_async = hpm_adc16_read_async,))                   \
-					.ref_internal = DT_INST_PROP_OR(n, vref_mv, 3300),         \
-			},                                                                         \
-		.set_trigger_source = hpm_adc16_set_trigger_source_impl,                           \
-		.get_trigger_source = hpm_adc16_get_trigger_source_impl,                           \
-	};
-#else
+#define HPM_ADC16_PREEMPTION_API(n)                                                                \
+	IF_ENABLED(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION,                                            \
+		   (.configure_preemption = hpm_adc16_configure_preemption_impl,                  \
+		    .trigger_preemption = hpm_adc16_trigger_preemption_impl,                      \
+		    .read_preemption = hpm_adc16_read_preemption_impl,                           \
+		    .stop_preemption = hpm_adc16_stop_preemption_impl,))
+
+#if !defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER) &&                                          \
+	!defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION)
 #define HPM_ADC16_API(n)                                                                           \
 	static DEVICE_API(adc, hpm_adc16_api_##n) = {                                              \
 		.channel_setup = hpm_adc16_channel_setup,                                          \
@@ -592,14 +874,61 @@ static int hpm_adc16_get_trigger_source_impl(const struct device *dev,
 		IF_ENABLED(CONFIG_ADC_ASYNC, (.read_async = hpm_adc16_read_async,)) .ref_internal =   \
 						     DT_INST_PROP_OR(n, vref_mv, 3300),            \
 	};
+#elif defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
+#define HPM_ADC16_API(n)                                                                           \
+	static DEVICE_API(hpm_adc16, hpm_adc16_api_##n) = {                                        \
+		.adc_api = {                                                                       \
+			.channel_setup = hpm_adc16_channel_setup,                                  \
+			.read = hpm_adc16_read,                                                    \
+			IF_ENABLED(CONFIG_ADC_ASYNC,                                       \
+					   (.read_async = hpm_adc16_read_async,)) .ref_internal =            \
+					    DT_INST_PROP_OR(n, vref_mv, 3300),                     \
+			},                                                                         \
+			.set_trigger_source = hpm_adc16_set_trigger_source_impl,                   \
+			.get_trigger_source = hpm_adc16_get_trigger_source_impl,                   \
+			HPM_ADC16_PREEMPTION_API(n)};
+#else
+#define HPM_ADC16_API(n)                                                                           \
+	static DEVICE_API(hpm_adc16, hpm_adc16_api_##n) = {                                        \
+		.adc_api = {                                                                       \
+			.channel_setup = hpm_adc16_channel_setup,                                  \
+			.read = hpm_adc16_read,                                                    \
+			IF_ENABLED(CONFIG_ADC_ASYNC,                                       \
+					   (.read_async = hpm_adc16_read_async,)) .ref_internal =            \
+					    DT_INST_PROP_OR(n, vref_mv, 3300),                     \
+			},                                                                         \
+			HPM_ADC16_PREEMPTION_API(n)};
+#endif
+
+#if defined(CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA)
+#define HPM_ADC16_SEQUENCE_BUFFER(n)                                                               \
+	static uint32_t hpm_adc16_seq_buffer_##n[HPM_ADC16_SEQ_MAX_SAMPLES] __nocache              \
+		__aligned(HPM_ADC16_DMA_ALIGNMENT);
+#else
+#define HPM_ADC16_SEQUENCE_BUFFER(n)
+#endif
+
+#if defined(CONFIG_ADC_HPMICRO_ADC16_PREEMPTION)
+#define HPM_ADC16_PREEMPTION_BUFFER(n)                                                             \
+	static uint32_t hpm_adc16_pmt_buffer_##n[HPM_ADC16_PMT_BUFFER_WORDS] __nocache             \
+		__aligned(HPM_ADC16_DMA_ALIGNMENT);
+#define HPM_ADC16_PREEMPTION_INIT(n)                                                               \
+	do {                                                                                       \
+		data->preemption_buffer = hpm_adc16_pmt_buffer_##n;                                \
+		atomic_clear(&data->preemption_completion);                                        \
+		atomic_clear(&data->preemption_error);                                             \
+	} while (false)
+#else
+#define HPM_ADC16_PREEMPTION_BUFFER(n)
+#define HPM_ADC16_PREEMPTION_INIT(n)
 #endif
 
 #define HPM_ADC16_INIT(n)                                                                          \
 	PINCTRL_DT_INST_DEFINE(n);                                                                 \
 	HPM_ADC16_IRQ_CONFIG(n)                                                                    \
 	HPM_ADC16_API(n)                                                                           \
-	static uint32_t hpm_adc16_seq_buffer_##n[HPM_ADC16_SEQ_MAX_SAMPLES] __nocache              \
-		__aligned(HPM_ADC16_DMA_ALIGNMENT);                                                \
+	HPM_ADC16_SEQUENCE_BUFFER(n)                                                               \
+	HPM_ADC16_PREEMPTION_BUFFER(n)                                                             \
 	static struct hpm_adc16_data hpm_adc16_data_##n;                                           \
                                                                                                    \
 	static const struct hpm_adc16_config hpm_adc16_config_##n = {                              \
@@ -676,6 +1005,8 @@ static int hpm_adc16_get_trigger_source_impl(const struct device *dev,
 		data->clock_divider = (uint8_t)clock_divider;                                      \
 		k_mutex_init(&data->lock);                                                         \
 		HPM_ADC16_RUNTIME_INIT(n);                                                         \
+		HPM_ADC16_RUNTIME_IRQ_INIT(dev, config);                                           \
+		HPM_ADC16_PREEMPTION_INIT(n);                                                      \
 		return 0;                                                                          \
 	}                                                                                          \
                                                                                                    \
