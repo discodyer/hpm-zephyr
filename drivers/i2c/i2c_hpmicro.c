@@ -9,8 +9,10 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <zephyr/cache.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/irq.h>
@@ -30,9 +32,15 @@ struct hpm_i2c_config {
 	uint32_t clock_div;
 	uint32_t bitrate;
 	const struct pinctrl_dev_config *pincfg;
-#ifdef CONFIG_I2C_TARGET
+#if defined(CONFIG_I2C_TARGET) || defined(CONFIG_I2C_HPMICRO_DMA)
 	void (*irq_config_func)(const struct device *dev);
 	uint32_t irq;
+#endif
+#ifdef CONFIG_I2C_HPMICRO_DMA
+	const struct device *dma_dev;
+	uint32_t tx_dma_channel;
+	uint32_t rx_dma_channel;
+	uint32_t dma_request;
 #endif
 };
 
@@ -44,6 +52,14 @@ struct hpm_i2c_data {
 	bool target_selected;
 	bool target_write_active;
 	bool target_read_active;
+#endif
+#ifdef CONFIG_I2C_HPMICRO_DMA
+	struct k_sem dma_done;
+	struct k_sem i2c_done;
+	struct dma_block_config dma_block;
+	volatile bool dma_active;
+	volatile bool dma_error;
+	volatile bool dma_transfer_active;
 #endif
 };
 
@@ -100,12 +116,30 @@ static uint32_t hpm_i2c_mode_to_speed(uint8_t mode)
 	}
 }
 
-static int hpm_i2c_configure(const struct device *dev, uint32_t dev_config)
+static int hpm_i2c_master_reinit(const struct device *dev, uint32_t dev_config)
 {
 	const struct hpm_i2c_config *config = dev->config;
-	struct hpm_i2c_data *data = dev->data;
 	i2c_config_t hal_config = {0};
 	uint32_t clock_freq;
+	int ret;
+
+	ret = clock_control_get_rate(config->clock_dev, config->clock_subsys, &clock_freq);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = hpm_i2c_speed_to_mode(I2C_SPEED_GET(dev_config), &hal_config.i2c_mode);
+	if (ret < 0) {
+		return ret;
+	}
+
+	hal_config.is_10bit_addressing = (dev_config & I2C_ADDR_10_BITS) != 0U;
+	return i2c_init_master(config->base, clock_freq, &hal_config) == status_success ? 0 : -EIO;
+}
+
+static int hpm_i2c_configure(const struct device *dev, uint32_t dev_config)
+{
+	struct hpm_i2c_data *data = dev->data;
 	uint32_t bitrate;
 	int ret;
 
@@ -133,21 +167,13 @@ static int hpm_i2c_configure(const struct device *dev, uint32_t dev_config)
 		return -ENOTSUP;
 	}
 
-	ret = clock_control_get_rate(config->clock_dev, config->clock_subsys, &clock_freq);
-	if (ret < 0) {
-		return ret;
-	}
-
-	hal_config.is_10bit_addressing = (dev_config & I2C_ADDR_10_BITS) != 0U;
-	ret = hpm_i2c_speed_to_mode(bitrate, &hal_config.i2c_mode);
-	if (ret < 0) {
-		return ret;
-	}
+	ARG_UNUSED(bitrate);
 
 	k_mutex_lock(&data->lock, K_FOREVER);
-	if (i2c_init_master(config->base, clock_freq, &hal_config) != status_success) {
+	ret = hpm_i2c_master_reinit(dev, dev_config);
+	if (ret < 0) {
 		k_mutex_unlock(&data->lock);
-		return -EIO;
+		return ret;
 	}
 
 	data->dev_config = dev_config;
@@ -174,6 +200,158 @@ static bool hpm_i2c_msg_is_10bit(const struct hpm_i2c_data *data, const struct i
 	return ((data->dev_config & I2C_ADDR_10_BITS) != 0U) ||
 	       ((msg->flags & I2C_MSG_ADDR_10_BITS) != 0U);
 }
+
+#ifdef CONFIG_I2C_HPMICRO_DMA
+static void hpm_i2c_dma_callback(const struct device *dma_dev, void *user_data, uint32_t channel,
+				 int status)
+{
+	struct hpm_i2c_data *data = user_data;
+
+	ARG_UNUSED(dma_dev);
+	ARG_UNUSED(channel);
+
+	data->dma_error = status < 0;
+	data->dma_active = false;
+	k_sem_give(&data->dma_done);
+}
+
+static int hpm_i2c_dma_start(const struct device *dev, const struct i2c_msg *msg)
+{
+	const struct hpm_i2c_config *config = dev->config;
+	struct hpm_i2c_data *data = dev->data;
+	struct dma_config dma_cfg = {0};
+	uint32_t channel;
+	int ret;
+
+	channel = i2c_is_read_op(msg) ? config->rx_dma_channel : config->tx_dma_channel;
+	data->dma_block = (struct dma_block_config){
+		.source_address =
+			i2c_is_read_op(msg) ? (uint32_t)&config->base->DATA : (uint32_t)msg->buf,
+		.dest_address =
+			i2c_is_read_op(msg) ? (uint32_t)msg->buf : (uint32_t)&config->base->DATA,
+		.source_addr_adj =
+			i2c_is_read_op(msg) ? DMA_ADDR_ADJ_NO_CHANGE : DMA_ADDR_ADJ_INCREMENT,
+		.dest_addr_adj =
+			i2c_is_read_op(msg) ? DMA_ADDR_ADJ_INCREMENT : DMA_ADDR_ADJ_NO_CHANGE,
+		.block_size = msg->len,
+	};
+	dma_cfg.channel_direction =
+		i2c_is_read_op(msg) ? PERIPHERAL_TO_MEMORY : MEMORY_TO_PERIPHERAL;
+	dma_cfg.dma_slot = config->dma_request;
+	dma_cfg.source_data_size = 1U;
+	dma_cfg.dest_data_size = 1U;
+	dma_cfg.block_count = 1U;
+	dma_cfg.head_block = &data->dma_block;
+	dma_cfg.user_data = data;
+	dma_cfg.dma_callback = hpm_i2c_dma_callback;
+
+	if (i2c_is_read_op(msg)) {
+		(void)sys_cache_data_invd_range(msg->buf, msg->len);
+	} else {
+		(void)sys_cache_data_flush_range(msg->buf, msg->len);
+	}
+
+	k_sem_reset(&data->dma_done);
+	data->dma_error = false;
+	data->dma_active = true;
+	ret = dma_config(config->dma_dev, channel, &dma_cfg);
+	if (ret < 0) {
+		data->dma_active = false;
+		return ret;
+	}
+	ret = dma_start(config->dma_dev, channel);
+	if (ret < 0) {
+		data->dma_active = false;
+		return ret;
+	}
+	return 0;
+}
+
+static void hpm_i2c_dma_stop(const struct device *dev, bool read)
+{
+	const struct hpm_i2c_config *config = dev->config;
+	struct hpm_i2c_data *data = dev->data;
+
+	if (data->dma_active) {
+		(void)dma_stop(config->dma_dev,
+			       read ? config->rx_dma_channel : config->tx_dma_channel);
+		data->dma_active = false;
+	}
+}
+
+static void hpm_i2c_dma_abort(const struct device *dev, bool read)
+{
+	const struct hpm_i2c_config *config = dev->config;
+	struct hpm_i2c_data *data = dev->data;
+
+	i2c_disable_irq(config->base, I2C_EVENT_TRANSACTION_COMPLETE | I2C_EVENT_LOSS_ARBITRATION);
+	hpm_i2c_dma_stop(dev, read);
+	i2c_dma_disable(config->base);
+	i2c_reset(config->base);
+	(void)hpm_i2c_master_reinit(dev, data->dev_config);
+}
+
+static int hpm_i2c_transfer_frame_dma(const struct device *dev, uint16_t addr,
+				      const struct i2c_msg *msg)
+{
+	const struct hpm_i2c_config *config = dev->config;
+	struct hpm_i2c_data *data = dev->data;
+	bool read = i2c_is_read_op(msg);
+	hpm_stat_t status;
+	int ret;
+
+	if ((msg->buf == NULL) || (msg->len == 0U) || (msg->len > I2C_SOC_TRANSFER_COUNT_MAX)) {
+		return -EINVAL;
+	}
+
+	ret = hpm_i2c_dma_start(dev, msg);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* DMA must be armed before the controller is told to consume its request. */
+	k_sem_reset(&data->i2c_done);
+	data->dma_transfer_active = true;
+	i2c_clear_status(config->base, I2C_STATUS_CMPL_MASK);
+	i2c_enable_irq(config->base, I2C_EVENT_TRANSACTION_COMPLETE | I2C_EVENT_LOSS_ARBITRATION);
+	status = read ? i2c_master_start_dma_read(config->base, addr, msg->len)
+		      : i2c_master_start_dma_write(config->base, addr, msg->len);
+	if (status != status_success) {
+		data->dma_transfer_active = false;
+		hpm_i2c_dma_abort(dev, read);
+		return hpm_i2c_status_to_errno(status);
+	}
+
+	if (k_sem_take(&data->dma_done, K_MSEC(CONFIG_I2C_HPMICRO_DMA_TIMEOUT_MS)) < 0) {
+		data->dma_transfer_active = false;
+		hpm_i2c_dma_abort(dev, read);
+		return -ETIMEDOUT;
+	}
+	if (k_sem_take(&data->i2c_done, K_MSEC(CONFIG_I2C_HPMICRO_DMA_TIMEOUT_MS)) < 0) {
+		data->dma_transfer_active = false;
+		hpm_i2c_dma_abort(dev, read);
+		return -ETIMEDOUT;
+	}
+	data->dma_transfer_active = false;
+	i2c_disable_irq(config->base, I2C_EVENT_TRANSACTION_COMPLETE | I2C_EVENT_LOSS_ARBITRATION);
+	if (data->dma_error) {
+		hpm_i2c_dma_abort(dev, read);
+		return -EIO;
+	}
+	if (!read && !I2C_STATUS_ACK_GET(i2c_get_status(config->base))) {
+		hpm_i2c_dma_abort(dev, read);
+		return -EIO;
+	}
+
+	i2c_clear_status(config->base, I2C_STATUS_CMPL_MASK);
+	i2c_dma_disable(config->base);
+
+	if (read) {
+		(void)sys_cache_data_invd_range(msg->buf, msg->len);
+	}
+	return 0;
+}
+#endif /* CONFIG_I2C_HPMICRO_DMA */
 
 static int hpm_i2c_transfer_frame(const struct hpm_i2c_config *config,
 				  const struct hpm_i2c_data *data, uint16_t addr,
@@ -347,7 +525,15 @@ static int hpm_i2c_transfer(const struct device *dev, struct i2c_msg *msgs, uint
 #endif
 
 	for (uint8_t i = 0U; i < num_msgs; i++) {
-		ret = hpm_i2c_transfer_frame(config, data, addr, &msgs[i]);
+#ifdef CONFIG_I2C_HPMICRO_DMA
+		if ((config->dma_dev != NULL) && (num_msgs == 1U) && i2c_is_stop_op(&msgs[i]) &&
+		    !hpm_i2c_msg_is_10bit(data, &msgs[i])) {
+			ret = hpm_i2c_transfer_frame_dma(dev, addr, &msgs[i]);
+		} else
+#endif
+		{
+			ret = hpm_i2c_transfer_frame(config, data, addr, &msgs[i]);
+		}
 		if (ret < 0) {
 			goto unlock;
 		}
@@ -395,6 +581,34 @@ unlock:
 	return -ENOTSUP;
 #endif
 }
+
+#ifdef CONFIG_I2C_HPMICRO_DMA
+static void hpm_i2c_master_isr(const struct device *dev)
+{
+	const struct hpm_i2c_config *config = dev->config;
+	struct hpm_i2c_data *data = dev->data;
+	uint32_t status = i2c_get_status(config->base);
+
+	if ((status & I2C_EVENT_LOSS_ARBITRATION) != 0U) {
+		i2c_clear_status(config->base, I2C_EVENT_LOSS_ARBITRATION);
+		data->dma_error = true;
+		if (data->dma_active) {
+			(void)dma_stop(config->dma_dev,
+				       i2c_get_direction(config->base) == I2C_DIR_MASTER_READ
+					       ? config->rx_dma_channel
+					       : config->tx_dma_channel);
+			data->dma_active = false;
+		}
+		k_sem_give(&data->dma_done);
+		k_sem_give(&data->i2c_done);
+	}
+
+	if ((status & I2C_EVENT_TRANSACTION_COMPLETE) != 0U) {
+		i2c_clear_status(config->base, I2C_EVENT_TRANSACTION_COMPLETE);
+		k_sem_give(&data->i2c_done);
+	}
+}
+#endif /* CONFIG_I2C_HPMICRO_DMA */
 
 #ifdef CONFIG_I2C_TARGET
 static void hpm_i2c_target_end_transfer(struct hpm_i2c_data *data)
@@ -648,6 +862,25 @@ unlock:
 }
 #endif /* CONFIG_I2C_TARGET */
 
+#if defined(CONFIG_I2C_TARGET) || defined(CONFIG_I2C_HPMICRO_DMA)
+static void hpm_i2c_isr(const struct device *dev)
+{
+#ifdef CONFIG_I2C_HPMICRO_DMA
+	const struct hpm_i2c_data *data = dev->data;
+
+	if (data->dma_transfer_active) {
+		hpm_i2c_master_isr(dev);
+		return;
+	}
+#endif
+#ifdef CONFIG_I2C_TARGET
+	hpm_i2c_target_isr(dev);
+#else
+	ARG_UNUSED(dev);
+#endif
+}
+#endif
+
 static int hpm_i2c_init(const struct device *dev)
 {
 	const struct hpm_i2c_config *config = dev->config;
@@ -680,8 +913,30 @@ static int hpm_i2c_init(const struct device *dev)
 	}
 
 	k_mutex_init(&data->lock);
-#ifdef CONFIG_I2C_TARGET
+#if defined(CONFIG_I2C_TARGET) || defined(CONFIG_I2C_HPMICRO_DMA)
 	config->irq_config_func(dev);
+#endif
+#ifdef CONFIG_I2C_HPMICRO_DMA
+	if (config->dma_dev != NULL) {
+		uint32_t tx_filter = BIT(config->tx_dma_channel);
+		uint32_t rx_filter = BIT(config->rx_dma_channel);
+		int channel;
+
+		if (!device_is_ready(config->dma_dev)) {
+			return -ENODEV;
+		}
+		channel = dma_request_channel(config->dma_dev, &tx_filter);
+		if (channel < 0) {
+			return channel;
+		}
+		channel = dma_request_channel(config->dma_dev, &rx_filter);
+		if (channel < 0) {
+			dma_release_channel(config->dma_dev, config->tx_dma_channel);
+			return channel;
+		}
+		k_sem_init(&data->dma_done, 0, 1);
+		k_sem_init(&data->i2c_done, 0, 1);
+	}
 #endif
 
 	return hpm_i2c_configure(dev,
@@ -704,18 +959,35 @@ static DEVICE_API(hpm_i2c, hpm_i2c_api) = {
 	.smbus_block_transfer = hpm_i2c_smbus_block_transfer_impl,
 };
 
-#ifdef CONFIG_I2C_TARGET
+#ifdef CONFIG_I2C_HPMICRO_DMA
+#define HPM_I2C_DMA_CONFIG(n)                                                                      \
+	.dma_dev = COND_CODE_1(DT_INST_DMAS_HAS_NAME(n, tx),                                       \
+			       (DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_NAME(n, tx))), (NULL)),                          \
+		 .tx_dma_channel = COND_CODE_1(DT_INST_DMAS_HAS_NAME(n, tx),                                 \
+				      (DT_INST_DMAS_CELL_BY_NAME(n, tx, channel)), (0)),                           \
+			  .rx_dma_channel = COND_CODE_1(DT_INST_DMAS_HAS_NAME(n, rx),                                 \
+				      (DT_INST_DMAS_CELL_BY_NAME(n, rx, channel)), (0)),                  \
+				   .dma_request = COND_CODE_1(DT_INST_DMAS_HAS_NAME(n, tx),                                    \
+				   (DT_INST_DMAS_CELL_BY_NAME(n, tx, request)), (0)),
+#else
+#define HPM_I2C_DMA_CONFIG(n)
+#endif
+
+#if defined(CONFIG_I2C_TARGET) || defined(CONFIG_I2C_HPMICRO_DMA)
 #define HPM_I2C_IRQ_CONFIG(n)                                                                      \
 	static void hpm_i2c_irq_config_##n(const struct device *dev)                               \
 	{                                                                                          \
-		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), hpm_i2c_target_isr,         \
+		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), hpm_i2c_isr,                \
 			    DEVICE_DT_INST_GET(n), 0);                                             \
+		irq_enable(DT_INST_IRQN(n));                                                       \
 	}
 
 #define HPM_I2C_IRQ_CONFIG_FIELD(n) .irq_config_func = hpm_i2c_irq_config_##n,
+#define HPM_I2C_IRQ_NUM_FIELD(n)    .irq = DT_INST_IRQN(n),
 #else
 #define HPM_I2C_IRQ_CONFIG(n)
 #define HPM_I2C_IRQ_CONFIG_FIELD(n)
+#define HPM_I2C_IRQ_NUM_FIELD(n)
 #endif
 
 #define HPM_I2C_INIT(n)                                                                            \
@@ -731,8 +1003,7 @@ static DEVICE_API(hpm_i2c, hpm_i2c_api) = {
 		.clock_div = DT_INST_CLOCKS_CELL_BY_IDX(n, 0, divider),                            \
 		.bitrate = DT_INST_PROP(n, clock_frequency),                                       \
 		.pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),                                       \
-		HPM_I2C_IRQ_CONFIG_FIELD(n)                                                        \
-			IF_ENABLED(CONFIG_I2C_TARGET, (.irq = DT_INST_IRQN(n),))};                    \
+		HPM_I2C_DMA_CONFIG(n) HPM_I2C_IRQ_CONFIG_FIELD(n) HPM_I2C_IRQ_NUM_FIELD(n)};       \
                                                                                                    \
 	static struct hpm_i2c_data hpm_i2c_data_##n;                                               \
                                                                                                    \

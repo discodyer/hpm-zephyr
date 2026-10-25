@@ -12,3 +12,25 @@ config I2C_HPMICRO
 	select USE_HPMSDK_I2C
 	help
 	  Enable the HPMicro I2C controller driver.
+
+if I2C_HPMICRO
+
+config I2C_HPMICRO_DMA
+	bool "Use DMA for controller transfers"
+	default y if DT_HAS_HPMICRO_HPM_DMA_ENABLED
+	select DMA
+	help
+	  Use DMA for controller-mode data phases when the I2C node has a
+	  matching DMA channel. The I2C controller still owns address and
+	  start/stop phases. Disable to use the polling path.
+
+config I2C_HPMICRO_DMA_TIMEOUT_MS
+	int "I2C DMA transaction timeout"
+	depends on I2C_HPMICRO_DMA
+	default 1000
+	range 1 60000
+	help
+	  Maximum time to wait for the DMA channel and I2C transaction-complete
+	  interrupt during a controller-mode transfer.
+
+endif # I2C_HPMICRO

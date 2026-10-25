@@ -207,11 +207,17 @@ ZTEST(hpm5300evk, test_devices_ready)
 
 #if DT_NODE_HAS_STATUS(I2C_NODE, okay)
 	const struct device *i2c = DEVICE_DT_GET(I2C_NODE);
+	struct i2c_msg invalid_msg = {
+		.buf = NULL,
+		.len = 1U,
+		.flags = I2C_MSG_WRITE | I2C_MSG_STOP,
+	};
 
 	zassert_true(device_is_ready(i2c));
 	zassert_true(DEVICE_API_IS(i2c, i2c));
 	zassert_true(DEVICE_API_IS(hpm_i2c, i2c));
 	zassert_equal(hpm_i2c_smbus_quick(i2c, 0x80U, false), -EINVAL);
+	zassert_equal(i2c_transfer(i2c, &invalid_msg, 1U, 0x50U), -EINVAL);
 #endif
 #if DT_NODE_HAS_STATUS(SMBUS_NODE, okay)
 	const struct device *smbus = DEVICE_DT_GET(SMBUS_NODE);
