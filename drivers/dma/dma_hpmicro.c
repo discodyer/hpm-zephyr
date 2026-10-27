@@ -736,9 +736,14 @@ static int hpm_dma_init(const struct device *dev)
 		return -ENODEV;
 	}
 
-	if (clock_set_source_divider(config->clock_name, config->clock_src, config->clock_div) !=
-	    status_success) {
-		return -EINVAL;
+	if (GET_CLK_SRC_GROUP_FROM_NAME(config->clock_name) !=
+	    CLK_SRC_GROUP_AHB) {
+		ret = clock_set_source_divider(config->clock_name,
+					       config->clock_src,
+					       config->clock_div);
+		if (ret != status_success) {
+			return -EINVAL;
+		}
 	}
 
 	ret = clock_control_on(config->clock_dev, config->clock_subsys);
