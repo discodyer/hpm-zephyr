@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+
+cmake_minimum_required(VERSION 3.20.0)
+if(NOT DEFINED EXTRA_CONF_FILE)
+  set(EXTRA_CONF_FILE profiles/core.conf CACHE STRING "Hardware acceptance configuration")
+endif()
+if(NOT DEFINED DTC_OVERLAY_FILE)
+  set(DTC_OVERLAY_FILE profiles/core.overlay CACHE STRING "Hardware acceptance overlay")
+endif()
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(hpm5361_hardware_acceptance)
+target_sources(app PRIVATE src/main.c)
+foreach(profile core dma)
+  string(TOUPPER ${profile} symbol)
+  target_sources_ifdef(CONFIG_HPM_TEST_${symbol} app PRIVATE src/${profile}.c)
+endforeach()

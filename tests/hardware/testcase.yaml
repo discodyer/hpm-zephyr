@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+
+common:
+  tags:
+    - hpmicro
+    - hardware
+  platform_allow:
+    - hpm5300evk/hpm5361
+  harness: ztest
+  timeout: 90
+  integration_platforms:
+    - hpm5300evk/hpm5361
+tests:
+  hpmicro.hardware.core:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/core.conf
+      - DTC_OVERLAY_FILE=profiles/core.overlay
+    harness_config:
+      fixture: hpm5300evk
+  hpmicro.hardware.dma:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/dma.conf
+      - DTC_OVERLAY_FILE=profiles/dma.overlay
+    harness_config:
+      fixture: hpm5300evk

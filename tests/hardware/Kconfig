@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "HPM5361 hardware acceptance"
+
+choice HPM_TEST_PROFILE
+	prompt "Isolated acceptance profile"
+	default HPM_TEST_CORE
+
+config HPM_TEST_CORE
+	bool "core"
+
+config HPM_TEST_DMA
+	bool "dma"
+
+endchoice
+
+source "Kconfig.zephyr"

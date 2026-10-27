@@ -1,0 +1,44 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/ {
+	chosen {
+		zephyr,crc = &crc0;
+	};
+};
+
+&gptmr0 {
+	status = "okay";
+};
+
+&rng {
+	status = "okay";
+	self-test;
+};
+
+&tsns0 {
+	status = "okay";
+};
+
+&crc0 {
+	status = "okay";
+};
+
+&otp {
+	status = "okay";
+};
+
+&mbx0a {
+	status = "okay";
+};
+
+&mbx0b {
+	status = "okay";
+};
+
+&ptpc0 {
+	status = "okay";
+};
+
+&trgm0 {
+	status = "okay";
+};
