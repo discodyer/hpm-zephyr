@@ -14,3 +14,7 @@ foreach(profile core dma)
   string(TOUPPER ${profile} symbol)
   target_sources_ifdef(CONFIG_HPM_TEST_${symbol} app PRIVATE src/${profile}.c)
 endforeach()
+
+if(CONFIG_HPM_TEST_CRYPTO)
+  target_sources(app PRIVATE ../hpm5300evk/src/crypto.c)
+endif()

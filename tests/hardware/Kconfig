@@ -12,6 +12,9 @@ config HPM_TEST_CORE
 config HPM_TEST_DMA
 	bool "dma"
 
+config HPM_TEST_CRYPTO
+	bool "crypto"
+
 endchoice
 
 source "Kconfig.zephyr"

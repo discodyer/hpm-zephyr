@@ -526,8 +526,8 @@ static int hpm_crypto_hash_compute(const struct device *dev, enum hpm_sdp_hash_a
 		return -ENOTSUP;
 	}
 
-	if ((digest == NULL) || (digest_len != expected_len) ||
-	    ((input == NULL) && (input_len != 0U))) {
+	if ((digest == NULL) || (input == NULL) ||
+	    (digest_len != expected_len)) {
 		return -EINVAL;
 	}
 

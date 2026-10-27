@@ -119,7 +119,7 @@ static int aes_ecb_run(const uint8_t *key, size_t key_len, const uint8_t *expect
 		return ret;
 	}
 
-	zassert_equal(pkt.out_len, sizeof(expected));
+	zassert_equal(pkt.out_len, sizeof(ecb_plaintext));
 	return memcmp(output, expected, sizeof(ecb_plaintext));
 }
 
