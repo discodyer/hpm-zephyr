@@ -36,3 +36,9 @@ tests:
       - DTC_OVERLAY_FILE=profiles/flash.overlay
     harness_config:
       fixture: hpm_flash_scratch
+  hpmicro.hardware.watchdog:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/watchdog.conf
+      - DTC_OVERLAY_FILE=profiles/watchdog.overlay
+    harness_config:
+      fixture: hpm5300evk

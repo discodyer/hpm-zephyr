@@ -21,6 +21,12 @@ config HPM_TEST_FLASH
 	  Erase and program the dedicated XPI NOR scratch partition, then
 	  verify readback and cache visibility through the XIP mapping.
 
+config HPM_TEST_WATCHDOG
+	bool "watchdog"
+	help
+	  Verify watchdog feeding and timeout callbacks without resetting
+	  the board, using the EWDG0 interrupt-only mode.
+
 endchoice
 
 source "Kconfig.zephyr"
