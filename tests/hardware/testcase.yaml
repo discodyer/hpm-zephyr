@@ -42,3 +42,9 @@ tests:
       - DTC_OVERLAY_FILE=profiles/watchdog.overlay
     harness_config:
       fixture: hpm5300evk
+  hpmicro.hardware.can:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/can.conf
+      - DTC_OVERLAY_FILE=profiles/can.overlay
+    harness_config:
+      fixture: hpm5300evk

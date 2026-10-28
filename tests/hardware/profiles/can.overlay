@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+&mcan0 {
+	status = "okay";
+	pinctrl-0 = <&pa16_mcan0_txd &pa17_mcan0_rxd>;
+	pinctrl-names = "default";
+};
+
+&ptpc0 {
+	status = "okay";
+};

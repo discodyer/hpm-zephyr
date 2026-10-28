@@ -27,6 +27,12 @@ config HPM_TEST_WATCHDOG
 	  Verify watchdog feeding and timeout callbacks without resetting
 	  the board, using the EWDG0 interrupt-only mode.
 
+config HPM_TEST_CAN
+	bool "can"
+	help
+	  Verify classic CAN, CAN FD and PTPC timestamps using internal MCAN0
+	  loopback, without requiring an external CAN bus.
+
 endchoice
 
 source "Kconfig.zephyr"
