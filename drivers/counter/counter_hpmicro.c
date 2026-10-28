@@ -395,7 +395,8 @@ static int hpm_gptmr_init(const struct device *dev)
 	}
 
 	gptmr_channel_get_default_config(config->base, &channel_cfg);
-	channel_cfg.enable_cmp_output = false;
+	/* CMPEN gates the compare event as well as its optional pin output. */
+	channel_cfg.enable_cmp_output = true;
 	channel_cfg.enable_software_sync = false;
 	for (channel = 0U; channel < HPM_GPTMR_CHANNELS; channel++) {
 		channel_cfg.reload = data->top;

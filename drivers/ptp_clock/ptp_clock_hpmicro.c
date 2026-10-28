@@ -34,6 +34,7 @@ struct hpm_ptpc_data {
 	struct k_mutex lock;
 	struct k_spinlock event_lock;
 	uint32_t nominal_addend;
+	uint8_t fine_increment;
 	uint32_t latched_events;
 	uint32_t event_mask;
 	hpm_ptpc_event_callback_t callback;
@@ -120,12 +121,8 @@ static int hpm_ptpc_set(const struct device *dev, struct net_ptp_time *tm)
 	}
 
 	k_mutex_lock(&data->lock, K_FOREVER);
-	ptpc_disable_timer(config->base, config->index);
 	status = ptpc_init_timer_with_initial(config->base, config->index, (uint32_t)tm->second,
 					      tm->nanosecond, ptpc_counting_increment);
-	if (status == status_success) {
-		ptpc_enable_timer(config->base, config->index);
-	}
 	k_mutex_unlock(&data->lock);
 
 	return hpm_ptpc_status_to_errno(status);
@@ -204,6 +201,8 @@ static int hpm_ptpc_rate_adjust(const struct device *dev, double ratio)
 
 	k_mutex_lock(&data->lock, K_FOREVER);
 	config->base->PTPC[config->index].ADDEND = addend;
+	ptpc_set_ns_counter_step(config->base, config->index, data->fine_increment);
+	ptpc_set_ns_counter_update_type(config->base, config->index, true);
 	k_mutex_unlock(&data->lock);
 
 	return 0;
@@ -541,10 +540,10 @@ static int hpm_ptpc_init(const struct device *dev)
 	ptpc_config.ns_rollover_mode = ptpc_ns_counter_rollover_digital;
 	ptpc_config.src_frequency = clock_rate;
 	/*
-	 * The SDK field selects CTRL0.FINE_COARSE_SEL directly despite its name.
-	 * Set it so ADDEND controls the fractional nanosecond accumulation.
+	 * The SDK field is named coarse_increment, while the hardware bit selects
+	 * fine mode when set. Keep the SDK default (false) for coarse counting.
 	 */
-	ptpc_config.coarse_increment = true;
+	ptpc_config.coarse_increment = false;
 
 	/*
 	 * Use two nominal increments per clock. The fractional accumulator then
@@ -566,12 +565,8 @@ static int hpm_ptpc_init(const struct device *dev)
 		return hpm_ptpc_status_to_errno(status);
 	}
 
-	/* ptpc_init() derives SS_INCR for one increment per clock; override it. */
-	ptpc_disable_timer(config->base, config->index);
-	ptpc_set_ns_counter_step(config->base, config->index, counter_incr);
-	config->base->PTPC[config->index].ADDEND = (uint32_t)nominal_addend;
-	ptpc_init_timer(config->base, config->index);
-	ptpc_enable_timer(config->base, config->index);
+	/* Keep the SDK-derived coarse step until the caller requests rate tuning. */
+	data->fine_increment = (uint8_t)counter_incr;
 	data->nominal_addend = (uint32_t)nominal_addend;
 	k_mutex_init(&data->lock);
 	config->irq_config_func(dev);

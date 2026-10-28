@@ -14,3 +14,12 @@ config ENTROPY_HPMICRO_RNG
 	select USE_HPMSDK_RNG
 	help
 	  Enable the HPMicro hardware true random number generator.
+
+config ENTROPY_HPMICRO_RNG_TIMEOUT
+	int "RNG operation timeout (milliseconds)"
+	default 1000
+	range 1 60000
+	depends on ENTROPY_HPMICRO_RNG
+	help
+	  Maximum time to wait for random data or a seed operation. A finite
+	  timeout prevents a failed or unclocked RNG from hanging the system.

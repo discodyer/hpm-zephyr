@@ -56,7 +56,7 @@ static enum clock_control_status hpm_clock_control_get_status(const struct devic
 								   : CLOCK_CONTROL_STATUS_OFF;
 }
 
-static const struct clock_control_driver_api hpm_clock_control_api = {
+static DEVICE_API(clock_control, hpm_clock_control_api) = {
 	.on = hpm_clock_control_on,
 	.off = hpm_clock_control_off,
 	.get_rate = hpm_clock_control_get_rate,

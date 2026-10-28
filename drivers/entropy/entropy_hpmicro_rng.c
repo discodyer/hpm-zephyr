@@ -54,6 +54,7 @@ static int hpm_rng_read(const struct device *dev, uint8_t *buffer, uint16_t leng
 	const struct hpm_rng_config *config = dev->config;
 	struct hpm_rng_data *data = dev->data;
 	uint16_t offset = 0U;
+	int64_t deadline = k_uptime_get() + CONFIG_ENTROPY_HPMICRO_RNG_TIMEOUT;
 
 	if ((buffer == NULL) || (length == 0U)) {
 		return -EINVAL;
@@ -70,6 +71,9 @@ static int hpm_rng_read(const struct device *dev, uint8_t *buffer, uint16_t leng
 			}
 			if (!wait) {
 				return offset;
+			}
+			if (k_uptime_get() >= deadline) {
+				return -ETIMEDOUT;
 			}
 			k_busy_wait(1U);
 		}
@@ -155,6 +159,25 @@ static int hpm_rng_init(const struct device *dev)
 		if (status != status_success) {
 			LOG_ERR("%s: RNG self-test failed (0x%x)", dev->name, status);
 			return hpm_rng_status_to_errno(status);
+		}
+
+		/* The HPM5300 self-test invalidates the initial seed. Start a new one. */
+		config->base->CMD |= RNG_CMD_CLRERR_MASK;
+		config->base->CMD |= RNG_CMD_GENSD_MASK;
+		int64_t deadline = k_uptime_get() + CONFIG_ENTROPY_HPMICRO_RNG_TIMEOUT;
+
+		while ((config->base->STA & RNG_STA_FSDDN_MASK) == 0U) {
+			uint32_t seed_status = config->base->STA;
+
+			if ((seed_status & RNG_STA_FUNCERR_MASK) != 0U) {
+				LOG_ERR("%s: RNG reseed failed (STA=0x%x ERR=0x%x)", dev->name,
+					seed_status, config->base->ERR);
+				return -EIO;
+			}
+			if (k_uptime_get() >= deadline) {
+				return -ETIMEDOUT;
+			}
+			k_busy_wait(1U);
 		}
 	}
 
