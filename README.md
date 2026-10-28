@@ -19,7 +19,7 @@ modules/hpm_sdk/             HPM SDK integration glue
 
 | Board | Target | Console | Build status | Hardware status |
 |---|---|---|---|---|
-| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | Not validated |
+| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and ten hardware profiles (39 tests) pass |
 | HPM5361ICB | `hpm5361icb/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | Not validated |
 
 Both targets currently provide interrupt routing, machine timer, clock/PLL and
@@ -39,10 +39,30 @@ and initialization execute from RAM while XIP is active.
 | hpm-zephyr | Current `main`; release manifests pin immutable commits |
 
 Build-only validation is complete for both boards, including the Twister
-smoke test. No console, timer, GPIO, flash erase/program, boot, or runner
-behavior has been validated on real hardware. USB device enumeration and class
-traffic are also unvalidated. SDP AES/SHA known-answer tests are built into the
-crypto smoke image but have not been executed on hardware.
+smoke test. EVK RevD XIP startup, basic polling UART echo/heartbeat,
+OpenOCD flash/verify and GDB breakpoints/single-step passed. The hardware
+acceptance profiles passed 39 tests: `core` (8/8), `dma` (2/2), `crypto` (6/6),
+`flash` (1/1), `watchdog` (4/4), `can` (2/2), `motor` (5/5), `gpio` (4/4),
+`uart` (4/4) and `i2c` (3/3). Coverage includes internal CAN/TSU loopback,
+motor-block math and routing, GPIO edge interrupts, UART1 DMA/RTS/CTS and
+paired I2C DMA/repeated START/SMBus block/PEC transfers.
+
+Each result covers the paths listed in the
+[hardware test record](tests/hardware/README.md). Flash coverage is limited
+to erase/program/read/cache behavior in the reserved scratch sector;
+JEDEC/geometry, boundaries and latency remain unvalidated. The crypto result
+covers synchronous SDP known-answer tests; async completion and stress remain
+open. Independent timer accuracy, USB enumeration and class traffic remain
+unvalidated. SPI validation is deferred at the user's request.
+
+On 2026-10-27, FT2232 reset wiring, NOR boot-option retention and PMP access
+to the DM debug ROM were corrected without changing the SDK. The DM region
+at `0x30000000..0x300001ff` remains RWX while data execution prevention stays
+enabled. The wrapper resets and halts on GDB attach so the XPI probe algorithm
+can run before application PMP initialization. Use the minimal
+[`samples/bringup`](samples/bringup/README.rst) for startup/debugging checks.
+The container's HPM OpenOCD is `/usr/local/bin/openocd`; pass it explicitly to
+`west flash/debug` instead of using the Zephyr SDK's OpenOCD.
 
 The module can be validated without adding it to the west manifest:
 
@@ -65,49 +85,50 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 
 | Peripheral | Instances | Zephyr API | Driver status | Current scope / missing work |
 |---|---:|---|---|---|
-| Clock / PLL | 1 PLLCTLV2 | `clock_control` | Implemented (build-only) | Clock gating and rate queries; PM/PDGO domains are separate |
+| Clock / PLL | 1 PLLCTLV2 | `clock_control` | GPTMR clock recovery hardware-tested | Clock gating and rate queries; full clock-tree coverage and PM/PDGO domains remain separate |
 | IOC / PIOC | 2 controllers | `pinctrl` | Implemented (build-only) | Pad mux and pad settings; build-time conflict checks only |
-| UART | UART0-7, PUART | `serial` | Implemented core (build-only) | Polling and interrupt-driven APIs, FIFO fill/read, runtime IRQ control, callbacks, line-status errors; async/DMA, wide data, flow control and RS-485 not exposed |
-| GPIO | GPIOA/B enabled by default; GPIOX/Y, FGPIOA/B/X/Y, PGPIO disabled | `gpio` | Implemented core (build-only) | Basic I/O, port operations, interrupts and callbacks; FGPIO has no interrupt output; current tests exercise GPIOA and FGPIOA |
-| I2C | 4 | `i2c` | Partial | Controller and target modes, 7/10-bit addressing, standard/fast/fast-plus, arbitrary multi-message transactions and bus recovery; no SMBus helpers or DMA |
+| UART | UART0-7, PUART | `serial` | UART1 DMA and RTS/CTS loopback hardware-tested | Polling, interrupt-driven and async/DMA APIs; 257 B transfer, segmented RX offsets, RTS/CTS loopback and RX disable/re-enable passed; CTS backpressure, continuous dual-buffer RX, RS-485 and address matching remain unvalidated |
+| GPIO | GPIOA/B enabled by default; GPIOX/Y, FGPIOA/B/X/Y, PGPIO disabled | `gpio` | PB04/PB05 loopback hardware-tested | Raw levels, set/clear/masked/toggle, rising/falling/both-edge IRQs and disable/rearm passed; level IRQs, other ports and electrical characteristics remain unvalidated; FGPIO has no interrupt output |
+| I2C | 4 | `i2c` | Paired DMA and SMBus paths hardware-tested | Controller/target, 7/10-bit addressing, standard/fast/fast-plus, multi-message transfers, DMA, bus recovery and SMBus helpers; paired DMA/repeated START, byte/word/block transfers, valid/corrupt PEC and malformed-count recovery passed; 10-bit, process calls, bus recovery and fault injection remain unvalidated |
 | SPI | 4 | `spi` | Partial | Controller, Motorola, single-line, native CS, scatter/gather TX/RX buffers with 8/16/24/32-bit frames and unequal TX/RX lengths; no GPIO CS, half-duplex, TI frame, multi-line, hold/lock or asynchronous API |
-| XPI NOR / XIP | 1 | `flash` | Implemented (build-only) | Read, write, erase and page layout through vendor ROM API; no EXIP integration |
-| MCAN / CAN-FD | 4 | `can` + custom extension | Implemented (build-only) | Zephyr `can_mcan` backend, classic CAN and CAN-FD timing, shared 32 KiB AHB message RAM split into 8 KiB windows; HPM TSU configuration/readback, PTPC external timebase selection, RX timestamp-slot decode and per-filter sync-capture control through `hpm_mcan`. Generic CAN frames still expose only the 16-bit timestamp field, so TSU captures are decoded with the HPM helper |
+| XPI NOR / XIP | 1 | `flash` | Basic scratch-sector path hardware-tested | Read, write, erase and page layout through vendor ROM API; JEDEC/geometry discovery and EXIP integration are absent |
+| MCAN / CAN-FD | 4 | `can` + custom extension | MCAN0 silent internal loopback hardware-tested | Classic/FD/BRS data and TX/RX ISR checks passed; 64-bit TSU captures matched PTPC0 time bounds across eight slots and two wraps. Shared 32 KiB AHB message RAM is split into 8 KiB windows. Generic frames expose a 16-bit timestamp field; full TSU captures use the `hpm_mcan` helper. External bus behavior and MRAM concurrency remain unvalidated |
 | PWM | 2 x 8 channels | `pwm` | Implemented (build-only) | Edge-aligned `set_cycles`, polarity, 0-100% duty; complementary/dead-zone/fault/capture modes not exposed yet |
-| HDMA / DMAMUX | 32 channels | `dma` | Implemented core (build-only) | Single-block mem2mem/mem2periph/periph2mem, cyclic, DMAMUX requests, callbacks, channel allocation/release and status/attributes; linked-list gather/scatter, suspend/resume and multi-block transfer lists not exposed |
+| HDMA / DMAMUX | 32 channels | `dma` | Linked-block and suspend/resume paths hardware-tested | Memory-to-memory/peripheral transfers, cyclic mode, linked descriptors, DMAMUX requests, callbacks, channel allocation/release and status/attributes; peripheral-to-peripheral is unsupported by the silicon |
 | ADC16 | 2 | `adc` | Implemented (build-only) | Synchronous single-ended reads, 8/10/12/16-bit resolution, sample-cycle acquisition, PLL/ANA clock selection; no async, DMA sequence or hardware trigger |
 | DAC12 | 2 | `dac` | Implemented (build-only) | Direct-mode 12-bit channel setup and synchronous value writes; buffer, step and trigger modes not exposed |
 | ACMP | 1 block, 2 comparators | `comparator` | Implemented (build-only) | Per-channel comparator devices, input selection, hysteresis, filtering, internal DAC threshold, edge IRQ/callback; live output level is not exposed by hardware |
 | OPAMP | 2 | `opamp` | Implemented (build-only) | Follower, inverting, non-inverting and custom modes; internal/external/DAC references, initial and runtime gain, input selection, Miller and phase-margin capacitors; no differential mode |
-| GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Implemented (build-only) | Four hardware alarm channels, top/reload callback, absolute and relative alarms, guard period; capture and output compare are separate consumers |
-| Watchdog | EWDG0-1, PEWDG | `watchdog` | Implemented (build-only) | Single timeout/channel, 32 kHz counter clock, SoC reset, early timeout callback, sleep/debug pause options; window and CPU-core reset unsupported |
+| GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Core alarm path hardware-tested | GPTMR alarm IRQ and clock recovery passed in the core profile; top/wrap boundaries and other timer channels remain unvalidated |
+| Watchdog | EWDG0-1, PEWDG | `watchdog` | EWDG0 IRQ-only paths hardware-tested | Thread/ISR feeding, delayed feeding, repeated timeout, disable/reinstall and 500 ms to 2500 ms reconfiguration passed; SoC reset, window mode and sleep/debug pause remain unvalidated; CPU-core-only reset and multistage watchdog are unsupported |
 | RTC | None | N/A | Not applicable | HPM5300/HPM5361 has no independent RTC block; use a board-level external RTC if wall-clock time is required |
-| USB HS OTG | 1 | UDC/UHC | Device-only UDC implemented (build-only) | Zephyr UDC driver reuses the unmodified SDK qTD/qDHD engine and covers HS/FS endpoints, SETUP tripwire, reset/suspend/resume, VBUS events, remote wakeup and test modes. qHD/qTD storage is in Andes PMA non-cacheable RAM. UHC/host mode, USB classes and hardware enumeration remain unvalidated; CherryUSB/TinyUSB are not adopted |
-| MBX | MBX0A/B | `mbox` | Implemented (build-only) | One 32-bit word-message channel per endpoint, interrupt-driven receive callbacks and clock gating; separate 4-word FIFO, signalling-only mode and shared-memory IPC protocol not exposed |
-| GPIOM | 1 | `hpm_gpiom` | Implemented core (build-only) | GPIO0/FGPIO0 ownership, per-controller input visibility, lock and lock-state queries for GPIOA/B/X/Y; permission/security controls and migration of existing board pin ownership are not automated |
+| USB HS OTG | 1 | UDC/UHC | Device-only UDC implemented (build-only) | Zephyr UDC driver reuses the unmodified SDK qTD/qDHD engine and covers HS/FS endpoints, SETUP tripwire, reset/suspend/resume, VBUS events, remote wakeup and test modes. qHD/qTD storage is in HPM5361's fixed uncached DLM. UHC/host mode, USB classes and hardware enumeration remain unvalidated; CherryUSB/TinyUSB are not adopted |
+| MBX | MBX0A/B | `mbox` | Core path hardware-tested | Bidirectional message ordering passed in the core profile; separate 4-word FIFO, signalling-only mode and cross-core shared-memory IPC remain unvalidated |
+| GPIOM | 1 | `hpm_gpiom` | Input visibility path hardware-tested | PA24 FGPIO0 input visibility toggle and restore passed without driving the physical pin; ownership, other controllers, locks and security behavior remain unvalidated |
 | TRGM | 1 | `mux` + custom extension | Implemented core (build-only) | One mux control per TRGM output with runtime source selection and readback; input filters, output inversion and edge-pulse conversion, eight DMA request routes, the ADC/DAC/position matrices, and named motor-control routes for SYNT/MMC/SEI/RDC/QEO/PLB inter-IP connections. The route helper validates fixed SDK mux indices at build time and leaves endpoint register configuration to the owning drivers. Interrupt routing is available through output 133/134 plus the existing output API, but no TRGM-specific IRQ callback is claimed because the block has no independent status/clear register |
 | QEIV2 | 2 | `sensor` + custom extension | Implemented core (build-only) | ABZ, pulse/direction, up/down, single-phase, UVW and ADC sine/cosine decoding; configurable counts and Z calibration, A/B delay filter, angle, raw position and revolution count; two pulse/duration speed counters with RPM conversion, phase/position comparators, watchdog, HOME/FAULT configuration, event routing to interrupt/DMA/trigger/read and callbacks. ADC sampling and TRGM ADC-matrix setup remain owned by ADC/TRGM; hardware behavior is not validated |
-| QEO | 2 | Custom `hpm_qeo` | Implemented core (build-only) | ABZ, pulse/direction, up/down and three-phase output; three-channel cosine/saddle/rectified-cosine/saw WAVE output with phase, amplitude, midpoint, limits and deadzone; per-channel VD/VQ injection with a synchronized three-channel load; 12-step positive/negative PWM FORCE tables and safety outputs; hardware/software position source, injection and status. Position and safety routing is configured through the TRGM motor-route API rather than acquired inside QEO |
+| QEO | 2 | Custom `hpm_qeo` | Cosine debug-value path hardware-tested | Four amplitude/midpoint configurations, four quadrants and three channels passed; ABZ/pulse/direction/PWM outputs, external waveforms and safety routing remain unvalidated |
 | SEI | 2 channels | Custom `hpm_sei` | Implemented core, SSI, Tamagawa, BiSS-C, EnDat, HIPERFACE and Nikon consumers (build-only) | Protocol-neutral transceiver, timing-point, command/data-register, instruction, latch/output, engine and W1C event APIs; external/periodic triggers, per-channel interrupt callbacks and whole-block consumer ownership. The SSI, Tamagawa, BiSS-C, EnDat 2.1/2.2, HIPERFACE and Nikon CDF0 master consumers cover position, status/checksum and timestamp capture with periodic polling and watchdog recovery. BiSS-C, EnDat, HIPERFACE and Nikon use fixed receive points because the vendor dynamic-delay calibration requires the E00047-affected RX latch path. HIPERFACE uses the vendor checksum sequence; E00025 requires a hardware parity workaround that is not yet implemented, so the 8E1 path remains hardware-unvalidated |
-| MMC | 2 | Custom `hpm_mmc` | Implemented core (build-only) | Track and two-predictor configuration, position/delta input, coefficients, position/speed triggers, result/status access, module control and shared-IRQ event callbacks for track and predictor events; incoming position and external-trigger/outgoing trigger routes are configured through TRGM |
+| MMC | 2 | Custom `hpm_mmc` | Open-loop math and module control hardware-tested | 1 turn/s prediction matched SYNT elapsed time and whole-module disable/resume passed; predictor BR_EN alone did not freeze continuous prediction; closed-loop behavior, external routes and IRQs remain unvalidated |
 | RDC | 1 | Custom `hpm_rdc` | Implemented core (build-only) | PWM/DAC excitation configuration, I/Q ADC accumulation input, filtering/scaling, output triggers, accumulated/extrema/delay result access, W1C event status and interrupt callbacks; integer-CORDIC Q16.16 electrical angle conversion without FPU/libm; TRGM/DAC routing is configured through TRGM |
-| PLB | 1 | Custom `hpm_plb` | Implemented core (build-only) | Four TYPE_A truth tables with software injection; four TYPE_B channels with 16 selectable slices, comparator modes and counter inject/read; TRGM input/output routing is configured through TRGM, while SDK filter/encoder components are not built |
-| SYNT | 1 | Custom `hpm_synt` | Implemented core (build-only) | Motor-system synchronization counter, four comparator outputs, debug-stop control and the shared timestamp/set/increment/decrement/capture interface; TRGM routing is configured through TRGM and userspace wrappers are not exposed |
-| CRC | 1 block, 8 channels | `crc` | Implemented (build-only) | Streaming CRC API, byte input, 8/16/32-bit polynomials, input/output reflection, IEEE/Castagnoli/MPEG-2 final XOR handling |
-| TSNS | 1 | `sensor` | Implemented (build-only) | Continuous die-temperature measurement, configurable averaging/speed/interval, exact fixed-point conversion to sensor_value; limits and interrupts not exposed |
-| RNG | 1 | `entropy` | Implemented (build-only) | Hardware TRNG with automatic reseeding, optional startup self-test and blocking thread-mode entropy reads; no ISR or asynchronous API |
-| PTPC | 1 block, 2 timestamp counters | `ptp_clock` + custom extension | Implemented (build-only) | 32-bit seconds plus nanosecond counters, set/get, signed time adjustment and ADDEND rate adjustment; input capture, compare targets, PPS output, event status and shared-IRQ callbacks through `hpm_ptpc`. CAN0-3 time-source selection and the four MCAN TSU input routes are exposed. Hardware timestamp capture behavior remains unvalidated |
-| SDP | 1 | `crypto` | Partial (build-only) | Synchronous AES-128/256 ECB, CBC and CTR plus SHA-256 through the Zephyr crypto API. The unmodified SDK `hpm_sdp_drv.c` is the hardware backend; operations are serialized and use non-cacheable bounce buffers. CTR counters are limited to 32-120 bits to avoid the pinned SDK counter-carry edge case at byte 0. SHA-1, SM3/SM4, CRC32, CCM, async completion and hardware timeout handling are not exposed yet |
+| PLB | 1 | Custom `hpm_plb` | TYPE_B0 slice15 path hardware-tested | LOAD/KEEP behavior passed using internal TRGM comparator observation; SW_INJECT is software-injection readback, not a live counter, so the counter getter returns `-ENOTSUP`; filter/encoder components remain outside this test |
+| SYNT | 1 | Custom `hpm_synt` | Counter control hardware-tested | Counter progress, freeze and resume passed; comparator outputs, external routing and debug-stop behavior remain unvalidated |
+| CRC | 1 block, 8 channels | `crc` | Core path hardware-tested | Streaming CRC32 known-answer test passed; other widths, polynomials and reflection combinations remain unvalidated |
+| TSNS | 1 | `sensor` | Core path hardware-tested | Temperature read and threshold IRQ passed; calibration/accuracy and operating-range coverage remain unvalidated |
+| RNG | 1 | `entropy` | Core path hardware-tested | Startup self-test, data reads and nonblocking ISR budget passed; adapter FIFO/reseed waits are bounded, but waits inside the pinned SDK initialization/self-test are not; entropy quality/statistical testing remains unvalidated |
+| PTPC | 1 block, 2 timestamp counters | `ptp_clock` + custom extension | Core and MCAN TSU paths partially hardware-tested | Progress, compare IRQ, internal TRGM capture and PTPC0-correlated 64-bit MCAN TSU timestamps passed; absolute precision, external capture, PPS, rate adjustment and the second counter remain unvalidated |
+| SDP | 1 | `crypto` | Synchronous KAT paths hardware-tested | AES-128/256 ECB/CBC/CTR/CCM, SHA-1/SHA-256/SM3/CRC32 and SM4 ECB/CBC/CTR through the standard API and HPM extensions, using the unmodified SDK backend. Six KATs including CCM tag rejection passed; true IRQ-driven async completion and stress remain unvalidated |
 | SEC / SECMON / KEYM | 1 each | Custom/security | Missing | No Zephyr integration |
-| OTP | 1 | `otp` | Implemented (build-only) | Read-only shadow access by default, byte-addressed API, optional irreversible fuse programming behind CONFIG_OTP_PROGRAM; lock/region helpers and reload not exposed |
+| OTP | 1 | `otp` | Read-only path hardware-tested | UUID shadow reads were repeatable; fuse programming, lock/region operations and reload remain unvalidated and irreversible actions stay opt-in |
 
-Implemented drivers are build-only until hardware validation is completed;
-missing drivers are not built or enabled. The SoC startup, PLIC, PLICSW, machine
+Hardware acceptance applies only to the paths listed above; other behavior
+remains build-only until its corresponding hardware test is completed.
+Missing drivers are not built or enabled. The SoC startup, PLIC, PLICSW, machine
 timer and cache paths are native Zephyr/SoC integration rather than HPM driver
 classes. No third-party module is currently selected for the remaining standard
 Zephyr APIs. USB device mode uses Zephyr's native device-next stack plus the
-unmodified SDK controller engine. SDP exposes only the generic Zephyr crypto
-API and does not pull in an SDK crypto middleware stack. USB host/UHC and
+unmodified SDK controller engine. SDP uses the generic Zephyr crypto API and
+HPM extensions without an SDK crypto middleware stack. USB host/UHC and
 motor-control integration still need separate design decisions before adding
 any third-party stack.
 
@@ -217,10 +238,19 @@ upgrade process.
 
 ## Development
 
+Peripheral hardware acceptance tests for HPM5300EVK are in
+[`tests/hardware`](tests/hardware/README.md). The application provides isolated
+Ztest profiles, wiring/fixture requirements, build/flash commands, detailed
+results and limits for the ten verified profiles listed above. Historical
+build-only regressions are recorded separately from hardware results. SPI
+validation is deferred at the user's request.
+The original `tests/hpm5300evk` suite remains for build-only coverage.
+
 Use Zephyr's upstream `<subsystem>: <summary>` format for local development:
 
 ```sh
-git commit -m "soc: hpmicro: add HPM5361 initial support"
+git commit -m "soc: hpmicro: add HPM5361 initial support" \
+  -m "Add the SoC integration and document the validated build paths."
 ```
 
 During initial development, Agent-authored commits do not require DCO sign-off
