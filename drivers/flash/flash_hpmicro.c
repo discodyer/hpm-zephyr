@@ -25,6 +25,12 @@
 
 #define HPM_FLASH_NODE(n) DT_INST_CHILD_BY_UNIT_ADDR_INT(n, 2147483648)
 
+#if defined(CONFIG_XIP)
+#define HPM_FLASH_RAMFUNC __noinline Z_GENERIC_DOT_SECTION(itcm)
+#else
+#define HPM_FLASH_RAMFUNC
+#endif
+
 struct hpm_flash_config {
 	XPI_Type *xpi;
 	uint32_t mapped_base;
@@ -47,7 +53,7 @@ struct hpm_flash_data {
 #endif
 };
 
-static __ramfunc int hpm_flash_status_to_errno(hpm_stat_t status)
+static HPM_FLASH_RAMFUNC int hpm_flash_status_to_errno(hpm_stat_t status)
 {
 	switch (status) {
 	case status_success:
@@ -61,10 +67,9 @@ static __ramfunc int hpm_flash_status_to_errno(hpm_stat_t status)
 	}
 }
 
-static void hpm_flash_invalidate_cache(uint32_t addr, size_t size)
+static void hpm_flash_invalidate_data_cache(uint32_t addr, size_t size)
 {
 	size_t data_line_size = sys_cache_data_line_size_get();
-	size_t instr_line_size = sys_cache_instr_line_size_get();
 	uint32_t start;
 	uint32_t end;
 
@@ -77,12 +82,12 @@ static void hpm_flash_invalidate_cache(uint32_t addr, size_t size)
 		end = ROUND_UP(addr + size, data_line_size);
 		(void)sys_cache_data_invd_range((void *)(uintptr_t)start, end - start);
 	}
+}
 
-	if (instr_line_size != 0U) {
-		start = ROUND_DOWN(addr, instr_line_size);
-		end = ROUND_UP(addr + size, instr_line_size);
-		(void)sys_cache_instr_invd_range((void *)(uintptr_t)start, end - start);
-	}
+static void hpm_flash_invalidate_instruction_cache(void)
+{
+	/* VA CCTL operations can fault on the XIP flash mapping. */
+	(void)sys_cache_instr_invd_all();
 }
 
 static int hpm_flash_range_is_valid(const struct hpm_flash_data *data, off_t offset, size_t size)
@@ -109,14 +114,14 @@ static int hpm_flash_read(const struct device *dev, off_t offset, void *data, si
 	}
 
 	addr = config->mapped_base + (uint32_t)offset;
-	hpm_flash_invalidate_cache(addr, size);
+	hpm_flash_invalidate_data_cache(addr, size);
 	memcpy(data, (const void *)(uintptr_t)addr, size);
 
 	return 0;
 }
 
-static __ramfunc int hpm_flash_write(const struct device *dev, off_t offset, const void *data,
-				     size_t size)
+static HPM_FLASH_RAMFUNC int hpm_flash_write(const struct device *dev, off_t offset,
+					     const void *data, size_t size)
 {
 	const struct hpm_flash_config *config = dev->config;
 	struct hpm_flash_data *dev_data = dev->data;
@@ -167,7 +172,8 @@ static __ramfunc int hpm_flash_write(const struct device *dev, off_t offset, con
 			return hpm_flash_status_to_errno(status);
 		}
 
-		hpm_flash_invalidate_cache(addr, chunk_size);
+		hpm_flash_invalidate_data_cache(addr, chunk_size);
+		hpm_flash_invalidate_instruction_cache();
 		src += chunk_size;
 		offset += chunk_size;
 		addr += chunk_size;
@@ -177,7 +183,7 @@ static __ramfunc int hpm_flash_write(const struct device *dev, off_t offset, con
 	return 0;
 }
 
-static __ramfunc int hpm_flash_erase(const struct device *dev, off_t offset, size_t size)
+static HPM_FLASH_RAMFUNC int hpm_flash_erase(const struct device *dev, off_t offset, size_t size)
 {
 	const struct hpm_flash_config *config = dev->config;
 	struct hpm_flash_data *dev_data = dev->data;
@@ -206,7 +212,8 @@ static __ramfunc int hpm_flash_erase(const struct device *dev, off_t offset, siz
 		}
 	}
 
-	hpm_flash_invalidate_cache(config->mapped_base + (uint32_t)offset, size);
+	hpm_flash_invalidate_data_cache(config->mapped_base + (uint32_t)offset, size);
+	hpm_flash_invalidate_instruction_cache();
 
 	return 0;
 }
@@ -245,7 +252,7 @@ static void hpm_flash_page_layout(const struct device *dev,
 }
 #endif
 
-static __ramfunc int hpm_flash_init(const struct device *dev)
+static HPM_FLASH_RAMFUNC int hpm_flash_init(const struct device *dev)
 {
 	const struct hpm_flash_config *config = dev->config;
 	struct hpm_flash_data *data = dev->data;
@@ -303,7 +310,7 @@ static __ramfunc int hpm_flash_init(const struct device *dev)
 	return 0;
 }
 
-static const struct flash_driver_api hpm_flash_api = {
+static DEVICE_API(flash, hpm_flash_api) = {
 	.read = hpm_flash_read,
 	.write = hpm_flash_write,
 	.erase = hpm_flash_erase,

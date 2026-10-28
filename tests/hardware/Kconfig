@@ -15,6 +15,12 @@ config HPM_TEST_DMA
 config HPM_TEST_CRYPTO
 	bool "crypto"
 
+config HPM_TEST_FLASH
+	bool "flash"
+	help
+	  Erase and program the dedicated XPI NOR scratch partition, then
+	  verify readback and cache visibility through the XIP mapping.
+
 endchoice
 
 source "Kconfig.zephyr"

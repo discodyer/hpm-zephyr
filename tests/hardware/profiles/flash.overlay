@@ -1,0 +1,15 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+&slot0_partition {
+	reg = <0x3000 0xec000>;
+};
+
+&flash0 {
+	partitions {
+		hw_scratch: partition@ef000 {
+			compatible = "zephyr,mapped-partition";
+			label = "hw-acceptance-scratch";
+			reg = <0xef000 0x1000>;
+		};
+	};
+};

@@ -30,3 +30,9 @@ tests:
       - DTC_OVERLAY_FILE=profiles/crypto.overlay
     harness_config:
       fixture: hpm5300evk
+  hpmicro.hardware.flash:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/flash.conf
+      - DTC_OVERLAY_FILE=profiles/flash.overlay
+    harness_config:
+      fixture: hpm_flash_scratch
