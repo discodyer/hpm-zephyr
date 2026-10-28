@@ -37,7 +37,9 @@ LOG_MODULE_REGISTER(adc_hpmicro_adc16, CONFIG_ADC_LOG_LEVEL);
 #define HPM_ADC16_SAMPLE_CYCLE_MAX     0x1FFU
 #define HPM_ADC16_CONV_CLK_MAX         ADC16_SOC_CONV_CLK_FREQ_MAX
 #define HPM_ADC16_SEQ_MAX_SAMPLES      ADC_SOC_SEQ_MAX_LEN
+#define HPM_ADC16_SEQ_DMA_MIN_SAMPLES  2U
 #define HPM_ADC16_DMA_ALIGNMENT        ADC_SOC_DMA_ADDR_ALIGNMENT
+#define HPM_ADC16_DMA_WRITE_TIMEOUT_US 1000U
 #define HPM_ADC16_PMT_BUFFER_WORDS     ADC_SOC_PMT_MAX_DMA_BUFF_LEN_IN_4BYTES
 #define HPM_ADC16_PMT_TRIGGER_COUNT    12U
 
@@ -64,10 +66,12 @@ struct hpm_adc16_data {
 	struct k_poll_signal *async_signal;
 	atomic_t async_busy;
 #ifdef CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA
+	struct k_work seq_work;
 	struct k_sem seq_done;
 	struct adc_sequence seq_sequence;
 	uint8_t seq_channels[HPM_ADC16_SEQ_MAX_SAMPLES];
 	uint8_t seq_samples;
+	uint32_t seq_status;
 	bool seq_error;
 	uint32_t *seq_buffer;
 #if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
@@ -115,6 +119,7 @@ static void hpm_adc16_preemption_handler(const struct device *dev, uint32_t stat
 
 	adc16_clear_status_flags(config->base, status);
 	if ((status & error_mask) != 0U) {
+		LOG_ERR("preemption ADC error: status=0x%08x", status);
 		atomic_set(&data->preemption_error, 1);
 	}
 	if ((status & adc16_event_trig_complete) != 0U) {
@@ -241,21 +246,92 @@ static int hpm_adc16_validate_sequence(const struct device *dev,
 #ifdef CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA
 static uint32_t hpm_adc16_sequence_status_mask(void)
 {
-	return adc16_event_seq_single_complete | adc16_event_seq_dma_abort |
+	return adc16_event_seq_full_complete | adc16_event_seq_dma_abort |
 	       adc16_event_seq_sw_conflict | adc16_event_seq_hw_conflict |
 	       adc16_event_read_conflict | adc16_event_dma_fifo_full | ADC16_INT_STS_AHB_ERR_MASK;
+}
+
+static void hpm_adc16_sequence_work_handler(struct k_work *work)
+{
+	struct hpm_adc16_data *data = CONTAINER_OF(work, struct hpm_adc16_data, seq_work);
+	const struct device *dev = data->dev;
+	const struct hpm_adc16_config *config = dev->config;
+	uint32_t error_mask = adc16_event_seq_dma_abort | adc16_event_seq_sw_conflict |
+			      adc16_event_seq_hw_conflict | adc16_event_read_conflict |
+			      adc16_event_dma_fifo_full | ADC16_INT_STS_AHB_ERR_MASK;
+	struct k_poll_signal *async_signal;
+
+	data->seq_error = (data->seq_status & error_mask) != 0U;
+	if (!data->seq_error) {
+		adc16_seq_dma_data_t *samples = (adc16_seq_dma_data_t *)data->seq_buffer;
+		bool dma_written = false;
+
+		for (uint32_t wait_us = 0U; wait_us < HPM_ADC16_DMA_WRITE_TIMEOUT_US; wait_us++) {
+			if (samples[data->seq_samples - 1U].cycle_bit != 0U) {
+				dma_written = true;
+				break;
+			}
+			k_busy_wait(1U);
+		}
+		if (!dma_written) {
+			LOG_ERR("sequence DMA write timeout: status=0x%08x addr=0x%08x wr=0x%08x "
+				"cfg=0x%08x seq=0x%08x adc=0x%08x data0=0x%08x data1=0x%08x",
+				data->seq_status, config->base->SEQ_DMA_ADDR,
+				config->base->SEQ_WR_ADDR, config->base->SEQ_DMA_CFG,
+				config->base->SEQ_CFG0, config->base->ADC_CFG0, data->seq_buffer[0],
+				data->seq_buffer[1]);
+			data->seq_error = true;
+		}
+	}
+
+	if (!data->seq_error) {
+		adc16_seq_dma_data_t *samples = (adc16_seq_dma_data_t *)data->seq_buffer;
+		uint16_t *output = data->seq_sequence.buffer;
+
+		for (uint8_t i = 0U; i < data->seq_samples; i++) {
+			uint16_t value = samples[i].result;
+
+			if (samples[i].adc_ch != data->seq_channels[i]) {
+				LOG_ERR("sequence DMA mismatch: status=0x%08x raw=0x%08x "
+					"expected=%u got=%u",
+					data->seq_status, ((uint32_t *)data->seq_buffer)[i],
+					data->seq_channels[i], samples[i].adc_ch);
+				data->seq_error = true;
+				break;
+			}
+			if (data->seq_sequence.resolution < 16U) {
+				value >>= 16U - data->seq_sequence.resolution;
+			}
+			output[i] = value;
+		}
+	}
+	if (data->seq_error && ((data->seq_status & error_mask) != 0U)) {
+		LOG_ERR("sequence ADC error: status=0x%08x", data->seq_status);
+	}
+
+	async_signal = data->async_signal;
+	data->async_signal = NULL;
+
+#ifdef CONFIG_ADC_ASYNC
+	if (async_signal != NULL) {
+		int result = data->seq_error ? -EIO : 0;
+
+		atomic_clear(&data->async_busy);
+		k_poll_signal_raise(async_signal, result);
+	} else {
+		k_sem_give(&data->seq_done);
+	}
+#else
+	ARG_UNUSED(async_signal);
+	k_sem_give(&data->seq_done);
+#endif
 }
 
 static void hpm_adc16_sequence_handler(const struct device *dev, uint32_t status)
 {
 	const struct hpm_adc16_config *config = dev->config;
 	struct hpm_adc16_data *data = dev->data;
-	struct k_poll_signal *async_signal;
 	uint32_t event_mask = hpm_adc16_sequence_status_mask();
-	uint16_t *output;
-	uint32_t error_mask = adc16_event_seq_dma_abort | adc16_event_seq_sw_conflict |
-			      adc16_event_seq_hw_conflict | adc16_event_read_conflict |
-			      adc16_event_dma_fifo_full | ADC16_INT_STS_AHB_ERR_MASK;
 
 	if (atomic_get(&data->async_busy) == 0) {
 		return;
@@ -268,33 +344,23 @@ static void hpm_adc16_sequence_handler(const struct device *dev, uint32_t status
 
 	adc16_disable_interrupts(config->base, event_mask);
 	adc16_clear_status_flags(config->base, status);
+	data->seq_status = status;
+	if (k_work_submit(&data->seq_work) < 0) {
+		struct k_poll_signal *async_signal = data->async_signal;
 
-	data->seq_error = (status & error_mask) != 0U;
-	if (!data->seq_error) {
-		adc16_seq_dma_data_t *samples = (adc16_seq_dma_data_t *)data->seq_buffer;
-
-		output = data->seq_sequence.buffer;
-		for (uint8_t i = 0U; i < data->seq_samples; i++) {
-			uint16_t value = samples[i].result;
-
-			if (samples[i].adc_ch != data->seq_channels[i]) {
-				data->seq_error = true;
-				break;
-			}
-			if (data->seq_sequence.resolution < 16U) {
-				value >>= 16U - data->seq_sequence.resolution;
-			}
-			output[i] = value;
+		data->seq_error = true;
+		data->async_signal = NULL;
+#ifdef CONFIG_ADC_ASYNC
+		if (async_signal != NULL) {
+			atomic_clear(&data->async_busy);
+			k_poll_signal_raise(async_signal, -EIO);
+		} else {
+			k_sem_give(&data->seq_done);
 		}
-	}
-
-	async_signal = data->async_signal;
-	data->async_signal = NULL;
-	atomic_clear(&data->async_busy);
-	k_sem_give(&data->seq_done);
-
-	if (async_signal != NULL) {
-		k_poll_signal_raise(async_signal, data->seq_error ? -EIO : 0);
+#else
+		ARG_UNUSED(async_signal);
+		k_sem_give(&data->seq_done);
+#endif
 	}
 }
 
@@ -326,6 +392,7 @@ static int hpm_adc16_start_sequence(const struct device *dev, const struct adc_s
 	}
 	data->seq_samples = index;
 	data->seq_sequence = *sequence;
+	data->seq_status = 0U;
 	data->seq_error = false;
 
 	adc16_disable_interrupts(config->base, hpm_adc16_sequence_status_mask());
@@ -334,6 +401,7 @@ static int hpm_adc16_start_sequence(const struct device *dev, const struct adc_s
 	adc16_get_default_config(&adc_config);
 	adc_config.res = hpm_adc16_resolution(sequence->resolution);
 	adc_config.adc_clk_div = data->clock_divider;
+	adc_config.sel_sync_ahb = config->clock_src == clk_adc_src_ahb0;
 	adc_config.conv_mode = adc16_conv_mode_sequence;
 	adc_config.wait_dis = false;
 
@@ -346,7 +414,7 @@ static int hpm_adc16_start_sequence(const struct device *dev, const struct adc_s
 
 	seq_config.seq_len = data->seq_samples;
 	seq_config.restart_en = false;
-	seq_config.cont_en = false;
+	seq_config.cont_en = true;
 #if defined(CONFIG_ADC_HPMICRO_ADC16_EXTERNAL_TRIGGER)
 	seq_config.sw_trig_en = data->trigger_source == HPM_ADC16_TRIGGER_SOFTWARE;
 	seq_config.hw_trig_en = data->trigger_source == HPM_ADC16_TRIGGER_EXTERNAL;
@@ -366,7 +434,7 @@ static int hpm_adc16_start_sequence(const struct device *dev, const struct adc_s
 	}
 
 	dma_config.start_addr = data->seq_buffer;
-	dma_config.buff_len_in_4bytes = data->seq_samples;
+	dma_config.buff_len_in_4bytes = MAX(data->seq_samples, HPM_ADC16_SEQ_DMA_MIN_SAMPLES);
 	dma_config.stop_en = false;
 	status = adc16_init_seq_dma(config->base, &dma_config);
 	if (status != status_success) {
@@ -397,6 +465,9 @@ static int hpm_adc16_read(const struct device *dev, const struct adc_sequence *s
 {
 	struct hpm_adc16_data *data = dev->data;
 	int ret;
+#ifdef CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA
+	struct k_work_sync work_sync;
+#endif
 
 	ret = hpm_adc16_validate_sequence(dev, sequence);
 	if (ret < 0) {
@@ -415,14 +486,17 @@ static int hpm_adc16_read(const struct device *dev, const struct adc_sequence *s
 			const struct hpm_adc16_config *config = dev->config;
 
 			adc16_disable_interrupts(config->base, hpm_adc16_sequence_status_mask());
+			adc16_clear_status_flags(config->base, UINT32_MAX);
+			(void)k_work_cancel_sync(&data->seq_work, &work_sync);
 			ret = -ETIMEDOUT;
 			(void)adc16_deinit(config->base);
 		} else {
 			ret = data->seq_error ? -EIO : 0;
 		}
+		atomic_clear(&data->async_busy);
+	} else {
+		atomic_clear(&data->async_busy);
 	}
-
-	atomic_clear(&data->async_busy);
 	return ret;
 }
 
@@ -479,6 +553,7 @@ static int hpm_adc16_read_sequence(const struct device *dev, const struct adc_se
 		adc16_get_default_config(&adc_config);
 		adc_config.res = adc_resolution;
 		adc_config.adc_clk_div = data->clock_divider;
+		adc_config.sel_sync_ahb = config->clock_src == clk_adc_src_ahb0;
 		adc_config.conv_mode = adc16_conv_mode_oneshot;
 		adc_config.wait_dis = false;
 
@@ -620,6 +695,7 @@ static int hpm_adc16_configure_preemption_impl(const struct device *dev,
 	adc16_get_default_config(&adc_config);
 	adc_config.res = adc16_res_16_bits;
 	adc_config.adc_clk_div = data->clock_divider;
+	adc_config.sel_sync_ahb = adc->clock_src == clk_adc_src_ahb0;
 	adc_config.conv_mode = adc16_conv_mode_preemption;
 	adc_config.wait_dis = false;
 	status = adc16_init(adc->base, &adc_config);
@@ -842,11 +918,14 @@ static void hpm_adc16_isr(const struct device *dev)
 #endif
 
 #ifdef CONFIG_ADC_HPMICRO_ADC16_SEQUENCE_DMA
-#define HPM_ADC16_RUNTIME_INIT(n)                                                                  \
-	do {                                                                                       \
-		k_sem_init(&data->seq_done, 0, 1);                                                 \
-		data->seq_buffer = hpm_adc16_seq_buffer_##n;                                       \
-	} while (false)
+static void hpm_adc16_sequence_init(struct hpm_adc16_data *data, uint32_t *buffer)
+{
+	k_work_init(&data->seq_work, hpm_adc16_sequence_work_handler);
+	k_sem_init(&data->seq_done, 0, 1);
+	data->seq_buffer = buffer;
+}
+
+#define HPM_ADC16_RUNTIME_INIT(n) hpm_adc16_sequence_init(data, hpm_adc16_seq_buffer_##n)
 #else
 #if defined(CONFIG_ADC_ASYNC)
 #define HPM_ADC16_RUNTIME_INIT(n)                                                                  \
@@ -993,6 +1072,7 @@ static void hpm_adc16_isr(const struct device *dev)
 		adc16_get_default_config(&adc_config);                                             \
 		adc_config.res = adc16_res_16_bits;                                                \
 		adc_config.adc_clk_div = (uint8_t)clock_divider;                                   \
+		adc_config.sel_sync_ahb = config->clock_src == clk_adc_src_ahb0;                   \
 		adc_config.conv_mode = adc16_conv_mode_oneshot;                                    \
 		adc_config.wait_dis = false;                                                       \
 		status = adc16_init(config->base, &adc_config);                                    \

@@ -11,6 +11,7 @@
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/cache.h>
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/dac.h>
 #include <zephyr/drivers/pinctrl.h>
@@ -69,6 +70,11 @@ static int hpm_dac_configure_mode(const struct device *dev, uint8_t mode)
 
 	k_mutex_lock(&data->lock, K_FOREVER);
 	status = dac_init(config->base, &dac_config);
+	if (status == status_success) {
+		/* Keep step and buffer updates below the DAC's 1 MHz limit. */
+		status =
+			dac_set_output_frequency(config->base, input_freq, DAC_SOC_MAX_OUTPUT_FREQ);
+	}
 	if (status == status_success) {
 		dac_enable_conversion(config->base, true);
 		data->configured = true;
@@ -230,6 +236,12 @@ static int hpm_dac_configure_buffer_impl(const struct device *dev,
 		k_mutex_unlock(&data->lock);
 		return -EINVAL;
 	}
+
+	/* The buffer is consumed by the DAC's AHB master. */
+	(void)sys_cache_data_flush_range((void *)config->buffer0,
+					 config->buffer0_len * sizeof(config->buffer0[0]));
+	(void)sys_cache_data_flush_range((void *)config->buffer1,
+					 config->buffer1_len * sizeof(config->buffer1[0]));
 
 	status = dac_set_buffer_config(dac->base, &hal_config);
 	if (status == status_success) {

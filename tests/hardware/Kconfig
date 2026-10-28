@@ -63,6 +63,13 @@ config HPM_TEST_SPI
 	  Verify SPI1 synchronous and asynchronous DMA transfers in all four
 	  modes using an external MOSI-to-MISO loopback wire.
 
+config HPM_TEST_ANALOG
+	bool "analog"
+	help
+	  Enable the analog hardware test for DAC0 output, ADC0 synchronous and
+	  asynchronous conversion, preemption DMA, and TRGM-triggered conversion over
+	  an external loopback wire.
+
 endchoice
 
 source "Kconfig.zephyr"

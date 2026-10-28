@@ -5,9 +5,9 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 11 个 profile：`core`、`dma`、`crypto`、`flash`、
-`watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c` 和 `spi`，分别通过
-8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3 和 1/1 项，共 40 项测试。
+本轮已在 HPM5300EVK RevD 上验证 12 个 profile：`core`、`dma`、`crypto`、`flash`、
+`watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c`、`spi` 和 `analog`，分别通过
+8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3、1/1 和 6/6 项，共 46 项测试。
 历史候选 profile 的 build-only 记录保留在下文，
 不代表这些候选已纳入本轮提交或通过硬件验收。
 
@@ -119,6 +119,20 @@ SPI 加入后 11 个注册 profile、40 项测试的 Twister build-only 回归�
 0 失败/错误/警告，报告为
 `build/twister-hardware-post-spi/twister.json`。
 
+2026-10-28 `analog` profile 在 HPM5300EVK RevD 上通过 6/6 项测试，两次独立
+物理复位均通过；`west flash --verify` 成功。日志为
+`build/hw-analog-final-reset1.uart.log` 和
+`build/hw-analog-final-reset2.uart.log`。接线为 PB08/DAC0.OUT（J7-20）→
+PB05/ADC0.IN13（P1-32），映射已与 EVK 接口资料和板级 pinmux 核对，实物位置由操作者确认。
+
+覆盖 ADC0 12-bit 同步/异步序列读取、双通道、TRGM 上升沿触发和抢占 DMA，
+以及 DAC0 直接输出、step endpoint 和内部 buffer 输出；DAC 电平由 ADC0 以
+160 code 容差校验。驱动按 ADC 时钟源选择同步模式，等待整条 sequence 完成后读取
+DMA 数据；DAC step/buffer 路径限制输出时钟低于 1 MHz，并在启动 DMA 前 flush buffer。
+本结果只验证上述单一环回，不包含模拟精度、噪声、线性、外部波形时序或其他 ADC/DAC
+实例。analog 加入后 12 个 profile 的 Twister build-only 回归通过，0 失败/错误/警告，
+报告为 `build/twister-hardware-analog-final/twister.json`。
+
 2026-10-28 GPIO 验收后回归：八个已注册 Twister 场景全部构建成功，
 8/8 build-only、32 项测试、0 失败/错误/警告，报告为
 `build/twister-hardware-post-gpio-final/twister.json`。
@@ -206,7 +220,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 11 个已上板验收 profile，具体范围及限制见前述运行记录。
+下表列出 12 个已上板验收 profile，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -220,6 +234,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `uart` | `hpm_uart_loop` | PB07 TX → PB06 RX（P1-5 ↔ P1-3）；PB05 RTS → PB04 CTS（P1-32 ↔ P1-31） | 257 B 无流控 DMA、97 B + 160 B 分段 offset、RTS/CTS 回环与配置读回、RX disable/re-enable；校验 TX/RX 事件、buffer、offset/length 和数据 |
 | `i2c` | `hpm_i2c_pair` | PB02 SCL ↔ PB07 SCL（RevC P1-28 ↔ P1-5）；PB03 SDA ↔ PB06 SDA（P1-27 ↔ P1-3）；按 RevD 丝印核对，板载已有 10 kΩ 上拉 | I2C0 DMA controller → I2C1 target `0x52`；65 B 写、重复 START 后 64 B 读、STOP 回调；SMBus byte/word、32 B block、1/32 B block PEC、错误 PEC 拒绝、count=33 拒绝及后续恢复 |
 | `spi` | `hpm_spi_loop` | PA29/MOSI ↔ PA28/MISO（P1-19 ↔ P1-21）；保留 PA27/SCLK（P1-23），GPIO PB04/P1-31 CS 由固件控制；按 RevD 丝印核对 | SPI1 1 MHz，Motorola mode 0-3；每种模式 256 B sync 与 async linked-block DMA 回环，TX/RX 各两块不同分割；全量比较、ISR completion 和 CS inactive 检查 |
+| `analog` | `hpm_analog_loop` | PB08/DAC0.OUT（J7-20）→ PB05/ADC0.IN13（P1-32）；按 RevD 丝印核对 | ADC 同步/异步、双通道、抢占 DMA、TRGM 上升沿触发；DAC direct/step/buffer 输出由 ADC 回读 |
 | `can` | `hpm5300evk` | MCAN0 静默内部 loopback，无外部 CAN 总线 | 16 帧标准 classic/FD/BRS、8/64 B 数据及 TX/RX ISR；另 20 帧 PTPC0→TSU SOF 64 位捕获，有效/无丢失/递增、8 槽及两次回绕、PTPC 发送前后时间包络 |
 | `flash` | `hpm_flash_scratch` | 板载 XPI NOR，允许擦写下述专用测试扇区 | 全扇区擦除、256 B 写读、二次擦除、先填充 XIP 映射 cache 再验证写/擦后的映射一致性 |
 | `watchdog` | `hpm5300evk` | 无 | EWDG0 仅中断：每 100 ms 喂狗三次；500 ms 超时后延迟 2200 ms 再喂狗并验证重复超时；ISR 内喂狗；停用后无 IRQ、重装完整周期；500 ms → 2500 ms 分频重配；容差分别 ±80/160 ms |

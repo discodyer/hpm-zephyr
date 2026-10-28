@@ -1,0 +1,18 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+&adc0 {
+	status = "okay";
+	vref-mv = <3300>;
+	pinctrl-0 = <&pb05_analog>;
+	pinctrl-names = "default";
+};
+
+&dac0 {
+	status = "okay";
+	pinctrl-0 = <&pb08_analog>;
+	pinctrl-names = "default";
+};
+
+&trgm0 {
+	status = "okay";
+};
