@@ -13,23 +13,26 @@
 #include <hpm_soc.h>
 #include <hpm_sysctl_drv.h>
 
-#if defined(CONFIG_RISCV_CUSTOM_CSR_ANDES_PMA)
-#include <pma.h>
-#endif
+#if defined(CONFIG_RISCV_PMP)
+#include <pmp.h>
 
-void soc_early_init_hook(void)
-{
-#if defined(CONFIG_RISCV_CUSTOM_CSR_ANDES_PMA)
-	pma_init();
-#endif
-}
+/* Keep the DM debug ROM and program buffer executable when data execution is denied. */
+#define HPM_DM_NODE DT_NODELABEL(dm)
+PMP_SOC_REGION_DEFINE(hpm5300_dm, DT_REG_ADDR(HPM_DM_NODE),
+		      DT_REG_ADDR(HPM_DM_NODE) + DT_REG_SIZE(HPM_DM_NODE), PMP_R | PMP_W | PMP_X);
 
-void soc_per_core_init_hook(void)
-{
-#if defined(CONFIG_RISCV_CUSTOM_CSR_ANDES_PMA)
-	pma_init_per_core();
+/* The XPI flash driver calls ROM APIs in the BootROM code/data window. */
+#define HPM_BOOTROM_NODE DT_NODELABEL(bootrom)
+PMP_SOC_REGION_DEFINE(hpm5300_bootrom, DT_REG_ADDR(HPM_BOOTROM_NODE),
+		      DT_REG_ADDR(HPM_BOOTROM_NODE) + DT_REG_SIZE(HPM_BOOTROM_NODE),
+		      PMP_R | PMP_W | PMP_X);
+
+/* HPM5361 flash helpers execute from ILM while XPI is busy. */
+#define HPM_ILM_NODE DT_NODELABEL(ilm)
+PMP_SOC_REGION_DEFINE(hpm5300_ilm, DT_REG_ADDR(HPM_ILM_NODE),
+		      DT_REG_ADDR(HPM_ILM_NODE) + DT_REG_SIZE(HPM_ILM_NODE), PMP_R | PMP_W | PMP_X);
+
 #endif
-}
 
 static int hpm5300_clock_init(void)
 {

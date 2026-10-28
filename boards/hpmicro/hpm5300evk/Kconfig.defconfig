@@ -3,6 +3,9 @@
 
 if BOARD_HPM5300EVK
 
+config BUILD_OUTPUT_HEX
+	default y if XIP
+
 config HEAP_MEM_POOL_SIZE
 	default 16384
 
