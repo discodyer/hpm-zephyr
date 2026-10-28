@@ -2,22 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 set(HPM_ZEPHYR_MODULE_DIR ${CMAKE_CURRENT_LIST_DIR})
-get_filename_component(_hpm_sdk_default
-  ${CMAKE_CURRENT_LIST_DIR}/../hal/hpm_sdk ABSOLUTE)
-set(HPM_SDK_DIR ${HPM_SDK_DIR} CACHE PATH "HPM SDK root directory")
-
-if(NOT HPM_SDK_DIR AND DEFINED ENV{HPM_SDK_BASE})
-  set(HPM_SDK_DIR $ENV{HPM_SDK_BASE})
-endif()
-
-if(NOT HPM_SDK_DIR)
-  set(HPM_SDK_DIR ${_hpm_sdk_default})
-endif()
-
-if(NOT EXISTS ${HPM_SDK_DIR}/cmake/cmake-ext.cmake)
-  message(FATAL_ERROR
-          "HPM_SDK_DIR does not contain an HPM SDK checkout: ${HPM_SDK_DIR}")
-endif()
+include(${CMAKE_CURRENT_LIST_DIR}/cmake/hpm_sdk.cmake)
 
 set(HPM_SDK_BASE ${HPM_SDK_DIR})
 include(${HPM_SDK_DIR}/cmake/version.cmake)
