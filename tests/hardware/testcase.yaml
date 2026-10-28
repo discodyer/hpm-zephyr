@@ -66,3 +66,9 @@ tests:
       - DTC_OVERLAY_FILE=profiles/uart.overlay
     harness_config:
       fixture: hpm_uart_loop
+  hpmicro.hardware.i2c:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/i2c.conf
+      - DTC_OVERLAY_FILE=profiles/i2c.overlay
+    harness_config:
+      fixture: hpm_i2c_pair

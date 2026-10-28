@@ -1,0 +1,30 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+&pb06_i2c1_sda {
+	group0 {
+		drive-open-drain;
+		input-enable;
+	};
+};
+
+&pb07_i2c1_scl {
+	group0 {
+		drive-open-drain;
+		input-enable;
+	};
+};
+
+&i2c1 {
+	status = "okay";
+	clock-frequency = <100000>;
+	pinctrl-0 = <&pb07_i2c1_scl &pb06_i2c1_sda>;
+	pinctrl-names = "default";
+};
+
+&hdma {
+	status = "okay";
+};
+
+&smbus0 {
+	status = "okay";
+};

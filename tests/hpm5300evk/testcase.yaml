@@ -129,8 +129,7 @@ tests:
     build_only: true
     extra_args:
       - EXTRA_DTC_OVERLAY_FILE=peripherals.overlay
-      - EXTRA_CONF_FILE=peripherals.conf
-      - EXTRA_CONF_FILE=i2c_polling.conf
+      - EXTRA_CONF_FILE=peripherals.conf;i2c_polling.conf
 
   boards.hpmicro.hpm5300evk.adc_polling:
     tags:

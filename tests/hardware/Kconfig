@@ -51,6 +51,12 @@ config HPM_TEST_UART
 	  Verify UART1 asynchronous DMA transfers and RTS/CTS flow control
 	  using external data and flow-control loopback jumpers.
 
+config HPM_TEST_I2C
+	bool "i2c"
+	help
+	  Verify I2C0 controller DMA transfers against an I2C1 target and
+	  SMBus data, block, and PEC operations using external loopback wires.
+
 endchoice
 
 source "Kconfig.zephyr"
