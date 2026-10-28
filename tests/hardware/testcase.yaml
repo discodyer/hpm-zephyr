@@ -48,3 +48,9 @@ tests:
       - DTC_OVERLAY_FILE=profiles/can.overlay
     harness_config:
       fixture: hpm5300evk
+  hpmicro.hardware.motor:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/motor.conf
+      - DTC_OVERLAY_FILE=profiles/motor.overlay
+    harness_config:
+      fixture: hpm5300evk

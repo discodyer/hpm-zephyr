@@ -1,0 +1,30 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+&synt {
+	status = "okay";
+};
+
+&trgm0 {
+	status = "okay";
+};
+
+&plb {
+	status = "okay";
+};
+
+&qeo0 {
+	status = "okay";
+	lines = <1024>;
+	max-frequency = <100000>;
+	watchdog-frequency = <100000>;
+	output-type = "abz";
+	z-pulse-width = "75-percent";
+};
+
+&mmc0 {
+	status = "okay";
+};
+
+&gpiom0 {
+	status = "okay";
+};

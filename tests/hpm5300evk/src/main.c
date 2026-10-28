@@ -1375,7 +1375,7 @@ ZTEST(hpm5300evk, test_devices_ready)
 	const struct hpm_plb_type_a_config plb_type_a = {
 		.truth = {0x1111U, 0x0303U, 0xAAAAU, 0xFFFFU},
 	};
-	uint32_t plb_counter;
+	uint32_t plb_counter = 0xdeadbeefU;
 
 	zassert_true(device_is_ready(plb));
 	zassert_ok(hpm_plb_configure_type_a(plb, 0U, &plb_type_a));
@@ -1386,8 +1386,8 @@ ZTEST(hpm5300evk, test_devices_ready)
 	zassert_ok(hpm_plb_set_type_b_comparator(plb, 0U, 0U, 0x1234U,
 						 HPM_PLB_COMPARATOR_GREATER_OR_EQUAL));
 	zassert_ok(hpm_plb_set_type_b_counter(plb, 0U, 0x55U));
-	zassert_ok(hpm_plb_get_type_b_counter(plb, 0U, &plb_counter));
-	zassert_equal(plb_counter, 0x55U);
+	zassert_equal(hpm_plb_get_type_b_counter(plb, 0U, &plb_counter), -ENOTSUP);
+	zassert_equal(plb_counter, 0xdeadbeefU);
 	zassert_equal(hpm_plb_inject_type_a(plb, 0U, 0x10U), -EINVAL);
 	zassert_equal(
 		hpm_plb_set_type_b_slice(plb, 0U, HPM_PLB_TYPE_B_SLICE_COUNT, HPM_PLB_SLICE_KEEP),

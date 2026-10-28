@@ -153,6 +153,15 @@ static inline int hpm_plb_set_type_b_counter(const struct device *dev, uint8_t c
 	return DEVICE_API_GET(hpm_plb, dev)->set_type_b_counter(dev, channel, value);
 }
 
+/**
+ * @brief Read the live TYPE_B data-unit counter, when supported.
+ *
+ * HPM5300 does not expose the live counter through SW_INJECT. Reading that
+ * register returns the last software injection, even after hardware operations.
+ *
+ * @retval -ENOTSUP if live counter readback is unavailable; value is unchanged.
+ * @retval -EINVAL for an invalid channel or NULL value.
+ */
 static inline int hpm_plb_get_type_b_counter(const struct device *dev, uint8_t channel,
 					     uint32_t *value)
 {

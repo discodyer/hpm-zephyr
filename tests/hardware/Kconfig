@@ -33,6 +33,12 @@ config HPM_TEST_CAN
 	  Verify classic CAN, CAN FD and PTPC timestamps using internal MCAN0
 	  loopback, without requiring an external CAN bus.
 
+config HPM_TEST_MOTOR
+	bool "motor"
+	help
+	  Verify internal SYNT, PLB, QEO, MMC and GPIOM operations without
+	  requiring external motor-control hardware.
+
 endchoice
 
 source "Kconfig.zephyr"

@@ -312,6 +312,13 @@ hpm_mmc_configure_predictor_speed_trigger(const struct device *dev, uint8_t pred
 		->configure_predictor_speed_trigger(dev, predictor, config);
 }
 
+/**
+ * @brief Set the enable bit for a predictor branch.
+ *
+ * On HPM5300, clearing this bit does not stop an already running continuous
+ * open-loop prediction. Use hpm_mmc_enable() to disable the whole module when
+ * its results must stop updating.
+ */
 static inline int hpm_mmc_enable_predictor(const struct device *dev, uint8_t predictor, bool enable)
 {
 	return DEVICE_API_GET(hpm_mmc, dev)->enable_predictor(dev, predictor, enable);

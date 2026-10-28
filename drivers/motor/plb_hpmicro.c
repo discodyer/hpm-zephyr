@@ -169,8 +169,9 @@ static int hpm_plb_drv_set_type_b_all_slices(const struct device *dev, uint8_t c
 	}
 
 	key = k_spin_lock(&data->lock);
-	plb_type_b_set_all_slice(plb->base, (plb_chn_t)channel,
-				 hpm_plb_slice_operation_to_sdk(operation));
+	/* The SDK all-slice helper omits slice 15. */
+	plb_type_b_set_lut_range_mask(plb->base, (plb_chn_t)channel, UINT16_MAX,
+				      hpm_plb_slice_operation_to_sdk(operation));
 	k_spin_unlock(&data->lock, key);
 
 	return 0;
@@ -218,19 +219,14 @@ static int hpm_plb_drv_set_type_b_counter(const struct device *dev, uint8_t chan
 static int hpm_plb_drv_get_type_b_counter(const struct device *dev, uint8_t channel,
 					  uint32_t *value)
 {
-	const struct hpm_plb_config *plb = dev->config;
-	struct hpm_plb_data *data = dev->data;
-	k_spinlock_key_t key;
+	ARG_UNUSED(dev);
 
 	if (!hpm_plb_channel_is_valid(channel) || (value == NULL)) {
 		return -EINVAL;
 	}
 
-	key = k_spin_lock(&data->lock);
-	*value = plb_type_b_get_counter(plb->base, (plb_chn_t)channel);
-	k_spin_unlock(&data->lock, key);
-
-	return 0;
+	/* SW_INJECT reads the injected value, not the live data-unit counter. */
+	return -ENOTSUP;
 }
 
 static bool hpm_plb_filter_mode_is_valid(enum hpm_plb_filter_mode mode)
