@@ -72,3 +72,9 @@ tests:
       - DTC_OVERLAY_FILE=profiles/i2c.overlay
     harness_config:
       fixture: hpm_i2c_pair
+  hpmicro.hardware.spi:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/spi.conf
+      - DTC_OVERLAY_FILE=profiles/spi.overlay
+    harness_config:
+      fixture: hpm_spi_loop

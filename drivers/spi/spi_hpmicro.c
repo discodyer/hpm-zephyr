@@ -353,7 +353,7 @@ static int hpm_spi_buffer_total(const struct spi_buf_set *bufs, size_t *total)
 static void hpm_spi_fill_next(const struct spi_buf_set *bufs, size_t *index, size_t *offset,
 			      uint32_t frame_size, uint32_t *word)
 {
-	uint8_t *bytes = (uint8_t *)&word;
+	uint8_t *bytes = (uint8_t *)word;
 
 	*word = 0U;
 	if ((bufs == NULL) || (*index >= bufs->count)) {

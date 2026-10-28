@@ -57,6 +57,12 @@ config HPM_TEST_I2C
 	  Verify I2C0 controller DMA transfers against an I2C1 target and
 	  SMBus data, block, and PEC operations using external loopback wires.
 
+config HPM_TEST_SPI
+	bool "spi"
+	help
+	  Verify SPI1 synchronous and asynchronous DMA transfers in all four
+	  modes using an external MOSI-to-MISO loopback wire.
+
 endchoice
 
 source "Kconfig.zephyr"

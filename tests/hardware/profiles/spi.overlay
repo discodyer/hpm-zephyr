@@ -1,0 +1,22 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+&pb04_gpio_b_04 {
+	group0 {
+		input-enable;
+	};
+};
+
+&spi1 {
+	cs-gpios = <&gpiob 4 GPIO_ACTIVE_LOW>;
+	pinctrl-0 = <&pa27_spi1_sclk &pa28_spi1_miso &pa29_spi1_mosi &pb04_gpio_b_04>;
+};
+
+&pa27_spi1_sclk {
+	group0 {
+		input-enable;
+	};
+};
+
+&hdma {
+	status = "okay";
+};

@@ -5,10 +5,10 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮提交包含 10 个已上板验证的 profile：`core`、`dma`、`crypto`、`flash`、
-`watchdog`、`can`、`motor`、`gpio`、`uart` 和 `i2c`，在 HPM5300EVK RevD 上分别
-通过 8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4 和 3/3 项，共 39 项测试。
-SPI 验证按用户要求暂缓。历史候选 profile 的 build-only 记录保留在下文，
+本轮已在 HPM5300EVK RevD 上验证 11 个 profile：`core`、`dma`、`crypto`、`flash`、
+`watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c` 和 `spi`，分别通过
+8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3 和 1/1 项，共 40 项测试。
+历史候选 profile 的 build-only 记录保留在下文，
 不代表这些候选已纳入本轮提交或通过硬件验收。
 
 2026-10-27 `core` 运行耗时 0.923 s。UART 完整日志位于工作区
@@ -98,6 +98,27 @@ block helper 在 SDK sequence read 期间屏蔽 controller IRQ，并按进入时
 无失败/错误/警告，报告为 `build/twister-i2c-smbus-final-fixed/twister.json`。
 polling 场景已将两份 `EXTRA_CONF_FILE` 合为同一列表，防止 XIP 配置被覆盖。
 
+2026-10-28 `spi` profile 在 RevD 上两次独立物理复位均通过 1/1 项；
+`west flash --verify` 成功。干净 UART 日志为
+`build/hw-spi-confirmed-reset1.uart.log` 和 `build/hw-spi-confirmed-reset2.uart.log`；
+OpenOCD 校验日志为 `build/hw-spi-confirmed-flash.log`。同一测试循环覆盖 SPI1
+Motorola mode 0-3 的 1 MHz、8-bit 同步回环和异步链式 DMA 回环，每项比较全部
+256 B TX/RX 数据。TX 为 96+160 B 两块，RX 为 128+128 B 两块，缓冲 32-byte
+对齐；成功回调断言运行在 ISR 中，同步和异步完成后均检查 GPIO CS 已释放。
+
+接线只需 MOSI PA29/P1-19 ↔ MISO PA28/P1-21；SCLK PA27/P1-23 不需跳线，
+GPIO CS PB04/P1-31 由固件驱动。旧 I2C、UART 流控及 GPIO 回环跳线应移除。
+映射依据为 RevC 原理图第 2、9 页；RevD 实物排针由操作者按丝印确认并连接。
+测试初次发现 `spi_config.cs.gpio` 需要同时设置 `cs_is_gpio`；并按 HPM SDK
+EVK 初始化复现 PA27 的 loopback/input-enable。同步路径另外修复了缓冲指针误取
+局部指针地址的问题，现有 8-bit 模式比较可覆盖该回归。
+
+该结果只验证 MOSI/MISO 跳线回环、同步单线传输和 SPI/DMA 组合路径；不代表
+外接 SPI 从设备兼容、外部 CS 时序、其他帧宽、双/四线或示波器电平/时序验收。
+SPI 加入后 11 个注册 profile、40 项测试的 Twister build-only 回归通过，
+0 失败/错误/警告，报告为
+`build/twister-hardware-post-spi/twister.json`。
+
 2026-10-28 GPIO 验收后回归：八个已注册 Twister 场景全部构建成功，
 8/8 build-only、32 项测试、0 失败/错误/警告，报告为
 `build/twister-hardware-post-gpio-final/twister.json`。
@@ -133,7 +154,7 @@ UART 场景单独 build-only 构建成功，报告为
 Twister 记录位于 `build/twister-hardware-post-core/twister.log`，报告位于
 `build/twister-hardware-post-core/twister.json`。
 基线为 Zephyr `f78c4deb4523`、SDK `ccc5ec467a047f3ea85cd2fa4565e91db7135a38`。
-该历史矩阵包含尚未纳入本轮提交的候选文件，不能用当前 10-profile 范围直接复现。
+该历史矩阵包含尚未纳入本轮提交的候选文件，不能用当前 11-profile 范围直接复现。
 
 ## 构建与运行
 
@@ -152,6 +173,12 @@ west build -p always -b hpm5300evk/hpm5361 hpm-zephyr/tests/hardware \
   -d build/hw-uart -- \
   -DEXTRA_CONF_FILE=profiles/uart.conf \
   -DDTC_OVERLAY_FILE=profiles/uart.overlay
+
+# SPI1 MOSI/MISO loopback with synchronous and linked-block DMA tests.
+west build -p always -b hpm5300evk/hpm5361 hpm-zephyr/tests/hardware \
+  -d build/hw-spi -- \
+  -DEXTRA_CONF_FILE=profiles/spi.conf \
+  -DDTC_OVERLAY_FILE=profiles/spi.overlay
 
 # 当前 testcase.yaml 中全部已注册 profile 的构建检查，不连接开发板。
 west twister -T hpm-zephyr/tests/hardware -p hpm5300evk/hpm5361 \
@@ -179,7 +206,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出本轮提交的 10 个已上板验收 profile，具体范围及限制见前述运行记录。
+下表列出 11 个已上板验收 profile，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -192,6 +219,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `gpio` | `hpm_gpio_loop` | PB04 → PB05，P1-31 ↔ P1-32；按 RevD 丝印核对 | 四项通过：电平及 raw set/clear/mask/toggle；上升/下降沿各 20 次，反向不触发；双边沿 20 次及 masked 写入 2 次边沿、同值无额外回调；停用时 20 次无回调、重装恢复，核 ISR/来源/次数 |
 | `uart` | `hpm_uart_loop` | PB07 TX → PB06 RX（P1-5 ↔ P1-3）；PB05 RTS → PB04 CTS（P1-32 ↔ P1-31） | 257 B 无流控 DMA、97 B + 160 B 分段 offset、RTS/CTS 回环与配置读回、RX disable/re-enable；校验 TX/RX 事件、buffer、offset/length 和数据 |
 | `i2c` | `hpm_i2c_pair` | PB02 SCL ↔ PB07 SCL（RevC P1-28 ↔ P1-5）；PB03 SDA ↔ PB06 SDA（P1-27 ↔ P1-3）；按 RevD 丝印核对，板载已有 10 kΩ 上拉 | I2C0 DMA controller → I2C1 target `0x52`；65 B 写、重复 START 后 64 B 读、STOP 回调；SMBus byte/word、32 B block、1/32 B block PEC、错误 PEC 拒绝、count=33 拒绝及后续恢复 |
+| `spi` | `hpm_spi_loop` | PA29/MOSI ↔ PA28/MISO（P1-19 ↔ P1-21）；保留 PA27/SCLK（P1-23），GPIO PB04/P1-31 CS 由固件控制；按 RevD 丝印核对 | SPI1 1 MHz，Motorola mode 0-3；每种模式 256 B sync 与 async linked-block DMA 回环，TX/RX 各两块不同分割；全量比较、ISR completion 和 CS inactive 检查 |
 | `can` | `hpm5300evk` | MCAN0 静默内部 loopback，无外部 CAN 总线 | 16 帧标准 classic/FD/BRS、8/64 B 数据及 TX/RX ISR；另 20 帧 PTPC0→TSU SOF 64 位捕获，有效/无丢失/递增、8 槽及两次回绕、PTPC 发送前后时间包络 |
 | `flash` | `hpm_flash_scratch` | 板载 XPI NOR，允许擦写下述专用测试扇区 | 全扇区擦除、256 B 写读、二次擦除、先填充 XIP 映射 cache 再验证写/擦后的映射一致性 |
 | `watchdog` | `hpm5300evk` | 无 | EWDG0 仅中断：每 100 ms 喂狗三次；500 ms 超时后延迟 2200 ms 再喂狗并验证重复超时；ISR 内喂狗；停用后无 IRQ、重装完整周期；500 ms → 2500 ms 分频重配；容差分别 ±80/160 ms |
