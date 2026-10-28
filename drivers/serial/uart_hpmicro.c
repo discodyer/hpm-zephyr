@@ -84,6 +84,7 @@ struct hpm_zephyr_uart_data {
 static void hpm_uart_update_dma_mode(const struct device *dev);
 static void hpm_uart_tx_done_handler(struct k_work *work);
 static void hpm_uart_rx_timeout_handler(struct k_work *work);
+static void hpm_uart_rx_ready(const struct device *dev);
 #endif
 
 static word_length_t hpm_uart_word_length(enum uart_config_data_bits data_bits)
@@ -484,9 +485,46 @@ static void hpm_uart_irq_callback_set(const struct device *dev,
 
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 
+#ifdef CONFIG_UART_ASYNC_API
+#if defined(HPM_IP_FEATURE_UART_RX_IDLE_DETECT) && (HPM_IP_FEATURE_UART_RX_IDLE_DETECT == 1)
+static uint8_t hpm_uart_rx_idle_threshold(const struct hpm_zephyr_uart_data *data)
+{
+	uint64_t bits;
+
+	if (data->rx_timeout_us == SYS_FOREVER_US) {
+		return 0U;
+	}
+
+	bits = ((uint64_t)data->baudrate * MAX(data->rx_timeout_us, 1)) + 999999U;
+	bits /= 1000000U;
+	return (uint8_t)CLAMP(bits, 1U, UINT8_MAX);
+}
+
+static void hpm_uart_rx_idle_configure(const struct device *dev, bool enable)
+{
+	const struct hpm_zephyr_uart_config *config = dev->config;
+	struct hpm_zephyr_uart_data *data = dev->data;
+	uart_rxline_idle_config_t idle = {
+		.detect_enable = enable,
+		.detect_irq_enable = enable,
+		.idle_cond = uart_rxline_idle_cond_rxline_logic_one,
+		.threshold = hpm_uart_rx_idle_threshold(data),
+	};
+
+	(void)uart_init_rxline_idle_detection(config->base, idle);
+	if (!enable) {
+		uart_clear_rxline_idle_flag(config->base);
+	}
+}
+#endif
+#endif
+
 #if defined(CONFIG_UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_ASYNC_API)
 static void hpm_uart_isr(const struct device *dev)
 {
+#ifdef CONFIG_UART_ASYNC_API
+	const struct hpm_zephyr_uart_config *config = dev->config;
+#endif
 	struct hpm_zephyr_uart_data *data = dev->data;
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
@@ -496,10 +534,17 @@ static void hpm_uart_isr(const struct device *dev)
 #endif
 #ifdef CONFIG_UART_ASYNC_API
 	if (data->rx_active) {
+#if defined(HPM_IP_FEATURE_UART_RX_IDLE_DETECT) && (HPM_IP_FEATURE_UART_RX_IDLE_DETECT == 1)
+		if (uart_is_rxline_idle(config->base)) {
+			uart_clear_rxline_idle_flag(config->base);
+			hpm_uart_rx_ready(dev);
+		}
+#else
 		if (data->rx_timeout_us != SYS_FOREVER_US) {
 			(void)k_work_reschedule(&data->rx_timeout_work,
 						K_USEC(data->rx_timeout_us));
 		}
+#endif
 	}
 #endif
 }
@@ -627,10 +672,23 @@ static void hpm_uart_rx_disable_internal(const struct device *dev)
 	}
 
 	uart_disable_irq(config->base, uart_intr_rx_data_avail_or_timeout | uart_intr_rx_line_stat);
+#if defined(HPM_IP_FEATURE_UART_RX_IDLE_DETECT) && (HPM_IP_FEATURE_UART_RX_IDLE_DETECT == 1)
+	hpm_uart_rx_idle_configure(dev, false);
+#endif
 	(void)dma_stop(config->dma_dev, config->rx_dma_channel);
 	data->rx_active = false;
 	hpm_uart_update_dma_mode(dev);
 	hpm_uart_rx_release(dev);
+	if (data->rx_next_buf != NULL) {
+		struct uart_event released = {
+			.type = UART_RX_BUF_RELEASED,
+			.data.rx_buf.buf = data->rx_next_buf,
+		};
+
+		data->rx_next_buf = NULL;
+		data->rx_next_len = 0U;
+		hpm_uart_async_callback(dev, &released);
+	}
 	hpm_uart_async_callback(dev, &disabled);
 }
 
@@ -706,16 +764,25 @@ static int hpm_uart_dma_rx_start(const struct device *dev, uint8_t *buf, size_t 
 		hpm_uart_update_dma_mode(dev);
 		return ret;
 	}
-	ret = dma_start(config->dma_dev, config->rx_dma_channel);
-	if (ret < 0) {
-		hpm_uart_update_dma_mode(dev);
-		return ret;
-	}
-
 	data->rx_buf = buf;
 	data->rx_len = len;
 	data->rx_offset = 0U;
 	data->rx_active = true;
+	ret = dma_start(config->dma_dev, config->rx_dma_channel);
+	if (ret < 0) {
+		data->rx_buf = NULL;
+		data->rx_len = 0U;
+		data->rx_offset = 0U;
+		data->rx_active = false;
+		hpm_uart_update_dma_mode(dev);
+		return ret;
+	}
+
+#if defined(HPM_IP_FEATURE_UART_RX_IDLE_DETECT) && (HPM_IP_FEATURE_UART_RX_IDLE_DETECT == 1)
+	if (data->rx_timeout_us != SYS_FOREVER_US) {
+		hpm_uart_rx_idle_configure(dev, true);
+	}
+#endif
 	uart_enable_irq(config->base, uart_intr_rx_data_avail_or_timeout | uart_intr_rx_line_stat);
 	return 0;
 }
@@ -725,15 +792,11 @@ static void hpm_uart_dma_rx_callback(const struct device *dma_dev, void *user_da
 {
 	const struct device *dev = user_data;
 	struct hpm_zephyr_uart_data *data = dev->data;
-	uint8_t *next_buf = data->rx_next_buf;
-	size_t next_len = data->rx_next_len;
 
 	ARG_UNUSED(dma_dev);
 	ARG_UNUSED(channel);
 
 	(void)k_work_cancel_delayable(&data->rx_timeout_work);
-	data->rx_next_buf = NULL;
-	data->rx_next_len = 0U;
 
 	if (status < 0) {
 		struct uart_event stopped = {
@@ -748,6 +811,12 @@ static void hpm_uart_dma_rx_callback(const struct device *dma_dev, void *user_da
 		hpm_uart_rx_disable_internal(dev);
 		return;
 	}
+
+	uint8_t *next_buf = data->rx_next_buf;
+	size_t next_len = data->rx_next_len;
+
+	data->rx_next_buf = NULL;
+	data->rx_next_len = 0U;
 
 	hpm_uart_rx_ready(dev);
 	hpm_uart_rx_release(dev);
@@ -796,7 +865,9 @@ static void hpm_uart_rx_timeout_handler(struct k_work *work)
 	}
 
 	if (data->rx_timeout_us != SYS_FOREVER_US && data->rx_buf != NULL) {
+#if !defined(HPM_IP_FEATURE_UART_RX_IDLE_DETECT) || (HPM_IP_FEATURE_UART_RX_IDLE_DETECT != 1)
 		(void)k_work_reschedule(&data->rx_timeout_work, K_USEC(data->rx_timeout_us));
+#endif
 	}
 }
 
@@ -931,9 +1002,11 @@ static int hpm_uart_async_rx_enable(const struct device *dev, uint8_t *buf, size
 		data->rx_timeout_us = 0;
 		return ret;
 	}
+#if !defined(HPM_IP_FEATURE_UART_RX_IDLE_DETECT) || (HPM_IP_FEATURE_UART_RX_IDLE_DETECT != 1)
 	if (timeout != SYS_FOREVER_US) {
 		(void)k_work_reschedule(&data->rx_timeout_work, K_USEC(timeout));
 	}
+#endif
 	hpm_uart_async_callback(dev, &request);
 	return 0;
 }
@@ -951,9 +1024,11 @@ static int hpm_uart_async_rx_buf_rsp(const struct device *dev, uint8_t *buf, siz
 
 	data->rx_next_buf = buf;
 	data->rx_next_len = len;
+#if !defined(HPM_IP_FEATURE_UART_RX_IDLE_DETECT) || (HPM_IP_FEATURE_UART_RX_IDLE_DETECT != 1)
 	if (data->rx_timeout_us != SYS_FOREVER_US) {
 		(void)k_work_reschedule(&data->rx_timeout_work, K_USEC(data->rx_timeout_us));
 	}
+#endif
 	return 0;
 }
 

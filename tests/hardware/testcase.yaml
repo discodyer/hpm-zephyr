@@ -60,3 +60,9 @@ tests:
       - DTC_OVERLAY_FILE=profiles/gpio.overlay
     harness_config:
       fixture: hpm_gpio_loop
+  hpmicro.hardware.uart:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/uart.conf
+      - DTC_OVERLAY_FILE=profiles/uart.overlay
+    harness_config:
+      fixture: hpm_uart_loop

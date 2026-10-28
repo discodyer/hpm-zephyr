@@ -1,0 +1,18 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+#include <dt-bindings/dma/hpmicro-hpm5300-dma.h>
+
+&uart1 {
+	status = "okay";
+	current-speed = <115200>;
+	dmas = <&hdma 6 HPM_DMA_SRC_UART1_RX>, <&hdma 7 HPM_DMA_SRC_UART1_TX>;
+	dma-names = "rx", "tx";
+	pinctrl-0 = <&pb07_uart1_txd &pb06_uart1_rxd>;
+	pinctrl-1 = <&pb05_uart1_rts &pb04_uart1_cts>;
+	pinctrl-2 = <&pb05_uart1_de>;
+	pinctrl-names = "default", "flow_control", "rs485";
+};
+
+&hdma {
+	status = "okay";
+};

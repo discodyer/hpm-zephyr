@@ -45,6 +45,12 @@ config HPM_TEST_GPIO
 	  Verify GPIO levels, raw port operations and edge interrupts using
 	  an external jumper between the fixture output and input pins.
 
+config HPM_TEST_UART
+	bool "uart"
+	help
+	  Verify UART1 asynchronous DMA transfers and RTS/CTS flow control
+	  using external data and flow-control loopback jumpers.
+
 endchoice
 
 source "Kconfig.zephyr"
