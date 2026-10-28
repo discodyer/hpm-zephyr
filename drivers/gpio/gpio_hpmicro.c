@@ -36,8 +36,7 @@ static int hpm_gpio_pin_configure(const struct device *dev, gpio_pin_t pin, gpio
 	 * pinctrl. Reject them instead of reporting success without applying
 	 * the requested configuration.
 	 */
-	if ((flags & (GPIO_PULL_UP | GPIO_PULL_DOWN |
-		      GPIO_SINGLE_ENDED)) != 0U) {
+	if ((flags & (GPIO_PULL_UP | GPIO_PULL_DOWN | GPIO_SINGLE_ENDED)) != 0U) {
 		return -ENOTSUP;
 	}
 
@@ -78,8 +77,8 @@ static int hpm_gpio_port_set_masked_raw(const struct device *dev, gpio_port_pins
 {
 	const struct hpm_gpio_config *config = dev->config;
 
-	config->base->DO[config->port].VALUE =
-		(config->base->DO[config->port].VALUE & ~mask) | (value & mask);
+	config->base->DO[config->port].CLEAR = mask & ~value;
+	config->base->DO[config->port].SET = mask & value;
 
 	return 0;
 }
@@ -122,6 +121,10 @@ static int hpm_gpio_pin_interrupt_configure(const struct device *dev, gpio_pin_t
 		return 0;
 	}
 
+	if (config->irq_config_func == NULL) {
+		return -ENOTSUP;
+	}
+
 	if (mode == GPIO_INT_MODE_LEVEL) {
 		switch (trig) {
 		case GPIO_INT_TRIG_LOW:
@@ -151,8 +154,9 @@ static int hpm_gpio_pin_interrupt_configure(const struct device *dev, gpio_pin_t
 		return -ENOTSUP;
 	}
 
-	gpio_clear_pin_interrupt_flag(config->base, config->port, pin);
+	gpio_disable_pin_interrupt(config->base, config->port, pin);
 	gpio_config_pin_interrupt(config->base, config->port, pin, trigger);
+	gpio_clear_pin_interrupt_flag(config->base, config->port, pin);
 	gpio_enable_pin_interrupt(config->base, config->port, pin);
 
 	return 0;
@@ -174,14 +178,14 @@ static void hpm_gpio_isr(const struct device *dev)
 	uint32_t status;
 
 	status = config->base->IF[config->port].VALUE;
-	status &= config->common.port_pin_mask;
+	status &= config->base->IE[config->port].VALUE & config->common.port_pin_mask;
 	config->base->IF[config->port].VALUE = status;
 
 	gpio_fire_callbacks(&data->callbacks, dev, status);
 }
 #endif
 
-static const struct gpio_driver_api hpm_gpio_api = {
+static DEVICE_API(gpio, hpm_gpio_api) = {
 	.pin_configure = hpm_gpio_pin_configure,
 	.port_get_raw = hpm_gpio_port_get_raw,
 	.port_set_masked_raw = hpm_gpio_port_set_masked_raw,

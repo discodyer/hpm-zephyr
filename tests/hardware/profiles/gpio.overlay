@@ -1,0 +1,22 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/ {
+	hw_fixture: hardware-test {
+		compatible = "hpmicro,hardware-test";
+		pinctrl-0 = <&pb04_gpio_b_04 &pb05_gpio_b_05>;
+		pinctrl-names = "default";
+		out-gpios = <&gpiob 4 GPIO_ACTIVE_HIGH>;
+		in-gpios = <&gpiob 5 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&gpiob {
+	status = "okay";
+};
+
+&pb04_gpio_b_04 {
+	group0 {
+		/* Keep the pad input buffer enabled for output readback. */
+		input-enable;
+	};
+};

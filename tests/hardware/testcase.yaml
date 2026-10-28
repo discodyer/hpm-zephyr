@@ -54,3 +54,9 @@ tests:
       - DTC_OVERLAY_FILE=profiles/motor.overlay
     harness_config:
       fixture: hpm5300evk
+  hpmicro.hardware.gpio:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/gpio.conf
+      - DTC_OVERLAY_FILE=profiles/gpio.overlay
+    harness_config:
+      fixture: hpm_gpio_loop

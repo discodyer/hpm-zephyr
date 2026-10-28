@@ -39,6 +39,12 @@ config HPM_TEST_MOTOR
 	  Verify internal SYNT, PLB, QEO, MMC and GPIOM operations without
 	  requiring external motor-control hardware.
 
+config HPM_TEST_GPIO
+	bool "gpio"
+	help
+	  Verify GPIO levels, raw port operations and edge interrupts using
+	  an external jumper between the fixture output and input pins.
+
 endchoice
 
 source "Kconfig.zephyr"

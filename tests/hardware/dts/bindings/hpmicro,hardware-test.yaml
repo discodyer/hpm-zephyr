@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: Pin and GPIO resources used by the HPM hardware acceptance application
+compatible: "hpmicro,hardware-test"
+include: [base.yaml, pinctrl-device.yaml]
+properties:
+  out-gpios:
+    type: phandle-array
+  in-gpios:
+    type: phandle-array
