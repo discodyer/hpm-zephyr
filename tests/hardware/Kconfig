@@ -70,6 +70,12 @@ config HPM_TEST_ANALOG
 	  asynchronous conversion, preemption DMA, and TRGM-triggered conversion over
 	  an external loopback wire.
 
+config HPM_TEST_FRONT_END
+	bool "analog front end"
+	help
+	  Verify the OPAMP0 voltage follower and ACMP1 threshold interrupts
+	  using DAC0 output and external signal loopback wires.
+
 endchoice
 
 source "Kconfig.zephyr"

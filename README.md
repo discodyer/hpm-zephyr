@@ -19,7 +19,7 @@ modules/hpm_sdk/             HPM SDK integration glue
 
 | Board | Target | Console | Build status | Hardware status |
 |---|---|---|---|---|
-| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and twelve hardware profiles (46 tests) pass |
+| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and thirteen hardware profiles (49 tests) pass |
 | HPM5361ICB | `hpm5361icb/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | Not validated |
 
 Both targets currently provide interrupt routing, machine timer, clock/PLL and
@@ -41,15 +41,16 @@ and initialization execute from RAM while XIP is active.
 Build-only validation is complete for both boards, including the Twister
 smoke test. EVK RevD XIP startup, basic polling UART echo/heartbeat,
 OpenOCD flash/verify and GDB breakpoints/single-step passed. The hardware
-acceptance profiles passed 46 tests: `core` (8/8), `dma` (2/2), `crypto` (6/6),
+acceptance profiles passed 49 tests: `core` (8/8), `dma` (2/2), `crypto` (6/6),
 `flash` (1/1), `watchdog` (4/4), `can` (2/2), `motor` (5/5), `gpio` (4/4),
-`uart` (4/4), `i2c` (3/3), `spi` (1/1) and `analog` (6/6). Coverage includes
-internal CAN/TSU
-loopback, motor-block math and routing, GPIO edge interrupts, UART1 DMA/RTS/CTS,
+`uart` (4/4), `i2c` (3/3), `spi` (1/1), `analog` (6/6) and `front_end` (3/3).
+Coverage includes internal CAN/TSU loopback, motor-block math and routing,
+GPIO edge interrupts, UART1 DMA/RTS/CTS,
 paired I2C DMA/repeated START/SMBus block/PEC transfers, and SPI1 four-mode
 GPIO-CS loopback with synchronous and asynchronous linked-block DMA transfers,
 plus DAC0-to-ADC0 synchronous/asynchronous, preemption, TRGM, step and buffer
-paths. Analog accuracy and external waveform timing remain unvalidated.
+paths, plus OPAMP0 follower voltage and ACMP1 edge, disable/rearm and pending
+callback paths. Analog accuracy and external waveform timing remain unvalidated.
 
 Each result covers the paths listed in the
 [hardware test record](tests/hardware/README.md). Flash coverage is limited
@@ -59,9 +60,9 @@ covers synchronous SDP known-answer tests; async completion and stress remain
 open. Independent timer accuracy, USB enumeration and class traffic remain
 unvalidated. SPI acceptance is limited to MOSI/MISO loopback; external slave
 timing, native CS behavior and electrical measurements remain open.
-Analog acceptance is limited to one DAC0.OUT-to-ADC0.IN13 loopback; accuracy,
-noise, linearity, external waveform timing and other ADC/DAC instances remain
-unvalidated.
+Analog acceptance covers the DAC0.OUT-to-ADC0.IN13 loopback and the OPAMP0/ACMP1
+front-end fixture. Accuracy, noise, linearity, external waveform timing and
+other instances remain unvalidated.
 
 On 2026-10-27, FT2232 reset wiring, NOR boot-option retention and PMP access
 to the DM debug ROM were corrected without changing the SDK. The DM region
@@ -105,8 +106,8 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | HDMA / DMAMUX | 32 channels | `dma` | Linked-block and suspend/resume paths hardware-tested | Memory-to-memory/peripheral transfers, cyclic mode, linked descriptors, DMAMUX requests, callbacks, channel allocation/release and status/attributes; peripheral-to-peripheral is unsupported by the silicon |
 | ADC16 | 2 | `adc` | ADC0 sequence, preemption and TRGM paths hardware-tested | 12-bit synchronous/asynchronous sequence, two-channel read after preemption, 16-bit preemption DMA and external trigger passed; other resolutions, motor forwarding and other instances remain unvalidated |
 | DAC12 | 2 | `dac` | DAC0 direct, step and buffer paths hardware-tested | 12-bit direct output, step endpoint and internal buffer measured through ADC0; hardware trigger, waveform timing and other instances remain unvalidated |
-| ACMP | 1 block, 2 comparators | `comparator` | Implemented (build-only) | Per-channel comparator devices, input selection, hysteresis, filtering, internal DAC threshold, edge IRQ/callback; live output level is not exposed by hardware |
-| OPAMP | 2 | `opamp` | Implemented (build-only) | Follower, inverting, non-inverting and custom modes; internal/external/DAC references, initial and runtime gain, input selection, Miller and phase-margin capacitors; no differential mode |
+| ACMP | 1 block, 2 comparators | `comparator` | ACMP1 edge/callback paths hardware-tested | Single/both edges, callback identity/count/context, disable/rearm and pending read/clear/rebind passed with the internal DAC threshold; ACMP0, filtering, hysteresis, precision, latency and concurrency remain unvalidated; live output level is unavailable |
+| OPAMP | 2 | `opamp` | OPAMP0 follower hardware-tested | Four DAC0 levels passed ADC0.IN15 follower readback; other modes, gain settings, OPAMP1 and calibrated accuracy remain unvalidated; no differential mode |
 | GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Core alarm path hardware-tested | GPTMR alarm IRQ and clock recovery passed in the core profile; top/wrap boundaries and other timer channels remain unvalidated |
 | Watchdog | EWDG0-1, PEWDG | `watchdog` | EWDG0 IRQ-only paths hardware-tested | Thread/ISR feeding, delayed feeding, repeated timeout, disable/reinstall and 500 ms to 2500 ms reconfiguration passed; SoC reset, window mode and sleep/debug pause remain unvalidated; CPU-core-only reset and multistage watchdog are unsupported |
 | RTC | None | N/A | Not applicable | HPM5300/HPM5361 has no independent RTC block; use a board-level external RTC if wall-clock time is required |

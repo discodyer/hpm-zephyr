@@ -84,3 +84,9 @@ tests:
       - DTC_OVERLAY_FILE=profiles/analog.overlay
     harness_config:
       fixture: hpm_analog_loop
+  hpmicro.hardware.front_end:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/front_end.conf
+      - DTC_OVERLAY_FILE=profiles/front_end.overlay
+    harness_config:
+      fixture: hpm_front_end_loop

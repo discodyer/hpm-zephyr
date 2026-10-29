@@ -5,9 +5,10 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 12 个 profile：`core`、`dma`、`crypto`、`flash`、
-`watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c`、`spi` 和 `analog`，分别通过
-8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3、1/1 和 6/6 项，共 46 项测试。
+本轮已在 HPM5300EVK RevD 上验证 13 个 profile：`core`、`dma`、`crypto`、`flash`、
+`watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c`、`spi`、`analog` 和 `front_end`，
+分别通过 8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3、1/1、6/6 和 3/3 项，
+共 49 项测试。
 历史候选 profile 的 build-only 记录保留在下文，
 不代表这些候选已纳入本轮提交或通过硬件验收。
 
@@ -133,6 +134,24 @@ DMA 数据；DAC step/buffer 路径限制输出时钟低于 1 MHz，并在启动
 实例。analog 加入后 12 个 profile 的 Twister build-only 回归通过，0 失败/错误/警告，
 报告为 `build/twister-hardware-analog-final/twister.json`。
 
+2026-10-29 `front_end` profile 在 HPM5300EVK RevD 上两次独立物理复位均通过
+3/3 项测试，各耗时 4.502 s；`west flash --verify` 成功。最终 UART 日志为
+`build/hw-front-end-final-reset1.uart.log` 和
+`build/hw-front-end-final-reset2.uart.log`，烧录记录为
+`build/hw-front-end-final-flash.log`。接线见下文模拟前端回环节，由操作者确认。
+
+OPAMP0 follower 的 DAC0 输入为 768、1536、2304、3072；两次 ADC0.IN15 回读分别为
+774/1546/2313/3084 和 776/1546/2316/3080，均满足既定 ±160 code 容差。ACMP1
+检查 8 次下降沿、8 次上升沿、反向边沿不回调、停用时 16 次跨阈值无回调及重装恢复，
+共 17 次 ISR 回调；另检查双边沿 16 次、pending 读清、重绑立即在线程派发及后续 ISR
+恢复，共 18 次回调。硬件边沿检查 ISR 上下文、设备、user data 和精确次数；pending
+重绑检查回调在 API 返回前执行。驱动无需修改。
+
+加入 front_end 后 13 个 profile、49 个测试项的 Twister build-only 回归通过，
+0 失败/错误，Twister 汇总及编译器无警告；原始构建日志仍有既存 CMake 空库和未使用
+`TC_NAME` 提示。报告为 `build/twister-hardware-front-end-final/twister.json`。
+测试保持 XIP、cache 和 PMP；本结果不建立校准精度、噪声或传播延迟验收。
+
 2026-10-28 GPIO 验收后回归：八个已注册 Twister 场景全部构建成功，
 8/8 build-only、32 项测试、0 失败/错误/警告，报告为
 `build/twister-hardware-post-gpio-final/twister.json`。
@@ -168,7 +187,7 @@ UART 场景单独 build-only 构建成功，报告为
 Twister 记录位于 `build/twister-hardware-post-core/twister.log`，报告位于
 `build/twister-hardware-post-core/twister.json`。
 基线为 Zephyr `f78c4deb4523`、SDK `ccc5ec467a047f3ea85cd2fa4565e91db7135a38`。
-该历史矩阵包含尚未纳入本轮提交的候选文件，不能用当前 11-profile 范围直接复现。
+该历史矩阵包含尚未纳入提交的候选文件，不能用当前 13-profile 范围直接复现。
 
 ## 构建与运行
 
@@ -220,7 +239,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 12 个已上板验收 profile，具体范围及限制见前述运行记录。
+下表列出 13 个已上板验收 profile，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -235,6 +254,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `i2c` | `hpm_i2c_pair` | PB02 SCL ↔ PB07 SCL（RevC P1-28 ↔ P1-5）；PB03 SDA ↔ PB06 SDA（P1-27 ↔ P1-3）；按 RevD 丝印核对，板载已有 10 kΩ 上拉 | I2C0 DMA controller → I2C1 target `0x52`；65 B 写、重复 START 后 64 B 读、STOP 回调；SMBus byte/word、32 B block、1/32 B block PEC、错误 PEC 拒绝、count=33 拒绝及后续恢复 |
 | `spi` | `hpm_spi_loop` | PA29/MOSI ↔ PA28/MISO（P1-19 ↔ P1-21）；保留 PA27/SCLK（P1-23），GPIO PB04/P1-31 CS 由固件控制；按 RevD 丝印核对 | SPI1 1 MHz，Motorola mode 0-3；每种模式 256 B sync 与 async linked-block DMA 回环，TX/RX 各两块不同分割；全量比较、ISR completion 和 CS inactive 检查 |
 | `analog` | `hpm_analog_loop` | PB08/DAC0.OUT（J7-20）→ PB05/ADC0.IN13（P1-32）；按 RevD 丝印核对 | ADC 同步/异步、双通道、抢占 DMA、TRGM 上升沿触发；DAC direct/step/buffer 输出由 ADC 回读 |
+| `front_end` | `hpm_front_end_loop` | J7-20/PB08 → P1-31/PB04；P1-8/PB08 → P1-40/PB11，见下文 | OPAMP0 follower 四电平回读；ACMP1 单/双边沿精确次数及 ISR 来源、禁用/重装、pending 读清及同步 callback 派发 |
 | `can` | `hpm5300evk` | MCAN0 静默内部 loopback，无外部 CAN 总线 | 16 帧标准 classic/FD/BRS、8/64 B 数据及 TX/RX ISR；另 20 帧 PTPC0→TSU SOF 64 位捕获，有效/无丢失/递增、8 槽及两次回绕、PTPC 发送前后时间包络 |
 | `flash` | `hpm_flash_scratch` | 板载 XPI NOR，允许擦写下述专用测试扇区 | 全扇区擦除、256 B 写读、二次擦除、先填充 XIP 映射 cache 再验证写/擦后的映射一致性 |
 | `watchdog` | `hpm5300evk` | 无 | EWDG0 仅中断：每 100 ms 喂狗三次；500 ms 超时后延迟 2200 ms 再喂狗并验证重复超时；ISR 内喂狗；停用后无 IRQ、重装完整周期；500 ms → 2500 ms 分频重配；容差分别 ±80/160 ms |
@@ -242,6 +262,23 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 PA24 是 LIN 12 V 电源使能，未引到 P1。GPIO profile 仅驱动 PB04；motor profile
 只切换 PA24 的输入可见性，不配置该引脚输出。
+
+### 模拟前端回环接线
+
+`front_end` profile 验证 OPAMP0 跟随器和 ACMP1 阈值中断。先移除 `analog`
+的 PB08 → PB05 跳线，再连接以下两根信号线：
+
+- J7-20（PB08/DAC0.OUT）↔ P1-31（PB04/OPAMP0.INP0，GPIO22）。
+- P1-8（PB08/DAC0.OUT，TXD）↔ P1-40（PB11/ACMP1.INN4，GPIO29）。
+
+J7-20 和 P1-8 是同一个 PB08 信号，因此每个针脚只需一根杜邦线。P1-10 是
+P1-8 旁边的 RXD；P1-39 是 P1-40 旁边的 GND。不要把这些邻针接入回环，
+不需要连接电源脚。引脚映射依据官方 EVK RevC 原理图第 2、6、9 页；本次硬件为
+RevD，接线由操作者按实物核对。
+
+OPAMP0.OUT 与 ADC0.IN15 共用 PB00，固件通过该节点回读，不需要第三根跳线。
+ACMP1 的正输入使用其内部 8-bit DAC 阈值 128，负输入连接外部 DAC0/PB08。
+这种回环不建立 OPAMP 增益矩阵、模拟精度、比较器传播延迟或独立电压校准验收。
 
 ## Flash、cache 与验收边界
 
@@ -281,6 +318,7 @@ OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、�
 | MBX/GPIOM | 跨核通信/FIFO、跨控制器访问、锁定持久性 |
 | QEO/MMC/PLB/SYNT/TRGM | QEO 外部 PWM/ABZ 及波形、闭环 MMC、独立 predictor 停止、PLB filter、SYNT comparator/debug-stop、外部电机路由和中断 |
 | SDP/RNG/CRC/TSNS | cache/并发/故障注入压力、随机源统计质量、CRC 多项式矩阵、温度校准 |
+| OPAMP/ACMP | OPAMP1、其他拓扑和增益矩阵、校准精度/噪声；ACMP0、双通道并发、阈值精度、滤波/迟滞、反相、输出脚及传播延迟 |
 | flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 烧写/lock/reload/region 仅在专用可消耗芯片另行验收 |
 
 generic 9-bit UART、DMA P2P、CPU-core-only/multistage watchdog、TRGM 独立事件
