@@ -21,13 +21,26 @@ extern "C" {
  * @brief HPMicro PWM extensions
  * @defgroup hpm_pwm_interface HPMicro PWM
  * @ingroup pwm_interface
+ *
+ * Standard capture uses an independent PWM block with a free-running 28-bit
+ * counter. It cannot be enabled on a block that has configured any output,
+ * reference output or fault output during the current boot, even if its pulse
+ * width is zero. Output configuration and raw capture configuration return
+ * -EBUSY while standard capture is active. Capture starts its own counter;
+ * no dummy output is required. Captured periods must be shorter than
+ * 2^28 / rate seconds, where rate is returned by pwm_get_cycles_per_sec().
+ * Multiple counter wraps cannot be distinguished and are not supported.
+ *
+ * A NULL standard capture callback clears the binding, as required by the
+ * blocking capture helpers' timeout cleanup. Enabling capture without a
+ * callback returns -EINVAL.
  * @{
  */
 
 /** Number of comparators in one HPM5361 PWM block. */
-#define HPM_PWM_COMPARATOR_COUNT 24U
+#define HPM_PWM_COMPARATOR_COUNT       24U
 /** Maximum dead-zone value in PWM clock half-cycles. */
-#define HPM_PWM_DEAD_ZONE_MAX    0xFFFFFU
+#define HPM_PWM_DEAD_ZONE_MAX          0xFFFFFU
 /** First general-purpose reference output used by TRGM. */
 #define HPM_PWM_REFERENCE_OUTPUT_FIRST 8U
 /** Last general-purpose reference output exposed by HPM5361 TRGM. */
@@ -84,9 +97,9 @@ __subsystem struct hpm_pwm_driver_api {
 	int (*configure_capture)(const struct device *dev, uint8_t comparator,
 				 enum hpm_pwm_capture_edge edge);
 	int (*get_capture)(const struct device *dev, uint8_t comparator, uint32_t *capture);
-	int (*set_reference_cycles)(const struct device *dev, uint8_t comparator,
-				    uint8_t reference, uint32_t period_cycles,
-				    uint32_t pulse_cycles, pwm_flags_t flags);
+	int (*set_reference_cycles)(const struct device *dev, uint8_t comparator, uint8_t reference,
+				    uint32_t period_cycles, uint32_t pulse_cycles,
+				    pwm_flags_t flags);
 };
 
 DEVICE_API_EXTENDS(hpm_pwm, pwm, pwm_api);
@@ -109,6 +122,7 @@ DEVICE_API_EXTENDS(hpm_pwm, pwm, pwm_api);
  * @retval 0 on success.
  * @retval -EINVAL for an invalid pair, period, pulse or dead time.
  * @retval -ENOTSUP for unsupported flags.
+ * @retval -EBUSY while standard capture is active on this block.
  */
 static inline int hpm_pwm_set_complementary(const struct device *dev, uint32_t channel,
 					    uint32_t period_cycles, uint32_t pulse_cycles,
@@ -128,6 +142,7 @@ static inline int hpm_pwm_set_complementary(const struct device *dev, uint32_t c
  *
  * @retval 0 on success.
  * @retval -EINVAL for null or invalid configuration.
+ * @retval -EBUSY while standard capture is active on this block.
  */
 static inline int hpm_pwm_configure_fault(const struct device *dev,
 					  const struct hpm_pwm_fault_config *config)
@@ -150,6 +165,7 @@ static inline int hpm_pwm_clear_fault(const struct device *dev)
  *
  * @retval 0 on success.
  * @retval -EINVAL for an invalid comparator or edge.
+ * @retval -EBUSY while standard capture is active on this block.
  */
 static inline int hpm_pwm_configure_capture(const struct device *dev, uint8_t comparator,
 					    enum hpm_pwm_capture_edge edge)
@@ -158,7 +174,12 @@ static inline int hpm_pwm_configure_capture(const struct device *dev, uint8_t co
 }
 
 /**
- * @brief Read the latest capture value for a comparator.
+ * @brief Read the latest raw rising-edge timestamp for a comparator.
+ *
+ * The value is the CAPPOS register encoding: the 28-bit counter occupies
+ * bits 31 through 4. This raw accessor always reads the rising-edge register,
+ * independently of the interrupt edge selected by hpm_pwm_configure_capture().
+ * Standard PWM capture callbacks instead report elapsed PWM clock cycles.
  *
  * @retval 0 on success.
  * @retval -EINVAL for an invalid comparator or null output.
@@ -192,6 +213,7 @@ static inline int hpm_pwm_get_capture(const struct device *dev, uint8_t comparat
  * @retval 0 on success.
  * @retval -EINVAL for an invalid comparator, reference, period or pulse.
  * @retval -ENOTSUP for unsupported flags or an unrepresentable period.
+ * @retval -EBUSY while standard capture is active on this block.
  */
 static inline int hpm_pwm_set_reference_cycles(const struct device *dev, uint8_t comparator,
 					       uint8_t reference, uint32_t period_cycles,

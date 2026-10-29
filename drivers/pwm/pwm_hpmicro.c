@@ -31,7 +31,9 @@ LOG_MODULE_REGISTER(pwm_hpmicro, CONFIG_PWM_LOG_LEVEL);
 #define HPM_PWM_CHANNELS 8U
 #endif
 
-#define HPM_PWM_MAX_PERIOD (PWM_RLD_RLD_MASK >> PWM_RLD_RLD_SHIFT)
+#define HPM_PWM_MAX_PERIOD          (PWM_RLD_RLD_MASK >> PWM_RLD_RLD_SHIFT)
+#define HPM_PWM_CAPTURE_MAX_XRLD    (PWM_RLD_XRLD_MASK >> PWM_RLD_XRLD_SHIFT)
+#define HPM_PWM_CAPTURE_COUNT_SHIFT PWM_CNT_CNT_SHIFT
 
 struct hpm_pwm_config {
 	PWM_Type *base;
@@ -46,6 +48,7 @@ struct hpm_pwm_config {
 struct hpm_pwm_data {
 	struct k_mutex lock;
 	uint32_t frequency;
+	bool output_configured;
 #ifdef CONFIG_PWM_CAPTURE
 	pwm_capture_callback_handler_t capture_callback;
 	void *capture_user_data;
@@ -57,6 +60,16 @@ struct hpm_pwm_data {
 	bool capture_have_edge;
 #endif
 };
+
+static bool hpm_pwm_capture_is_active(const struct hpm_pwm_data *data)
+{
+#ifdef CONFIG_PWM_CAPTURE
+	return atomic_get(&data->capture_active) != 0;
+#else
+	ARG_UNUSED(data);
+	return false;
+#endif
+}
 
 static int hpm_pwm_set_cycles(const struct device *dev, uint32_t channel, uint32_t period_cycles,
 			      uint32_t pulse_cycles, pwm_flags_t flags)
@@ -96,6 +109,11 @@ static int hpm_pwm_set_cycles(const struct device *dev, uint32_t channel, uint32
 	compare = pulse_cycles == 0U ? period_cycles : period_cycles - pulse_cycles;
 
 	k_mutex_lock(&data->lock, K_FOREVER);
+	if (hpm_pwm_capture_is_active(data)) {
+		ret = -EBUSY;
+		goto out;
+	}
+	data->output_configured = true;
 
 	pwm_stop_counter(config->base);
 	pwm_set_start_count(config->base, 0U, 0U);
@@ -156,6 +174,11 @@ static int hpm_pwm_set_complementary_impl(const struct device *dev, uint32_t cha
 	inverted = (flags & PWM_POLARITY_INVERTED) != 0U;
 
 	k_mutex_lock(&data->lock, K_FOREVER);
+	if (hpm_pwm_capture_is_active(data)) {
+		ret = -EBUSY;
+		goto out;
+	}
+	data->output_configured = true;
 
 	pwm_stop_counter(config->base);
 	pwm_set_start_count(config->base, 0U, 0U);
@@ -202,9 +225,8 @@ static int hpm_pwm_set_reference_cycles_impl(const struct device *dev, uint8_t c
 
 	if ((comparator >= HPM_PWM_COMPARATOR_COUNT) ||
 	    (reference < HPM_PWM_REFERENCE_OUTPUT_FIRST) ||
-	    (reference > HPM_PWM_REFERENCE_OUTPUT_LAST) ||
-	    (period_cycles == 0U) || (pulse_cycles > period_cycles) ||
-	    (period_cycles > HPM_PWM_MAX_PERIOD)) {
+	    (reference > HPM_PWM_REFERENCE_OUTPUT_LAST) || (period_cycles == 0U) ||
+	    (pulse_cycles > period_cycles) || (period_cycles > HPM_PWM_MAX_PERIOD)) {
 		return -EINVAL;
 	}
 	if ((flags & ~PWM_POLARITY_MASK) != 0U) {
@@ -215,6 +237,11 @@ static int hpm_pwm_set_reference_cycles_impl(const struct device *dev, uint8_t c
 	compare = pulse_cycles == 0U ? period_cycles : period_cycles - pulse_cycles;
 
 	k_mutex_lock(&data->lock, K_FOREVER);
+	if (hpm_pwm_capture_is_active(data)) {
+		k_mutex_unlock(&data->lock);
+		return -EBUSY;
+	}
+	data->output_configured = true;
 	pwm_stop_counter(config->base);
 	pwm_set_start_count(config->base, 0U, 0U);
 	pwm_set_reload(config->base, 0U, reload);
@@ -289,6 +316,11 @@ static int hpm_pwm_configure_fault_impl(const struct device *dev,
 	source.fault_output_recovery_trigger = config->recovery;
 
 	k_mutex_lock(&data->lock, K_FOREVER);
+	if (hpm_pwm_capture_is_active(data)) {
+		k_mutex_unlock(&data->lock);
+		return -EBUSY;
+	}
+	data->output_configured = true;
 	pwm_config_fault_source(pwm->base, &source);
 
 	for (channel = 0U; channel < HPM_PWM_CHANNELS; channel++) {
@@ -353,11 +385,13 @@ static void hpm_pwm_capture_isr(const struct device *dev)
 		return;
 	}
 
+	/* Subtract raw encodings before shifting to handle a full-counter wrap. */
 	if ((data->capture_flags & PWM_CAPTURE_TYPE_PERIOD) != 0U) {
-		period = same_edge - data->capture_last_same_edge;
+		period = (same_edge - data->capture_last_same_edge) >> HPM_PWM_CAPTURE_COUNT_SHIFT;
 	}
 	if ((data->capture_flags & PWM_CAPTURE_TYPE_PULSE) != 0U) {
-		pulse = opposite_edge - data->capture_last_same_edge;
+		pulse = (opposite_edge - data->capture_last_same_edge) >>
+			HPM_PWM_CAPTURE_COUNT_SHIFT;
 	}
 	data->capture_last_same_edge = same_edge;
 
@@ -365,6 +399,7 @@ static void hpm_pwm_capture_isr(const struct device *dev)
 	user_data = data->capture_user_data;
 	if ((data->capture_flags & PWM_CAPTURE_MODE_MASK) == PWM_CAPTURE_MODE_SINGLE) {
 		pwm_disable_irq(config->base, mask);
+		pwm_stop_counter(config->base);
 		atomic_clear(&data->capture_active);
 	}
 	if (callback != NULL) {
@@ -386,8 +421,8 @@ static int hpm_pwm_configure_capture_api_impl(const struct device *dev, uint32_t
 	if ((channel >= HPM_PWM_COMPARATOR_COUNT) ||
 	    ((type != PWM_CAPTURE_TYPE_PERIOD) && (type != PWM_CAPTURE_TYPE_PULSE) &&
 	     (type != PWM_CAPTURE_TYPE_BOTH)) ||
-	    ((flags & ~(PWM_POLARITY_MASK | PWM_CAPTURE_TYPE_MASK |
-			PWM_CAPTURE_MODE_MASK)) != 0U)) {
+	    ((flags & ~(PWM_POLARITY_MASK | PWM_CAPTURE_TYPE_MASK | PWM_CAPTURE_MODE_MASK)) !=
+	     0U)) {
 		return -EINVAL;
 	}
 
@@ -396,17 +431,24 @@ static int hpm_pwm_configure_capture_api_impl(const struct device *dev, uint32_t
 		k_mutex_unlock(&data->lock);
 		return -EBUSY;
 	}
+	if ((callback != NULL) && data->output_configured) {
+		k_mutex_unlock(&data->lock);
+		return -EBUSY;
+	}
 
-	irq_mask = PWM_IRQ_CMP(channel);
-	pwm_disable_irq(config->base, irq_mask);
-	pwm_clear_status(config->base, irq_mask);
-	pwm_get_default_cmp_config(config->base, &compare);
-	compare.mode = pwm_cmp_mode_input_capture;
-	pwm_config_cmp(config->base, channel, &compare);
-	if ((flags & PWM_POLARITY_MASK) == PWM_POLARITY_INVERTED) {
-		pwm_set_capture_irq_falling_edge(config->base, irq_mask);
-	} else {
-		pwm_set_capture_irq_rising_edge(config->base, irq_mask);
+	/* NULL is used by the blocking helpers to release their stack callback. */
+	if (callback != NULL) {
+		irq_mask = PWM_IRQ_CMP(channel);
+		pwm_disable_irq(config->base, irq_mask);
+		pwm_clear_status(config->base, irq_mask);
+		pwm_get_default_cmp_config(config->base, &compare);
+		compare.mode = pwm_cmp_mode_input_capture;
+		pwm_config_cmp(config->base, channel, &compare);
+		if ((flags & PWM_POLARITY_MASK) == PWM_POLARITY_INVERTED) {
+			pwm_set_capture_irq_falling_edge(config->base, irq_mask);
+		} else {
+			pwm_set_capture_irq_rising_edge(config->base, irq_mask);
+		}
 	}
 
 	data->capture_callback = callback;
@@ -431,7 +473,8 @@ static int hpm_pwm_enable_capture_impl(const struct device *dev, uint32_t channe
 	}
 
 	k_mutex_lock(&data->lock, K_FOREVER);
-	if (!data->capture_configured || (data->capture_channel != channel)) {
+	if (!data->capture_configured || (data->capture_channel != channel) ||
+	    (data->capture_callback == NULL)) {
 		k_mutex_unlock(&data->lock);
 		return -EINVAL;
 	}
@@ -439,11 +482,26 @@ static int hpm_pwm_enable_capture_impl(const struct device *dev, uint32_t channe
 		k_mutex_unlock(&data->lock);
 		return -EBUSY;
 	}
+	if (data->output_configured) {
+		k_mutex_unlock(&data->lock);
+		return -EBUSY;
+	}
 
 	irq_mask = PWM_IRQ_CMP(channel);
+	/* Full 28-bit free-running timebase; raw captures have four reserved low bits. */
+	pwm_stop_counter(config->base);
+	pwm_set_start_count(config->base, 0U, 0U);
+	pwm_set_reload(config->base, HPM_PWM_CAPTURE_MAX_XRLD, HPM_PWM_MAX_PERIOD);
+	pwm_issue_shadow_register_lock_event(config->base);
+	if ((data->capture_flags & PWM_POLARITY_MASK) == PWM_POLARITY_INVERTED) {
+		pwm_set_capture_irq_falling_edge(config->base, irq_mask);
+	} else {
+		pwm_set_capture_irq_rising_edge(config->base, irq_mask);
+	}
 	pwm_clear_status(config->base, irq_mask);
 	data->capture_have_edge = false;
 	atomic_set(&data->capture_active, 1);
+	pwm_start_counter(config->base);
 	pwm_enable_irq(config->base, irq_mask);
 	k_mutex_unlock(&data->lock);
 
@@ -455,6 +513,7 @@ static int hpm_pwm_disable_capture_impl(const struct device *dev, uint32_t chann
 	const struct hpm_pwm_config *config = dev->config;
 	struct hpm_pwm_data *data = dev->data;
 	uint32_t irq_mask;
+	bool was_active;
 
 	if (channel >= HPM_PWM_COMPARATOR_COUNT) {
 		return -EINVAL;
@@ -467,9 +526,12 @@ static int hpm_pwm_disable_capture_impl(const struct device *dev, uint32_t chann
 	}
 
 	irq_mask = PWM_IRQ_CMP(channel);
-	atomic_clear(&data->capture_active);
+	was_active = atomic_clear(&data->capture_active) != 0;
 	pwm_disable_irq(config->base, irq_mask);
 	pwm_clear_status(config->base, irq_mask);
+	if (was_active) {
+		pwm_stop_counter(config->base);
+	}
 	k_mutex_unlock(&data->lock);
 
 	return 0;
@@ -492,6 +554,10 @@ static int hpm_pwm_configure_capture_impl(const struct device *dev, uint8_t comp
 	irq_mask = PWM_IRQ_CMP(comparator);
 
 	k_mutex_lock(&data->lock, K_FOREVER);
+	if (hpm_pwm_capture_is_active(data)) {
+		k_mutex_unlock(&data->lock);
+		return -EBUSY;
+	}
 	pwm_get_default_cmp_config(config->base, &cmp_config);
 	cmp_config.mode = pwm_cmp_mode_input_capture;
 	pwm_config_cmp(config->base, comparator, &cmp_config);
@@ -518,7 +584,7 @@ static int hpm_pwm_get_capture_impl(const struct device *dev, uint8_t comparator
 	}
 
 	k_mutex_lock(&data->lock, K_FOREVER);
-	/* Read both edge queues; each queue exposes its latest captured value. */
+	/* The raw extension returns the latest rising-edge timestamp. */
 	pwm_get_captured_count(config->base, capture, pwm_counter_type_capture_rising_edge,
 			       comparator, 1U);
 	k_mutex_unlock(&data->lock);
@@ -529,8 +595,10 @@ static int hpm_pwm_get_capture_impl(const struct device *dev, uint8_t comparator
 static int hpm_pwm_get_cycles_per_sec(const struct device *dev, uint32_t channel, uint64_t *cycles)
 {
 	struct hpm_pwm_data *data = dev->data;
+	uint32_t channels =
+		IS_ENABLED(CONFIG_PWM_CAPTURE) ? HPM_PWM_COMPARATOR_COUNT : HPM_PWM_CHANNELS;
 
-	if (channel >= HPM_PWM_CHANNELS) {
+	if (channel >= channels) {
 		return -EINVAL;
 	}
 
@@ -543,16 +611,29 @@ static int hpm_pwm_get_cycles_per_sec(const struct device *dev, uint32_t channel
 	return 0;
 }
 
-static DEVICE_API(hpm_pwm, hpm_pwm_api) = {
-	.pwm_api = {
-		.set_cycles = hpm_pwm_set_cycles,
-		.get_cycles_per_sec = hpm_pwm_get_cycles_per_sec,
+static void hpm_pwm_init_data(struct hpm_pwm_data *data)
+{
+	k_mutex_init(&data->lock);
+	data->output_configured = false;
 #ifdef CONFIG_PWM_CAPTURE
-		.configure_capture = hpm_pwm_configure_capture_api_impl,
-		.enable_capture = hpm_pwm_enable_capture_impl,
-		.disable_capture = hpm_pwm_disable_capture_impl,
+	atomic_clear(&data->capture_active);
+	data->capture_configured = false;
 #endif
-	},
+}
+
+#ifdef CONFIG_PWM_CAPTURE
+#define HPM_PWM_CAPTURE_API_FIELDS                                                                 \
+	.configure_capture = hpm_pwm_configure_capture_api_impl,                                   \
+	.enable_capture = hpm_pwm_enable_capture_impl,                                             \
+	.disable_capture = hpm_pwm_disable_capture_impl,
+#else
+#define HPM_PWM_CAPTURE_API_FIELDS
+#endif
+
+static DEVICE_API(hpm_pwm, hpm_pwm_api) = {
+	.pwm_api = {.set_cycles = hpm_pwm_set_cycles,
+		    .get_cycles_per_sec = hpm_pwm_get_cycles_per_sec,
+		    HPM_PWM_CAPTURE_API_FIELDS},
 	.set_complementary = hpm_pwm_set_complementary_impl,
 	.configure_fault = hpm_pwm_configure_fault_impl,
 	.clear_fault = hpm_pwm_clear_fault_impl,
@@ -565,12 +646,12 @@ static DEVICE_API(hpm_pwm, hpm_pwm_api) = {
 #define HPM_PWM_IRQ_CONFIG(n)                                                                      \
 	static void hpm_pwm_irq_config_##n(const struct device *dev)                               \
 	{                                                                                          \
-		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), hpm_pwm_capture_isr,          \
+		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), hpm_pwm_capture_isr,        \
 			    DEVICE_DT_INST_GET(n), 0);                                             \
 		irq_enable(DT_INST_IRQN(n));                                                       \
 	}
 #define HPM_PWM_IRQ_CONFIG_FIELD(n) .irq_config_func = hpm_pwm_irq_config_##n,
-#define HPM_PWM_IRQ_INIT(dev, config)                                                            \
+#define HPM_PWM_IRQ_INIT(dev, config)                                                              \
 	do {                                                                                       \
 		(config)->irq_config_func(dev);                                                    \
 	} while (false)
@@ -619,9 +700,7 @@ static DEVICE_API(hpm_pwm, hpm_pwm_api) = {
 			return ret;                                                                \
 		}                                                                                  \
                                                                                                    \
-		k_mutex_init(&data->lock);                                                         \
-		atomic_clear(&data->capture_active);                                               \
-		data->capture_configured = false;                                                  \
+		hpm_pwm_init_data(data);                                                           \
 		pwm_stop_counter(config->base);                                                    \
 		pwm_deinit(config->base);                                                          \
 		HPM_PWM_IRQ_INIT(dev, config);                                                     \

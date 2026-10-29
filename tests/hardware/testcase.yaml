@@ -90,3 +90,9 @@ tests:
       - DTC_OVERLAY_FILE=profiles/front_end.overlay
     harness_config:
       fixture: hpm_front_end_loop
+  hpmicro.hardware.pwm:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/pwm.conf
+      - DTC_OVERLAY_FILE=profiles/pwm.overlay
+    harness_config:
+      fixture: hpm_pwm_loop

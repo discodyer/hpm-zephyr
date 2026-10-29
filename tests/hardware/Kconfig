@@ -76,6 +76,12 @@ config HPM_TEST_FRONT_END
 	  Verify the OPAMP0 voltage follower and ACMP1 threshold interrupts
 	  using DAC0 output and external signal loopback wires.
 
+config HPM_TEST_PWM
+	bool "PWM output and capture"
+	help
+	  Verify PWM0 output with PWM1 input capture and GPIO readback over
+	  external signal loopback wires.
+
 endchoice
 
 source "Kconfig.zephyr"
