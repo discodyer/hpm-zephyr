@@ -266,7 +266,9 @@ UART 场景单独 build-only 构建成功，报告为
 当时 core 上板验证后的 build-only 复跑也通过：23/23 构建、48 项、0 失败/错误/警告；
 Twister 记录位于 `build/twister-hardware-post-core/twister.log`，报告位于
 `build/twister-hardware-post-core/twister.json`。
-基线为 Zephyr `f78c4deb4523`、SDK `ccc5ec467a047f3ea85cd2fa4565e91db7135a38`。
+该历史记录基线为 Zephyr `f78c4deb4523`、SDK
+`ccc5ec467a047f3ea85cd2fa4565e91db7135a38`；当前 Zephyr 4.5.0 的重编译
+记录见工作区 `build/twister-zephyr-4.5.0-recheck-hardware/twister.json`。
 该历史矩阵包含尚未纳入提交的候选文件，不能用当前 15-profile 范围直接复现。
 
 ## 构建与运行

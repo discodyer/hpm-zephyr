@@ -19,7 +19,7 @@ modules/hpm_sdk/             HPM SDK integration glue
 
 | Board | Target | Console | Build status | Hardware status |
 |---|---|---|---|---|
-| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and fourteen hardware profiles (52 tests) pass |
+| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and eighteen hardware profiles (58 tests) pass |
 | HPM5361ICB | `hpm5361icb/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | Not validated |
 
 Both targets currently provide interrupt routing, machine timer, clock/PLL and
@@ -34,17 +34,18 @@ and initialization execute from RAM while XIP is active.
 
 | Component | Tested revision |
 |---|---|
-| Zephyr | `f78c4deb4523a58eca057cc59b33532b80c20843` (`v4.5.0-rc2-179-gf78c4deb452`) |
+| Zephyr | `41d10b59730406bbab4ca9f1fbbe9e96aafb4966` (`v4.5.0`) |
 | HPM SDK | `ccc5ec467a047f3ea85cd2fa4565e91db7135a38` (`v1.13.0`) |
 | hpm-zephyr | Current `main`; release manifests pin immutable commits |
 
 Build-only validation is complete for both boards, including the Twister
 smoke test. EVK RevD XIP startup, basic polling UART echo/heartbeat,
 OpenOCD flash/verify and GDB breakpoints/single-step passed. The hardware
-acceptance profiles passed 52 tests: `core` (8/8), `dma` (2/2), `crypto` (6/6),
+acceptance profiles passed 58 tests: `core` (8/8), `dma` (2/2), `crypto` (6/6),
 `flash` (1/1), `watchdog` (4/4), `can` (2/2), `motor` (5/5), `gpio` (4/4),
-`uart` (4/4), `i2c` (3/3), `spi` (1/1), `analog` (6/6), `front_end` (3/3)
-and `pwm` (3/3).
+`uart` (4/4), `i2c` (3/3), `spi` (1/1), `analog` (6/6), `front_end` (3/3),
+`pwm` (3/3), `qei` (3/3), `usb_device` (1/1), `usb_endpoints` (1/1) and
+`usb_endpoints_fs` (1/1).
 Coverage includes internal CAN/TSU loopback, motor-block math and routing,
 GPIO edge interrupts, UART1 DMA/RTS/CTS,
 paired I2C DMA/repeated START/SMBus block/PEC transfers, and SPI1 four-mode
@@ -60,8 +61,9 @@ Each result covers the paths listed in the
 to erase/program/read/cache behavior in the reserved scratch sector;
 JEDEC/geometry, boundaries and latency remain unvalidated. The crypto result
 covers synchronous SDP known-answer tests; async completion and stress remain
-open. Independent timer accuracy, USB enumeration and class traffic remain
-unvalidated. SPI acceptance is limited to MOSI/MISO loopback; external slave
+open. USB Host, suspend/resume and remote wakeup remain unvalidated; Device
+enumeration and the endpoint matrix are covered by the USB profiles. SPI
+acceptance is limited to MOSI/MISO loopback; external slave
 timing, native CS behavior and electrical measurements remain open.
 Analog acceptance covers the DAC0.OUT-to-ADC0.IN13 loopback and the OPAMP0/ACMP1
 front-end fixture. Accuracy, noise, linearity, external waveform timing and
@@ -258,8 +260,15 @@ upgrade process.
 Peripheral hardware acceptance tests for HPM5300EVK are in
 [`tests/hardware`](tests/hardware/README.md). The application provides isolated
 Ztest profiles, wiring/fixture requirements, build/flash commands, detailed
-results and limits for the eleven verified profiles listed above. Historical
-build-only regressions are recorded separately from hardware results.
+results and limits for the verified profiles listed above. Historical
+build-only regressions are recorded separately from hardware results. Against
+Zephyr `v4.5.0`, the current worktree rebuilt all 18 hardware profiles
+(58 tests), 17 historical EVK/ICB scenarios (26 configurations after platform
+filtering), 10 native-sim motor-math tests, and the bringup sample in both XIP
+and RAM modes. These were build-only checks; they did not repeat hardware
+acceptance. The compatibility scenarios use semicolon-separated configuration
+lists so the common `peripherals.conf` is not overwritten by a later
+`EXTRA_CONF_FILE` argument.
 The original `tests/hpm5300evk` suite remains for build-only coverage.
 
 Use Zephyr's upstream `<subsystem>: <summary>` format for local development:

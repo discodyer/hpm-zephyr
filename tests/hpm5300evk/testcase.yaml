@@ -59,8 +59,7 @@ tests:
     build_only: true
     extra_args:
       - EXTRA_DTC_OVERLAY_FILE=peripherals.overlay
-      - EXTRA_CONF_FILE=peripherals.conf
-      - EXTRA_CONF_FILE=otp_control.conf
+      - EXTRA_CONF_FILE=peripherals.conf;otp_control.conf
 
   boards.hpmicro.hpm5300evk.spi_async:
     tags:
@@ -72,8 +71,7 @@ tests:
     build_only: true
     extra_args:
       - EXTRA_DTC_OVERLAY_FILE=peripherals.overlay
-      - EXTRA_CONF_FILE=peripherals.conf
-      - EXTRA_CONF_FILE=spi_async.conf
+      - EXTRA_CONF_FILE=peripherals.conf;spi_async.conf
 
   boards.hpmicro.hpm5300evk.spi_dma_polling:
     tags:
@@ -86,9 +84,7 @@ tests:
     build_only: true
     extra_args:
       - EXTRA_DTC_OVERLAY_FILE=peripherals.overlay
-      - EXTRA_CONF_FILE=peripherals.conf
-      - EXTRA_CONF_FILE=spi_async.conf
-      - EXTRA_CONF_FILE=spi_dma_polling.conf
+      - EXTRA_CONF_FILE=peripherals.conf;spi_async.conf;spi_dma_polling.conf
 
   boards.hpmicro.hpm5300evk.spi_extended:
     tags:
@@ -100,9 +96,7 @@ tests:
     build_only: true
     extra_args:
       - EXTRA_DTC_OVERLAY_FILE=peripherals.overlay
-      - EXTRA_CONF_FILE=peripherals.conf
-      - EXTRA_CONF_FILE=spi_async.conf
-      - EXTRA_CONF_FILE=spi_extended.conf
+      - EXTRA_CONF_FILE=peripherals.conf;spi_async.conf;spi_extended.conf
 
   boards.hpmicro.hpm5300evk.uart_async:
     tags:
@@ -115,8 +109,7 @@ tests:
     build_only: true
     extra_args:
       - EXTRA_DTC_OVERLAY_FILE=peripherals.overlay
-      - EXTRA_CONF_FILE=peripherals.conf
-      - EXTRA_CONF_FILE=uart_async.conf
+      - EXTRA_CONF_FILE=peripherals.conf;uart_async.conf
 
   boards.hpmicro.hpm5300evk.i2c_polling:
     tags:
@@ -141,8 +134,7 @@ tests:
     build_only: true
     extra_args:
       - EXTRA_DTC_OVERLAY_FILE=peripherals.overlay
-      - EXTRA_CONF_FILE=peripherals.conf
-      - EXTRA_CONF_FILE=adc_polling.conf
+      - EXTRA_CONF_FILE=peripherals.conf;adc_polling.conf
 
   boards.hpmicro.hpm5300evk.sei_without_synt:
     tags:
