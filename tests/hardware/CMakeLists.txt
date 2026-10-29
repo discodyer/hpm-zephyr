@@ -15,6 +15,8 @@ foreach(profile core dma flash watchdog can motor gpio uart i2c spi analog front
   target_sources_ifdef(CONFIG_HPM_TEST_${symbol} app PRIVATE src/${profile}.c)
 endforeach()
 
+target_sources_ifdef(CONFIG_HPM_TEST_USB_DEVICE app PRIVATE src/usb_device.c)
+
 if(CONFIG_HPM_TEST_CRYPTO)
   target_sources(app PRIVATE ../hpm5300evk/src/crypto.c)
 endif()

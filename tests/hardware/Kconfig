@@ -88,6 +88,12 @@ config HPM_TEST_QEI
 	  Verify QEIV2 digital counts, rotation and comparator callbacks using
 	  GPIO-generated A/B quadrature signals over external loopback wires.
 
+config HPM_TEST_USB_DEVICE
+	bool "USB device CDC ACM"
+	help
+	  Verify USB0 enumeration and CDC ACM data transfers using the board's
+	  USB OTG connector and a host running the hardware test peer script.
+
 endchoice
 
 source "Kconfig.zephyr"

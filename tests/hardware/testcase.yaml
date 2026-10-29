@@ -102,3 +102,10 @@ tests:
       - DTC_OVERLAY_FILE=profiles/qei.overlay
     harness_config:
       fixture: hpm_qei_loop
+  hpmicro.hardware.usb_device:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/usb_device.conf
+      - DTC_OVERLAY_FILE=profiles/usb_device.overlay
+    harness_config:
+      fixture: hpm_usb_device
+    timeout: 180

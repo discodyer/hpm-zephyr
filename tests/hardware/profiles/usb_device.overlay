@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+&usb0 {
+	status = "okay";
+
+	cdc_test: cdc-acm {
+		compatible = "zephyr,cdc-acm-uart";
+		tx-fifo-size = <4096>;
+		rx-fifo-size = <4096>;
+	};
+};

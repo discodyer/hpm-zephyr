@@ -5,10 +5,10 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 15 个 profile：`core`、`dma`、`crypto`、`flash`、
+本轮已在 HPM5300EVK RevD 上验证 16 个 profile：`core`、`dma`、`crypto`、`flash`、
 `watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c`、`spi`、`analog`、`front_end`、
-`pwm` 和 `qei`，分别通过 8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3、1/1、6/6、
-3/3、3/3 和 3/3 项，共 55 项测试。
+`pwm`、`qei` 和 `usb_device`，分别通过 8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、
+3/3、1/1、6/6、3/3、3/3、3/3 和 1/1 项，共 56 项测试。
 历史候选 profile 的 build-only 记录保留在下文，
 不代表这些候选已纳入本轮提交或通过硬件验收。
 
@@ -195,6 +195,27 @@ PH/Z，按 CPR 换算角度；更换回调不再丢弃 pending 事件。比较�
 测试，0 失败/错误，编译器和 Twister 汇总无警告；原始 CMake 空库及 `TC_NAME`
 提示仍存在。报告为 `build/twister-hardware-qei-final/twister.json`。
 
+2026-10-29 `usb_device` 在 RevD 上两次独立物理复位均通过 1/1 项，
+耗时 5.916/5.163 s；`west flash --verify` 成功。日志为
+`build/hw-usb-device-final-reset1.uart.log`、`build/hw-usb-device-final-reset2.uart.log`，
+主机对应 `.peer.log`，烧录记录为 `build/hw-usb-device-final-flash.log`。
+两轮均高速枚举，bulk IN `0x82`、OUT `0x01` 的 MPS 为 512。每轮三次遍历
+1/63/64/65/511/512/513/1024/1025 B，共 27 帧、双向各 11334 B，逐字节校验并逐帧 ACK。
+主机还读回 115200 8N1 line coding 并设置 DTR/RTS。
+
+UDC 现在声明 `addr_before_status`，让 Zephyr 在 EP0 status ACK 前向 SDK 提交地址；
+USBADRA 硬件在该 ACK 后才生效，与 SDK 及 STM32 UDC 的同类处理一致。
+测试使用中断 FIFO 收发和有界等待，按实际写入量续传；直接轮询发送会在当前
+512 B buffer 满时丢字节，总 FIFO 容量不能保证突发轮询发送无损。
+日志中的枚举阶段 `Spurious resume event` 和主动关闭时取消空 OUT request 的警告
+保留记录；两轮未收到 stack/UDC error 消息。
+
+构建回归为 `build/twister-hardware-usb-device-final/twister.json` 的原 15 个 profile
+及 `build/twister-hardware-usb-device-irq-final/twister.json` 的最终 USB 版本，
+合计 16 个 profile、56 项测试，0 失败/错误及编译器或 Twister 汇总警告。
+首份报告中的 USB 仍是早期测试版本，不能作为最终 USB 源码的构建证据；既存 CMake
+空库和未使用 `TC_NAME` 提示仍存在。接线、主机运行方法及覆盖限制见下文。
+
 2026-10-28 GPIO 验收后回归：八个已注册 Twister 场景全部构建成功，
 8/8 build-only、32 项测试、0 失败/错误/警告，报告为
 `build/twister-hardware-post-gpio-final/twister.json`。
@@ -282,7 +303,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 14 个已上板验收 profile，具体范围及限制见前述运行记录。
+下表列出 16 个已上板验收 profile，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -299,6 +320,8 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `analog` | `hpm_analog_loop` | PB08/DAC0.OUT（J7-20）→ PB05/ADC0.IN13（P1-32）；按 RevD 丝印核对 | ADC 同步/异步、双通道、抢占 DMA、TRGM 上升沿触发；DAC direct/step/buffer 输出由 ADC 回读 |
 | `front_end` | `hpm_front_end_loop` | J7-20/PB08 → P1-31/PB04；P1-8/PB08 → P1-40/PB11，见下文 | OPAMP0 follower 四电平回读；ACMP1 单/双边沿精确次数及 ISR 来源、禁用/重装、pending 读清及同步 callback 派发 |
 | `pwm` | `hpm_pwm_loop` | P1-31/PB04 → J7-20/PB08；P1-8/PB08 → P1-40/PB11，复用前端接线 | PWM0.P4 输出、PWM1.P4 捕获；108 组周期/占空比/极性/类型，单位换算、连续回绕、停用/恢复、busy/timeout，以及 GPIO 恒定电平 |
+| `qei` | `hpm_qei_loop` | PB08 → PB04，PB11 → PB05；见下文 | QEI1 AB 相位/圈数/角度、双比较器 IRQ/轮询/pending、复位及 CPR 重配 |
+| `usb_device` | `hpm_usb_device` | J1 USB_OTG 数据线连接 PC，保留 J8 USB_DEBUG | 高速枚举、CDC line coding/DTR 和 27 帧双向数据校验，主机脚本逐帧 ACK |
 | `can` | `hpm5300evk` | MCAN0 静默内部 loopback，无外部 CAN 总线 | 16 帧标准 classic/FD/BRS、8/64 B 数据及 TX/RX ISR；另 20 帧 PTPC0→TSU SOF 64 位捕获，有效/无丢失/递增、8 槽及两次回绕、PTPC 发送前后时间包络 |
 | `flash` | `hpm_flash_scratch` | 板载 XPI NOR，允许擦写下述专用测试扇区 | 全扇区擦除、256 B 写读、二次擦除、先填充 XIP 映射 cache 再验证写/擦后的映射一致性 |
 | `watchdog` | `hpm5300evk` | 无 | EWDG0 仅中断：每 100 ms 喂狗三次；500 ms 超时后延迟 2200 ms 再喂狗并验证重复超时；ISR 内喂狗；停用后无 IRQ、重装完整周期；500 ms → 2500 ms 分频重配；容差分别 ±80/160 ms |
@@ -359,6 +382,44 @@ P1-32 与 P1-31 正对，丝印 GPIO26；P1-30、P1-34 为 GND。仅接信号脚
 Z 不接、不配置 pinctrl，关闭索引校准，以相位回绕更新圈数。普通 GPIO 生成低速
 边沿，不能代替外部编码器、电气/滤波/最高频率和模拟解码精度验收。
 
+## USB Device 主机连接与运行
+
+使用一根支持数据的 USB-C 线连接 J1 `USB_OTG` 到运行主机脚本的电脑，保持 J8
+`USB_DEBUG` 供电/调试连接。无需新增跳线，现有 QEI fixture 可保留。
+VID:PID 为 `1209:0001`，产品名 `HPM5361 hardware acceptance`，序列号
+`HPM5361-HW-ACCEPT`。该标识仅用于本地测试，不用于发布产品。
+
+构建时将上文 profile 参数替换为 `usb_device`。烧录并复位后运行主机脚本；
+板端等待配置最多 60 s，随后等待 DTR 最多 30 s，各帧等待最多 10 s。
+每次重测需先复位固件，再及时启动主机脚本。
+
+```sh
+python3 -m pip install pyserial
+python3 hpm-zephyr/tests/hardware/scripts/usb_cdc_peer.py /dev/ttyACM0
+```
+
+脚本也可按 VID/PID/序列号自动发现 CDC port。`/dev/ttyHPM` 始终是 FT2232
+调试控制台，不是 CDC port。若容器的私有 `/dev` 不出现新增 ttyACM，但已挂载
+`/dev/bus/usb`，可使用 PyUSB；本工作区实际验证命令如下：
+
+```sh
+sudo -n /opt/python/venv/bin/python3 \
+  hpm-zephyr/tests/hardware/scripts/usb_cdc_peer.py --backend usb --wait 75
+```
+
+该解释器需安装 `pyusb`，系统需提供 libusb。USB 节点访问权限不足时可配置主机
+udev 权限或使用上述 sudo 命令。脚本只临时解绑匹配设备的 CDC 接口，并在退出时
+释放接口、恢复内核绑定；多个匹配设备需用 `--bus` 和 `--address` 指定。
+VMware 环境中每次烧录后必须通知操作者，将新设备手动连接给虚拟机，保留 FT2232。
+本轮复位重测会自动重新连接，但仍应检查实际枚举结果。
+
+仅验证高速 Device CDC 的低编号端点。应用帧长度覆盖 64/512 B 附近及多包长度，
+不能据此断言确切 USB 分包。FS、其他类、EP8–15、suspend/resume、remote wakeup、
+Host/UHC 和运行时 OTG 切换仍待验证。源码审查还发现 UDC 的交错方向索引循环
+遗漏 EP8–15，需独立修复并增加对应覆盖；本轮 CDC 不使用这些端点。
+SDK 板级说明指出 RevC 及更早版本的 R37 1 kΩ 可能阻碍 Device 枚举，需要换为
+10 Ω；本次为已修正的 RevD，未修改电阻。
+
 ## Flash、cache 与验收边界
 
 `flash` profile 缩小 `slot0_partition`，仅擦写相对 NOR 偏移 `0xef000` 开始的
@@ -399,6 +460,7 @@ OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、�
 | SDP/RNG/CRC/TSNS | cache/并发/故障注入压力、随机源统计质量、CRC 多项式矩阵、温度校准 |
 | OPAMP/ACMP | OPAMP1、其他拓扑和增益矩阵、校准精度/噪声；ACMP0、双通道并发、阈值精度、滤波/迟滞、反相、输出脚及传播延迟 |
 | QEIV2 | Z/索引校准、PD/UD/single/UVW/sincos、速度、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
+| USB | FS、其他类、高编号端点、suspend/resume、remote wakeup、Host/UHC、VBUS/ID/OC/PWR 策略及运行时 OTG 切换 |
 | PWM | 其他输出/捕获实例组合、绝对频率精度、互补/死区/fault、参考输出、超长周期及高速/长 IRQ 延迟下的丢样 |
 | flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 烧写/lock/reload/region 仅在专用可消耗芯片另行验收 |
 

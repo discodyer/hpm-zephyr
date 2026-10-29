@@ -734,6 +734,8 @@ static const struct udc_api udc_hpmicro_api = {
 		data->caps.hs = true;                                                              \
 		data->caps.rwup = true;                                                            \
 		data->caps.can_detect_vbus = true;                                                 \
+		/* USBADRA applies the staged address after the EP0 status IN ACK. */              \
+		data->caps.addr_before_status = true;                                              \
 		data->caps.mps0 = UDC_MPS0_64;                                                     \
 		for (uint8_t i = 0U; i < DT_INST_PROP(n, num_bidir_endpoints); i++) {              \
 			config->ep_cfg_out[i].addr = i;                                            \
