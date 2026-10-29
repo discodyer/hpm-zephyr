@@ -31,6 +31,7 @@ LOG_MODULE_REGISTER(udc_hpmicro, CONFIG_UDC_DRIVER_LOG_LEVEL);
 #define HPM_USB_EP0_MPS       64U
 #define HPM_USB_EP_MAX_MPS    1024U
 #define HPM_USB_EP_COUNT      USB_SOC_DCD_MAX_ENDPOINT_COUNT
+#define HPM_USB_EP_DIR_COUNT  (2U * HPM_USB_EP_COUNT)
 #define HPM_USB_DCD_ALIGNMENT USB_SOC_DCD_DATA_RAM_ADDRESS_ALIGNMENT
 #define HPM_USB_SETUP_SIZE    sizeof(struct usb_setup_packet)
 
@@ -103,7 +104,7 @@ static void udc_hpmicro_start_pending(const struct device *dev)
 {
 	struct udc_hpmicro_data *data = udc_get_private(dev);
 
-	for (uint8_t ep_idx = 0U; ep_idx < HPM_USB_EP_COUNT; ep_idx++) {
+	for (uint8_t ep_idx = 0U; ep_idx < HPM_USB_EP_DIR_COUNT; ep_idx++) {
 		struct udc_ep_config *cfg;
 		struct net_buf *buf;
 		uint8_t ep = (ep_idx / 2U) | ((ep_idx & 1U) != 0U ? USB_EP_DIR_IN : 0U);
@@ -239,7 +240,7 @@ static void udc_hpmicro_handle_bus_reset(const struct device *dev)
 	ep0.ep_addr = USB_CONTROL_EP_IN;
 	(void)usb_device_edpt_open(&data->handle, &ep0);
 
-	for (uint8_t ep_idx = 0U; ep_idx < HPM_USB_EP_COUNT; ep_idx++) {
+	for (uint8_t ep_idx = 0U; ep_idx < HPM_USB_EP_DIR_COUNT; ep_idx++) {
 		uint8_t ep = (ep_idx / 2U) | ((ep_idx & 1U) != 0U ? USB_EP_DIR_IN : 0U);
 		struct udc_ep_config *cfg = udc_get_ep_cfg(dev, ep);
 
@@ -287,7 +288,7 @@ static void udc_hpmicro_thread(void *arg1, void *arg2, void *arg3)
 			uint32_t complete = atomic_clear(&data->xfer_finished);
 
 			if (udc_lock_internal(dev, K_FOREVER) == 0) {
-				for (uint8_t ep_idx = 0U; ep_idx < HPM_USB_EP_COUNT; ep_idx++) {
+				for (uint8_t ep_idx = 0U; ep_idx < HPM_USB_EP_DIR_COUNT; ep_idx++) {
 					if ((complete & BIT(udc_hpmicro_ep_bit(ep_idx))) != 0U) {
 						udc_hpmicro_handle_endpoint_complete(dev, ep_idx);
 					}

@@ -94,6 +94,12 @@ config HPM_TEST_USB_DEVICE
 	  Verify USB0 enumeration and CDC ACM data transfers using the board's
 	  USB OTG connector and a host running the hardware test peer script.
 
+config HPM_TEST_USB_ENDPOINTS
+	bool "USB device endpoint matrix"
+	help
+	  Verify every non-control USB0 IN/OUT endpoint with checked bulk data
+	  and a host running the endpoint peer script.
+
 endchoice
 
 source "Kconfig.zephyr"

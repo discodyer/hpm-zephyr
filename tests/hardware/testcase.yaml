@@ -109,3 +109,17 @@ tests:
     harness_config:
       fixture: hpm_usb_device
     timeout: 180
+  hpmicro.hardware.usb_endpoints:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/usb_endpoints.conf
+      - DTC_OVERLAY_FILE=profiles/usb_endpoints.overlay
+    harness_config:
+      fixture: hpm_usb_device
+    timeout: 300
+  hpmicro.hardware.usb_endpoints_fs:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/usb_endpoints_fs.conf
+      - DTC_OVERLAY_FILE=profiles/usb_endpoints.overlay
+    harness_config:
+      fixture: hpm_usb_device
+    timeout: 300

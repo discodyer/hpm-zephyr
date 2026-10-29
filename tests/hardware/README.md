@@ -5,10 +5,11 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 16 个 profile：`core`、`dma`、`crypto`、`flash`、
+本轮已在 HPM5300EVK RevD 上验证 18 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
 `watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c`、`spi`、`analog`、`front_end`、
-`pwm`、`qei` 和 `usb_device`，分别通过 8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、
-3/3、1/1、6/6、3/3、3/3、3/3 和 1/1 项，共 56 项测试。
+`pwm`、`qei`、`usb_device`、`usb_endpoints` 和 `usb_endpoints_fs`，分别通过
+8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3、1/1、6/6、3/3、3/3、3/3、
+1/1、1/1 和 1/1 项，共 58 项测试。两个 endpoint 配置共用同一份测试源码。
 历史候选 profile 的 build-only 记录保留在下文，
 不代表这些候选已纳入本轮提交或通过硬件验收。
 
@@ -216,6 +217,21 @@ USBADRA 硬件在该 ACK 后才生效，与 SDK 及 STM32 UDC 的同类处理一
 首份报告中的 USB 仍是早期测试版本，不能作为最终 USB 源码的构建证据；既存 CMake
 空库和未使用 `TC_NAME` 提示仍存在。接线、主机运行方法及覆盖限制见下文。
 
+2026-10-29 `usb_endpoints`（HS）和 `usb_endpoints_fs`（强制 FS）各两次独立
+物理复位均通过 1/1。HS 耗时 26.456/6.868 s，FS 耗时 52.452/18.264 s，含等待
+VMware 附加设备的时间。固件与主机分别确认实际速度及 MPS：HS 512、FS 64。
+每轮同时启用全部 30 个非控制端点，依次执行三轮、九种长度、15 对端点的
+405 次双向交换，双向各 170010 B。各端点每个方向的 27 次完成回调逐一断言；
+最后 EP15 OUT 另收一个主机 ACK。UDC 的 pending/reset/completion 遍历已改为
+32 个方向槽，修复原先只处理 EP0～EP7 的错误。
+
+日志为 `build/hw-usb-endpoints-{hs,fs}-reset{1,2}.uart.log` 及对应 `.peer.log`；
+烧录记录为 `build/hw-usb-endpoints-hs-final-flash.log`、
+`build/hw-usb-endpoints-fs-flash.log`。未接入 VMware 的 FS 尝试保存在
+`build/hw-usb-endpoints-fs-no-vmware.*`，不计入通过。18 配置/58 项的最终
+Twister build-only 报告为 `build/twister-usb-endpoints-commit/twister.json`。
+完整容量依据和电源管理诊断见[USB 验证记录](../../../docs/agent/usb-validation.md)。
+
 2026-10-28 GPIO 验收后回归：八个已注册 Twister 场景全部构建成功，
 8/8 build-only、32 项测试、0 失败/错误/警告，报告为
 `build/twister-hardware-post-gpio-final/twister.json`。
@@ -303,7 +319,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 16 个已上板验收 profile，具体范围及限制见前述运行记录。
+下表列出 18 个已上板验收 profile 配置，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -322,6 +338,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `pwm` | `hpm_pwm_loop` | P1-31/PB04 → J7-20/PB08；P1-8/PB08 → P1-40/PB11，复用前端接线 | PWM0.P4 输出、PWM1.P4 捕获；108 组周期/占空比/极性/类型，单位换算、连续回绕、停用/恢复、busy/timeout，以及 GPIO 恒定电平 |
 | `qei` | `hpm_qei_loop` | PB08 → PB04，PB11 → PB05；见下文 | QEI1 AB 相位/圈数/角度、双比较器 IRQ/轮询/pending、复位及 CPR 重配 |
 | `usb_device` | `hpm_usb_device` | J1 USB_OTG 数据线连接 PC，保留 J8 USB_DEBUG | 高速枚举、CDC line coding/DTR 和 27 帧双向数据校验，主机脚本逐帧 ACK |
+| `usb_endpoints` / `usb_endpoints_fs` | `hpm_usb_device` | 同上，主机运行 `usb_endpoint_peer.py` | HS/FS 实际速度与 MPS、EP1～EP15 全部 IN/OUT、各 405 次应用层交换及逐端点完成回调 |
 | `can` | `hpm5300evk` | MCAN0 静默内部 loopback，无外部 CAN 总线 | 16 帧标准 classic/FD/BRS、8/64 B 数据及 TX/RX ISR；另 20 帧 PTPC0→TSU SOF 64 位捕获，有效/无丢失/递增、8 槽及两次回绕、PTPC 发送前后时间包络 |
 | `flash` | `hpm_flash_scratch` | 板载 XPI NOR，允许擦写下述专用测试扇区 | 全扇区擦除、256 B 写读、二次擦除、先填充 XIP 映射 cache 再验证写/擦后的映射一致性 |
 | `watchdog` | `hpm5300evk` | 无 | EWDG0 仅中断：每 100 ms 喂狗三次；500 ms 超时后延迟 2200 ms 再喂狗并验证重复超时；ISR 内喂狗；停用后无 IRQ、重装完整周期；500 ms → 2500 ms 分频重配；容差分别 ±80/160 ms |
@@ -413,12 +430,54 @@ udev 权限或使用上述 sudo 命令。脚本只临时解绑匹配设备的 CD
 VMware 环境中每次烧录后必须通知操作者，将新设备手动连接给虚拟机，保留 FT2232。
 本轮复位重测会自动重新连接，但仍应检查实际枚举结果。
 
-仅验证高速 Device CDC 的低编号端点。应用帧长度覆盖 64/512 B 附近及多包长度，
-不能据此断言确切 USB 分包。FS、其他类、EP8–15、suspend/resume、remote wakeup、
-Host/UHC 和运行时 OTG 切换仍待验证。源码审查还发现 UDC 的交错方向索引循环
-遗漏 EP8–15，需独立修复并增加对应覆盖；本轮 CDC 不使用这些端点。
+`usb_device` 仅验证高速 CDC 的低编号端点；后续 endpoint 矩阵单独验证 HS/FS
+的全部非控制端点。应用帧长度覆盖 64/512 B 附近及多包长度，不能据此断言确切
+USB 分包。其他类、suspend/resume、remote wakeup、Host/UHC 和运行时 OTG
+切换仍待验证。
 SDK 板级说明指出 RevC 及更早版本的 R37 1 kΩ 可能阻碍 Device 枚举，需要换为
 10 Ω；本次为已修正的 RevD，未修改电阻。
+
+### USB 端点容量与 HS/FS 矩阵
+
+HPM5300 用户手册第 51.1 节明确支持 **16 个双向端点，即 16 IN + 16 OUT**，
+编号 EP0～EP15，包含控制 EP0；应用可用的非控制端点为 15 IN + 15 OUT。
+SDK 的 `USB_SOC_DCD_MAX_ENDPOINT_COUNT=16`、32 个 QH 及 `ENDPTCTRL[16]`
+与此一致。该上限描述 Device 资源，不能解读为 Host 可连接设备端点的总上限。
+中文手册个别段落残留“16 dQH”，部分英文位域残留“N=0..7”，与功能简介、
+完整寄存器表及 SDK 不一致；本轮已实际验证 EP15 OUT `0x0f` / IN `0x8f`。
+
+同一 vendor interface 同时声明 15 对 bulk 端点。更换构建 profile 为
+`usb_endpoints` 或 `usb_endpoints_fs`，两者均使用 `profiles/usb_endpoints.overlay`。
+FS 配置同时关闭 UDC 高速支持并选择 `CONFIG_USBD_MAX_SPEED_FULL`，由 PFSC
+强制物理全速，主机脚本会拒绝错误的速度或 MPS。每次烧录后通知 VMware 操作者
+连接 `HPM5361 USB endpoint acceptance`，VID:PID `1209:0002`，序列号
+`HPM5361-USB-ENDPOINT`，然后运行：
+
+```sh
+sudo -n /opt/python/venv/bin/python3 \
+  hpm-zephyr/tests/hardware/scripts/usb_endpoint_peer.py --speed high --wait 80
+```
+
+FS 使用 `--speed full`。每轮遍历 1/63/64/65/511/512/513/1024/1025 B，主机验证
+逐字节 XOR 回复后，最后向 EP15 OUT 发送额外 `0x5a` ACK。普通数据每个方向
+170010 B，不含这个 ACK。不将该测试解释为并发满带宽、精确分包、独立电气规范、
+STALL/取消或在途请求跨 bus reset 的验收。
+
+### Host 与电源管理待验收
+
+Host 草稿构建通过，但操作者只有 USB-A 键盘，缺 USB-C 公转 USB-A 母 OTG
+转接头，尚未执行硬件测试。之后先拔 J1 到电脑的数据线，再接 OTG 转接头及有线
+boot 键盘，保留 J8；Host 角色由板载 VBUS 开关向键盘供电。草稿 overlay 补齐
+SDK 要求的 PY00/01/02 PIOC 路由，仍需上板确认。
+
+挂起/远程唤醒草稿已尝试上板，尚未通过。当前容器 `/sys` 为只读，操作者在 VM
+容器外只为 `1209:0003` 配置自动挂起；guest 连续 17 s 报告 suspended 时，固件在
+退出和关时钟前读到 `PORTSC=0x18000205`（SUSP=0）、`USBINTR=0x147`，且
+FRINDEX 在约 100 ms 内从 `0x31a1` 推进至 `0x3519`。当前 VMware 链路没有使
+物理 USB 总线进入挂起，不能据 guest 状态判定通过，也不能据此断言驱动故障。
+需要可实际挂起 USB 总线的主机环境继续验证。诊断日志为
+`build/hw-usb-power-diagnostic.uart.log` 和 `.peer.log`；退出后 guest 设备节点已删除。
+Host、Power 测试及远程唤醒驱动改动保留为未验收草稿，不计入本轮提交。
 
 ## Flash、cache 与验收边界
 
@@ -460,7 +519,7 @@ OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、�
 | SDP/RNG/CRC/TSNS | cache/并发/故障注入压力、随机源统计质量、CRC 多项式矩阵、温度校准 |
 | OPAMP/ACMP | OPAMP1、其他拓扑和增益矩阵、校准精度/噪声；ACMP0、双通道并发、阈值精度、滤波/迟滞、反相、输出脚及传播延迟 |
 | QEIV2 | Z/索引校准、PD/UD/single/UVW/sincos、速度、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
-| USB | FS、其他类、高编号端点、suspend/resume、remote wakeup、Host/UHC、VBUS/ID/OC/PWR 策略及运行时 OTG 切换 |
+| USB | 其他类、并发/STALL/取消/在途 reset、suspend/resume、remote wakeup、Host/UHC、VBUS/ID/OC/PWR 策略及运行时 OTG 切换 |
 | PWM | 其他输出/捕获实例组合、绝对频率精度、互补/死区/fault、参考输出、超长周期及高速/长 IRQ 延迟下的丢样 |
 | flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 烧写/lock/reload/region 仅在专用可消耗芯片另行验收 |
 
