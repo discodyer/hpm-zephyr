@@ -19,6 +19,13 @@ extern "C" {
 
 /**
  * @brief HPMicro QEIV2 quadrature encoder extensions
+ *
+ * In ABZ, pulse/direction, up/down and single-phase modes, the standard encoder
+ * count channel reports the phase count within one revolution, from zero through
+ * counts_per_revolution - 1. The rotation and revolution channels use the same
+ * hardware read snapshot. Without Z calibration, the revolution counter changes
+ * when the phase counter wraps. In ABZ mode, every A or B transition is one count.
+ *
  * @defgroup hpm_qeiv2_interface HPMicro QEIV2
  * @ingroup sensor_interface_ext
  * @{
@@ -466,9 +473,10 @@ static inline int hpm_qeiv2_clear_events(const struct device *dev, uint32_t even
 /**
  * @brief Enable an event interrupt and install a callback.
  *
- * Passing a NULL callback or a zero mask removes the callback. Interrupts
- * requested through hpm_qeiv2_set_event_route() remain enabled.
- * The callback runs in interrupt context.
+ * Passing a NULL callback or a zero mask removes the callback while preserving
+ * pending event flags for hpm_qeiv2_get_events(). Interrupts requested through
+ * hpm_qeiv2_set_event_route() remain enabled. The callback runs in interrupt
+ * context.
  *
  * @param dev QEIV2 device.
  * @param event_mask Combination of HPM_QEIV2_EVENT_* flags.

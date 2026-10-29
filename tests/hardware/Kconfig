@@ -82,6 +82,12 @@ config HPM_TEST_PWM
 	  Verify PWM0 output with PWM1 input capture and GPIO readback over
 	  external signal loopback wires.
 
+config HPM_TEST_QEI
+	bool "Quadrature encoder"
+	help
+	  Verify QEIV2 digital counts, rotation and comparator callbacks using
+	  GPIO-generated A/B quadrature signals over external loopback wires.
+
 endchoice
 
 source "Kconfig.zephyr"

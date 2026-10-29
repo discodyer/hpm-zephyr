@@ -6,9 +6,10 @@ description: |
 
   The driver covers square-wave ABZ quadrature, pulse/direction, up/down,
   single-phase, UVW and ADC sine/cosine decoding. The phase counter wraps at
-  counts-per-revolution and the controller's angle output is exposed through
-  the generic sensor rotation channel. ADC sampling and TRGM routing remain
-  owned by the ADC and TRGM drivers.
+  counts-per-revolution. The generic sensor rotation channel uses phase count
+  and counts-per-revolution in digital modes, and the controller's angle output
+  in UVW and sine/cosine modes. ADC sampling and TRGM routing remain owned by
+  the ADC and TRGM drivers.
 
 compatible: "hpmicro,hpm-qeiv2"
 
@@ -55,7 +56,11 @@ properties:
     type: int
     min: 2
     required: true
-    description: Number of quadrature counts in one mechanical revolution.
+    description: |
+      Number of phase counts in one mechanical revolution. In ABZ mode each
+      transition of A or B contributes one count, so one complete quadrature
+      cycle contributes four counts. The standard encoder count channel wraps
+      at this value in ABZ, pulse/direction, up/down and single-phase modes.
 
   z-calibration:
     type: boolean

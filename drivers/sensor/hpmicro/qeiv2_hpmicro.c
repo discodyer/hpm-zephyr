@@ -49,7 +49,7 @@ struct hpm_qeiv2_data {
 	struct k_spinlock lock;
 	int32_t position;
 	int32_t revolutions;
-	uint32_t angle_raw;
+	uint32_t rotation_micro_degrees;
 	uint32_t latched_events;
 	uint32_t callback_event_mask;
 	uint32_t interrupt_route_mask;
@@ -182,7 +182,7 @@ static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2
 
 	data->position = 0;
 	data->revolutions = 0;
-	data->angle_raw = 0U;
+	data->rotation_micro_degrees = 0U;
 	data->latched_events = 0U;
 	data->compare_source_valid = false;
 	data->active_mode = mode->mode;
@@ -206,17 +206,37 @@ static int hpm_qeiv2_sample_fetch(const struct device *dev, enum sensor_channel 
 {
 	const struct hpm_qeiv2_config *config = dev->config;
 	struct hpm_qeiv2_data *data = dev->data;
+	k_spinlock_key_t key;
+	uint32_t phase;
 
 	if ((chan != SENSOR_CHAN_ALL) && (chan != SENSOR_CHAN_ROTATION) &&
 	    (chan != SENSOR_CHAN_ENCODER_COUNT) && (chan != SENSOR_CHAN_ENCODER_REVOLUTIONS)) {
 		return -ENOTSUP;
 	}
 
+	key = k_spin_lock(&data->lock);
 	qeiv2_load_counter_to_read_registers(config->base);
-	data->position = (int32_t)qeiv2_get_postion(config->base);
 	data->revolutions =
 		(int32_t)qeiv2_get_count_on_read_event(config->base, qeiv2_counter_type_z);
-	data->angle_raw = qeiv2_get_angle(config->base);
+	switch (data->active_mode) {
+	case HPM_QEIV2_MODE_ABZ:
+	case HPM_QEIV2_MODE_PULSE_DIRECTION:
+	case HPM_QEIV2_MODE_UP_DOWN:
+	case HPM_QEIV2_MODE_SINGLE:
+		/* POSITION is a scaled binary position, not a raw encoder count. */
+		phase = QEIV2_COUNT_PH_PHCNT_GET(
+			qeiv2_get_count_on_read_event(config->base, qeiv2_counter_type_phase));
+		data->position = (int32_t)phase;
+		data->rotation_micro_degrees = (uint32_t)(((uint64_t)phase * 360000000ULL) /
+							  data->active_counts_per_revolution);
+		break;
+	default:
+		data->position = (int32_t)qeiv2_get_postion(config->base);
+		data->rotation_micro_degrees =
+			(uint32_t)(((uint64_t)qeiv2_get_angle(config->base) * 360000000ULL) >> 32);
+		break;
+	}
+	k_spin_unlock(&data->lock, key);
 
 	return 0;
 }
@@ -225,7 +245,6 @@ static int hpm_qeiv2_channel_get(const struct device *dev, enum sensor_channel c
 				 struct sensor_value *value)
 {
 	struct hpm_qeiv2_data *data = dev->data;
-	uint32_t micro_degrees;
 
 	if (value == NULL) {
 		return -EINVAL;
@@ -233,9 +252,8 @@ static int hpm_qeiv2_channel_get(const struct device *dev, enum sensor_channel c
 
 	switch (chan) {
 	case SENSOR_CHAN_ROTATION:
-		micro_degrees = (uint32_t)(((uint64_t)data->angle_raw * 360000000ULL) >> 32);
-		value->val1 = (int32_t)(micro_degrees / 1000000U);
-		value->val2 = (int32_t)(micro_degrees % 1000000U);
+		value->val1 = (int32_t)(data->rotation_micro_degrees / 1000000U);
+		value->val2 = (int32_t)(data->rotation_micro_degrees % 1000000U);
 		return 0;
 	case SENSOR_CHAN_ENCODER_COUNT:
 		value->val1 = data->position;
@@ -260,9 +278,11 @@ static int hpm_qeiv2_init(const struct device *dev)
 		return -ENODEV;
 	}
 
-	if (clock_set_source_divider(config->clock_name, config->clock_src, config->clock_div) !=
-	    status_success) {
-		return -EINVAL;
+	if (GET_CLK_SRC_GROUP_FROM_NAME(config->clock_name) != CLK_SRC_GROUP_AHB) {
+		if (clock_set_source_divider(config->clock_name, config->clock_src,
+					     config->clock_div) != status_success) {
+			return -EINVAL;
+		}
 	}
 
 	ret = clock_control_get_rate(config->clock_dev, config->clock_subsys, &data->clock_rate);
@@ -744,8 +764,6 @@ static int hpm_qeiv2_drv_set_event_callback(const struct device *dev, uint32_t e
 
 	key = k_spin_lock(&data->lock);
 	qeiv2_disable_irq(config->base, HPM_QEIV2_EVENT_ALL);
-	qeiv2_clear_status(config->base, HPM_QEIV2_EVENT_ALL);
-	data->latched_events = 0U;
 	if ((callback == NULL) || (event_mask == 0U)) {
 		data->callback = NULL;
 		data->callback_user_data = NULL;

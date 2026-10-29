@@ -96,3 +96,9 @@ tests:
       - DTC_OVERLAY_FILE=profiles/pwm.overlay
     harness_config:
       fixture: hpm_pwm_loop
+  hpmicro.hardware.qei:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/qei.conf
+      - DTC_OVERLAY_FILE=profiles/qei.overlay
+    harness_config:
+      fixture: hpm_qei_loop

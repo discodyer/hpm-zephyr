@@ -8,3 +8,7 @@ properties:
     type: phandle-array
   in-gpios:
     type: phandle-array
+  a-gpios:
+    type: phandle-array
+  b-gpios:
+    type: phandle-array

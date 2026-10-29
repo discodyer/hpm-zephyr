@@ -5,10 +5,10 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 14 个 profile：`core`、`dma`、`crypto`、`flash`、
-`watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c`、`spi`、`analog`、`front_end` 和
-`pwm`，分别通过 8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3、1/1、6/6、
-3/3 和 3/3 项，共 52 项测试。
+本轮已在 HPM5300EVK RevD 上验证 15 个 profile：`core`、`dma`、`crypto`、`flash`、
+`watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c`、`spi`、`analog`、`front_end`、
+`pwm` 和 `qei`，分别通过 8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3、1/1、6/6、
+3/3、3/3 和 3/3 项，共 55 项测试。
 历史候选 profile 的 build-only 记录保留在下文，
 不代表这些候选已纳入本轮提交或通过硬件验收。
 
@@ -175,6 +175,26 @@ API 换算。连续 1 ms/25% 捕获检查每次回调的周期、脉宽、设备
 `build/hw-pwm-no-capture-final.build.log`。首次回归的测试局部输出变量初始化告警已修复，
 失败记录保留在 `build/twister-hardware-pwm-uninitialized.log`，不计入最终通过结果。
 
+2026-10-29 `qei` profile 在 RevD 上两次独立物理复位均通过 3/3 项，
+各耗时 0.158 s；`west flash --verify` 成功。日志为
+`build/hw-qei-final-reset1.uart.log`、`build/hw-qei-final-reset2.uart.log` 和
+`build/hw-qei-final-flash.log`。GPIO 生成 AB Gray 序列，逐边沿核对相位计数、圈数和
+角度：CPR 64 下 512 个正反向边沿穿越正负两圈并回零；另验证比较值 8/16 的
+两路中断、精确回调次数/ISR/设备/user data、屏蔽、轮询、逐位清除及重绑定。
+解绑时同时保留已由 ISR 锁存的事件和被屏蔽的硬件事件。运行时复位将 CPR
+从 64 改为 128，重配比较源，再检查 512 个正反向边沿。
+
+驱动修复共享 AHB 时钟初始化和数字模式的计数/角度读回：使用同一个 READ 快照的
+PH/Z，按 CPR 换算角度；更换回调不再丢弃 pending 事件。比较器保留 SDK 原有的
+`SPDCMP=0` 参与条件；移除该条件的诊断版本在比较值停留时挂起，不能作为修复。
+仅 QEI1 AB 输入通过硬件验证，Z/索引校准、其他模式、速度、模拟精度及外部时序仍待验收。
+接线见下文 QEI 回环节，完整记录见
+[硬件记录](../../../docs/agent/hardware-bringup.md#qei-profile-hardware-result-2026-10-29)。
+
+加入 QEI 后 15 个已注册 profile 的 Twister build-only 回归全部通过，发现 55 项
+测试，0 失败/错误，编译器和 Twister 汇总无警告；原始 CMake 空库及 `TC_NAME`
+提示仍存在。报告为 `build/twister-hardware-qei-final/twister.json`。
+
 2026-10-28 GPIO 验收后回归：八个已注册 Twister 场景全部构建成功，
 8/8 build-only、32 项测试、0 失败/错误/警告，报告为
 `build/twister-hardware-post-gpio-final/twister.json`。
@@ -210,7 +230,7 @@ UART 场景单独 build-only 构建成功，报告为
 Twister 记录位于 `build/twister-hardware-post-core/twister.log`，报告位于
 `build/twister-hardware-post-core/twister.json`。
 基线为 Zephyr `f78c4deb4523`、SDK `ccc5ec467a047f3ea85cd2fa4565e91db7135a38`。
-该历史矩阵包含尚未纳入提交的候选文件，不能用当前 14-profile 范围直接复现。
+该历史矩阵包含尚未纳入提交的候选文件，不能用当前 15-profile 范围直接复现。
 
 ## 构建与运行
 
@@ -323,6 +343,22 @@ block 在本次启动中配置过任何输出（含 0%）、参考或 fault 输�
 0.5/1/2 ms 的测试不覆盖高速捕获、长时间屏蔽 IRQ 或硬件无 FIFO 时的覆盖丢样。
 互补输出、死区、fault、参考输出以及外部示波器测量仍需独立验收。
 
+## QEI 数字回环
+
+`qei` 使用两根独立跳线：
+
+| GPIO 输出 | QEI1 输入 |
+|---|---|
+| J7-20 / PB08 | P1-31 / PB04 / QEI1_A |
+| P1-40 / PB11 | P1-32 / PB05 / QEI1_B |
+
+从 PWM fixture 切换时保留第一根，将第二根的 P1-8/PB08 端移到 P1-32/PB05。
+P1-32 与 P1-31 正对，丝印 GPIO26；P1-30、P1-34 为 GND。仅接信号脚，无需电源或地。
+映射与官方 RevC 原理图第 2、6、9 页核对，RevD 实物由操作者确认。
+不能保留把 PB08 与 PB11 短接的旧模拟前端/PWM 接法，因为本测试独立驱动 A/B。
+Z 不接、不配置 pinctrl，关闭索引校准，以相位回绕更新圈数。普通 GPIO 生成低速
+边沿，不能代替外部编码器、电气/滤波/最高频率和模拟解码精度验收。
+
 ## Flash、cache 与验收边界
 
 `flash` profile 缩小 `slot0_partition`，仅擦写相对 NOR 偏移 `0xef000` 开始的
@@ -362,6 +398,7 @@ OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、�
 | QEO/MMC/PLB/SYNT/TRGM | QEO 外部 PWM/ABZ 及波形、闭环 MMC、独立 predictor 停止、PLB filter、SYNT comparator/debug-stop、外部电机路由和中断 |
 | SDP/RNG/CRC/TSNS | cache/并发/故障注入压力、随机源统计质量、CRC 多项式矩阵、温度校准 |
 | OPAMP/ACMP | OPAMP1、其他拓扑和增益矩阵、校准精度/噪声；ACMP0、双通道并发、阈值精度、滤波/迟滞、反相、输出脚及传播延迟 |
+| QEIV2 | Z/索引校准、PD/UD/single/UVW/sincos、速度、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
 | PWM | 其他输出/捕获实例组合、绝对频率精度、互补/死区/fault、参考输出、超长周期及高速/长 IRQ 延迟下的丢样 |
 | flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 烧写/lock/reload/region 仅在专用可消耗芯片另行验收 |
 
