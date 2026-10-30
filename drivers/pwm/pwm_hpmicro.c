@@ -116,7 +116,7 @@ static int hpm_pwm_set_cycles(const struct device *dev, uint32_t channel, uint32
 	data->output_configured = true;
 
 	pwm_stop_counter(config->base);
-	pwm_set_start_count(config->base, 0U, 0U);
+	pwm_timer_reset(config->base);
 	pwm_set_reload(config->base, 0U, reload);
 
 	pwm_get_default_pwm_config(config->base, &pwm_config);
