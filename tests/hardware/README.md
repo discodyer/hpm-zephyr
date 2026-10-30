@@ -5,11 +5,11 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 18 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
+本轮已在 HPM5300EVK RevD 上验证 19 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
 `watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c`、`spi`、`analog`、`front_end`、
-`pwm`、`qei`、`usb_device`、`usb_endpoints` 和 `usb_endpoints_fs`，分别通过
+`pwm`、`qei`、`usb_device`、`usb_endpoints`、`usb_endpoints_fs` 和 `usb_host`，分别通过
 8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3、1/1、6/6、3/3、3/3、3/3、
-1/1、1/1 和 1/1 项，共 58 项测试。两个 endpoint 配置共用同一份测试源码。
+1/1、1/1、1/1 和 1/1 项，共 59 项测试。两个 endpoint 配置共用同一份测试源码。
 历史候选 profile 的 build-only 记录保留在下文，
 不代表这些候选已纳入本轮提交或通过硬件验收。
 
@@ -17,6 +17,93 @@ API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK m
 `build/hw-core-gptmr-fix-uart.log`，最终结果为 `PROJECT EXECUTION SUCCESSFUL`。
 日志中的重复启动横幅来自烧录/校验复位；温度阈值测试及其余测试最终均通过。
 具体覆盖和限制见[硬件记录](../../../docs/agent/hardware-bringup.md#core-profile-hardware-result-2026-10-27)。
+
+2026-10-29 已在 Zephyr v4.5.0 上重新执行七个无需接线的 profile：
+`core` 8/8、`dma` 2/2、`crypto` 6/6、`flash` 1/1、`watchdog` 4/4、
+`can` 2/2 和 `motor` 5/5，共 28 项全部通过，且每个镜像均通过
+`west flash --verify`。日志位于工作区
+`build/hw-{core,dma,crypto,flash,watchdog,can,motor}-zephyr-4.5.0*`。
+其余 profile 的旧结果仍属于先前 `f78c4deb4523` 基线，需在 v4.5.0 上重跑。
+
+2026-10-29 已在 Zephyr v4.5.0 上用 P1-31（PB04/GPIO22）↔ P1-32
+（PB05/GPIO26）跳线复测 `gpio`：烧录后 4/4 通过（0.491 s），两次独立复位
+均 4/4 通过（0.491/0.490 s），`west flash --verify` 成功。日志为
+`build/hw-gpio-zephyr-4.5.0-run{1,2,3}*.uart.log`。
+
+2026-10-29 已在 Zephyr v4.5.0 上用两根跳线复测 `uart`：
+P1-31/PB04 CTS↔P1-32/PB05 RTS，以及 P1-5/PB07 TX↔P1-3/PB06 RX。
+烧录首轮和三次独立复位均 4/4 通过（每次 0.094 s），`west flash --verify`
+成功。日志为 `build/hw-uart-zephyr-4.5.0-run{1,2,3,4}*.uart.log`。
+
+2026-10-29 已在 Zephyr v4.5.0 上用两根跳线复测 `i2c`：
+P1-28/PB02 SCL↔P1-5/PB07 SCL，P1-27/PB03 SDA↔P1-3/PB06 SDA。
+烧录首轮和两次独立复位均 3/3 通过（每次 0.037 s），`west flash --verify`
+成功。日志为 `build/hw-i2c-zephyr-4.5.0-run{1,2,3}*.uart.log`。
+
+2026-10-29 已在 Zephyr v4.5.0 上复测 `spi`。第一次接错线时同步 mode 0
+首字节为 `tx=5a rx=00`；按 P1-19/PA29 MOSI↔P1-21/PA28 MISO 更正后，
+烧录首轮和三次独立复位均 1/1 通过（每次 0.018 s），覆盖 mode 0–3 的同步和
+linked-DMA 回环。`west flash --verify` 成功。有效日志为
+`build/hw-spi-zephyr-4.5.0-fixedwire-run{1,2,3,4}*.uart.log`；接线错误时的
+日志只保留作诊断，不计入验收。
+
+2026-10-29 已在 Zephyr v4.5.0 上用 J7-20/PB08 DAC0.OUT 到
+P1-32/PB05 ADC0.IN13 复测 `analog`。烧录首轮和两次独立复位均 6/6 通过
+（每次 0.172 s），`west flash --verify` 成功。日志为
+`build/hw-analog-zephyr-4.5.0-run{1,2,3}*.uart.log`。
+
+2026-10-29 已在 Zephyr v4.5.0 上用 J7-20/PB08→P1-31/PB04 和
+P1-8/PB08→P1-40/PB11 复测 `front_end`。烧录首轮和两次独立复位均 3/3 通过
+（每次 4.502 s），`west flash --verify` 成功。日志为
+`build/hw-front-end-zephyr-4.5.0-run{1,2,3}*.uart.log`。
+
+2026-10-30 已在 Zephyr v4.5.0 上完成 `pwm` 稳定性修复和复测。此前的偶发
+失败源于 PWM 输出重配时只更新 STA shadow，没有真正复位计数器；旧 CNT 大于
+新的 RLD 时，首个捕获边沿可能延迟约 100 ms。驱动现改为调用
+`pwm_timer_reset()`。修正后烧录首轮 3/3 通过（3.095 s），随后 12 次独立
+复位全部 3/3 通过。日志为 `build/hw-pwm-fix3-flash-*.uart.log` 和
+`build/hw-pwm-fix3-stress-*.uart.log`。
+
+2026-10-30 已在 Zephyr v4.5.0 上用 J7-20/PB08→P1-31/PB04（QEI1_A）和
+P1-40/PB11→P1-32/PB05（QEI1_B）复测 `qei`。烧录首轮和两次独立复位均
+3/3 通过（每次 0.158 s），`west flash --verify` 成功。日志为
+`build/hw-qei-zephyr-4.5.0-run{1,2,3,4}*.uart.log`。
+
+2026-10-30 已在 Zephyr v4.5.0 上复测 `usb_device`。首次混合记录在虚拟机
+挂载前等待 DTR 超时，已排除；随后三次“复位后立即启动 CDC peer”均 1/1 通过
+（1.181/1.393/1.187 s），高速、MPS 512、27 次交换，每方向 11334 字节校验。
+日志为 `build/hw-usb-device-zephyr-4.5.0-clean{1,2,3}-*.{uart,peer}.log`。
+
+2026-10-30 已在 Zephyr v4.5.0 上复测 `usb_endpoints` 和
+`usb_endpoints_fs`。每个配置在独立复位后均 1/1 通过两次：HS 为
+3.431/2.307 s、MPS 512；FS 为 3.633/6.733 s、MPS 64。每次均覆盖 15 组
+非控制 IN/OUT、405 次交换和每方向 170010 字节。日志为
+`build/hw-usb-endpoints{,-fs}-zephyr-4.5.0-*.{uart,peer}.log`。首次
+VMware 挂载后的瞬时 `no langid` 错误，以及一次 VMware 未暴露设备的 HS
+复位，均排除在验收结果之外。
+
+2026-10-30 已在 Zephyr v4.5.0 上通过 `usb_host`。使用带 OTG 标识的 USB-C 转
+USB-A 适配器，有线 boot keyboard（VID:PID `1c4f:00b7`，low speed）在 J1
+USB_OTG 上完成枚举；HID SET_PROTOCOL/SET_IDLE 和 GET_PROTOCOL 回读通过，
+随后收到 `a` 键按下及全释放的 8 字节 interrupt-IN 报告。测试 1/1 通过，
+耗时 21.606 s，日志为
+`build/hw-usb-host-wired-keyboard-keypress-090344.uart.log`。同一适配器还
+成功枚举 `0079:0126` 无线手柄，证明并非单一键盘偶然匹配。
+随后一次独立物理复位再次 1/1 通过，耗时 0.795 s；日志为
+`build/hw-usb-host-wired-keyboard-retest2-092603.uart.log`。提交前又执行
+一次烧录、校验和物理复位复测，1/1 通过（16.891 s），日志为
+`build/hw-usb-host-wired-keyboard-retest3-093111.uart.log`。
+
+当前 19 个注册配置均已在 v4.5.0 上通过，共 59/59 项测试；Host 验收仍需
+操作者按键，后续 RDC/SEI 等待测配置还依赖模拟器或编码器 fixture。PWM
+接线可拆除，Host 测试可保留 OTG 适配器和有线 boot keyboard。
+
+RAM 模式尚未通过 v4.5.0 硬件验收：Zephyr 镜像把代码链接在 DLM
+`0x80000`，入口为 `0x80018`，而 SDK RAM 链接脚本把代码放在 ILM、仅把数据
+放在 DLM。`west flash --verify` 能写入并校验 21064 B，但随后串口运行的是
+NOR 中旧镜像；改用 `halt` 后 DLM 写入报 `abstractcs=0x8000304`。ILM/DLM
+链接布局、可执行映射和 runner 启动流程均需继续调查，日志为
+`build/hpm5300evk-bringup-ram-zephyr-4.5.0*`。
 
 2026-10-28 `dma` profile 的链式传输和循环传输暂停/恢复测试均通过，完整 UART
 日志位于工作区 `build/hw-dma-current-uart-final.log`。测试修复了 HDMA 将固定
@@ -321,7 +408,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 18 个已上板验收 profile 配置，具体范围及限制见前述运行记录。
+下表列出 19 个已上板验收 profile 配置，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -341,6 +428,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `qei` | `hpm_qei_loop` | PB08 → PB04，PB11 → PB05；见下文 | QEI1 AB 相位/圈数/角度、双比较器 IRQ/轮询/pending、复位及 CPR 重配 |
 | `usb_device` | `hpm_usb_device` | J1 USB_OTG 数据线连接 PC，保留 J8 USB_DEBUG | 高速枚举、CDC line coding/DTR 和 27 帧双向数据校验，主机脚本逐帧 ACK |
 | `usb_endpoints` / `usb_endpoints_fs` | `hpm_usb_device` | 同上，主机运行 `usb_endpoint_peer.py` | HS/FS 实际速度与 MPS、EP1～EP15 全部 IN/OUT、各 405 次应用层交换及逐端点完成回调 |
+| `usb_host` | `hpm_usb_host_keyboard` | J1 USB_OTG 接 OTG 适配器，再接有线 boot keyboard；保留 J8 USB_DEBUG | 设备枚举与 VID/PID、HID boot protocol 控制请求、8 字节 interrupt-IN 的 `a` 按下/释放报告 |
 | `can` | `hpm5300evk` | MCAN0 静默内部 loopback，无外部 CAN 总线 | 16 帧标准 classic/FD/BRS、8/64 B 数据及 TX/RX ISR；另 20 帧 PTPC0→TSU SOF 64 位捕获，有效/无丢失/递增、8 槽及两次回绕、PTPC 发送前后时间包络 |
 | `flash` | `hpm_flash_scratch` | 板载 XPI NOR，允许擦写下述专用测试扇区 | 全扇区擦除、256 B 写读、二次擦除、先填充 XIP 映射 cache 再验证写/擦后的映射一致性 |
 | `watchdog` | `hpm5300evk` | 无 | EWDG0 仅中断：每 100 ms 喂狗三次；500 ms 超时后延迟 2200 ms 再喂狗并验证重复超时；ISR 内喂狗；停用后无 IRQ、重装完整周期；500 ms → 2500 ms 分频重配；容差分别 ±80/160 ms |
@@ -434,7 +522,8 @@ VMware 环境中每次烧录后必须通知操作者，将新设备手动连接�
 
 `usb_device` 仅验证高速 CDC 的低编号端点；后续 endpoint 矩阵单独验证 HS/FS
 的全部非控制端点。应用帧长度覆盖 64/512 B 附近及多包长度，不能据此断言确切
-USB 分包。其他类、suspend/resume、remote wakeup、Host/UHC 和运行时 OTG
+USB 分包。其他类、suspend/resume、remote wakeup、Hub/非 boot HID/等时
+Host 路径和运行时 OTG
 切换仍待验证。
 SDK 板级说明指出 RevC 及更早版本的 R37 1 kΩ 可能阻碍 Device 枚举，需要换为
 10 Ω；本次为已修正的 RevD，未修改电阻。
@@ -465,12 +554,17 @@ FS 使用 `--speed full`。每轮遍历 1/63/64/65/511/512/513/1024/1025 B，主
 170010 B，不含这个 ACK。不将该测试解释为并发满带宽、精确分包、独立电气规范、
 STALL/取消或在途请求跨 bus reset 的验收。
 
-### Host 与电源管理待验收
+### Host 与电源管理验收
 
-Host 草稿构建通过，但操作者只有 USB-A 键盘，缺 USB-C 公转 USB-A 母 OTG
-转接头，尚未执行硬件测试。之后先拔 J1 到电脑的数据线，再接 OTG 转接头及有线
-boot 键盘，保留 J8；Host 角色由板载 VBUS 开关向键盘供电。草稿 overlay 补齐
-SDK 要求的 PY00/01/02 PIOC 路由，仍需上板确认。
+Host 已用 USB-C 转 USB-A OTG 适配器和有线 boot keyboard 在 RevD 上两次独立
+复位通过。
+J1 的 CC1/CC2 在 RevC 原理图中没有板载主机上拉（R30/R31 DNP），因此必须使用
+带 OTG/CC 处理的适配器；普通 C-to-C 线不会让该板进入 Host 连接状态。J1 的
+VBUS 由板载 AP2151 开关提供，无需外部注入 5 V。
+
+该 profile 使用低编号 HID boot 键盘路径，尚未覆盖 USB Hub、非 boot HID、
+异步/周期性 Hub 传输、等时音频或 Host 侧挂起/恢复。设备端点容量同样不能用于
+推断 Host 侧 Hub 的端点容量。
 
 挂起/远程唤醒草稿已尝试上板，尚未通过。当前容器 `/sys` 为只读，操作者在 VM
 容器外只为 `1209:0003` 配置自动挂起；guest 连续 17 s 报告 suspended 时，固件在
@@ -479,7 +573,8 @@ FRINDEX 在约 100 ms 内从 `0x31a1` 推进至 `0x3519`。当前 VMware 链路�
 物理 USB 总线进入挂起，不能据 guest 状态判定通过，也不能据此断言驱动故障。
 需要可实际挂起 USB 总线的主机环境继续验证。诊断日志为
 `build/hw-usb-power-diagnostic.uart.log` 和 `.peer.log`；退出后 guest 设备节点已删除。
-Host、Power 测试及远程唤醒驱动改动保留为未验收草稿，不计入本轮提交。
+Power 测试及远程唤醒驱动改动仍为未验收草稿，不计入本次提交；Host 验收
+代码已单独提交。
 
 ## Flash、cache 与验收边界
 
@@ -521,7 +616,7 @@ OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、�
 | SDP/RNG/CRC/TSNS | cache/并发/故障注入压力、随机源统计质量、CRC 多项式矩阵、温度校准 |
 | OPAMP/ACMP | OPAMP1、其他拓扑和增益矩阵、校准精度/噪声；ACMP0、双通道并发、阈值精度、滤波/迟滞、反相、输出脚及传播延迟 |
 | QEIV2 | Z/索引校准、PD/UD/single/UVW/sincos、速度、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
-| USB | 其他类、并发/STALL/取消/在途 reset、suspend/resume、remote wakeup、Host/UHC、VBUS/ID/OC/PWR 策略及运行时 OTG 切换 |
+| USB | 其他类、并发/STALL/取消/在途 reset、suspend/resume、remote wakeup、Host Hub/非 boot HID/等时传输/PM、VBUS/ID/OC/PWR 策略及运行时 OTG 切换 |
 | PWM | 其他输出/捕获实例组合、绝对频率精度、互补/死区/fault、参考输出、超长周期及高速/长 IRQ 延迟下的丢样 |
 | flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 烧写/lock/reload/region 仅在专用可消耗芯片另行验收 |
 
