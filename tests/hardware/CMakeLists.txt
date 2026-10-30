@@ -17,6 +17,11 @@ endforeach()
 
 target_sources_ifdef(CONFIG_HPM_TEST_USB_DEVICE app PRIVATE src/usb_device.c)
 target_sources_ifdef(CONFIG_HPM_TEST_USB_ENDPOINTS app PRIVATE src/usb_endpoints.c)
+target_sources_ifdef(CONFIG_HPM_TEST_USB_HOST app PRIVATE src/usb_host.c)
+
+if(CONFIG_HPM_TEST_USB_HOST)
+  target_include_directories(app PRIVATE ${ZEPHYR_BASE}/subsys/usb/host)
+endif()
 
 if(CONFIG_HPM_TEST_CRYPTO)
   target_sources(app PRIVATE ../hpm5300evk/src/crypto.c)

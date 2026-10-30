@@ -114,7 +114,7 @@ struct hpm_ehci_qtd {
 	uint32_t alt_next_qtd;
 	uint32_t token;
 	uint32_t bpl[5];
-} __aligned(32);
+};
 
 struct hpm_ehci_qh {
 	uint32_t hlp;
@@ -174,6 +174,10 @@ struct uhc_hpmicro_sitd {
 	bool in_use;
 	bool count_bytes;
 } __aligned(32);
+
+BUILD_ASSERT(sizeof(struct hpm_ehci_qtd) == 32U);
+BUILD_ASSERT(offsetof(struct hpm_ehci_qtd, token) == 0x08U);
+BUILD_ASSERT(offsetof(struct hpm_ehci_qh, overlay) == 0x10U);
 
 struct hpm_usb_toggle {
 	const struct usb_device *udev;
@@ -316,6 +320,8 @@ static void qh_link_insert(struct uhc_hpmicro_qh *head, struct uhc_hpmicro_qh *q
 {
 	qh->hw.hlp = head->hw.hlp;
 	head->hw.hlp = ((uint32_t)qh & HPM_USB_QH_LINK_MASK) | HPM_USB_QH_LINK_QH;
+	(void)sys_cache_data_flush_range(&qh->hw, sizeof(qh->hw));
+	(void)sys_cache_data_flush_range(&head->hw, sizeof(head->hw));
 }
 
 static void qh_link_remove(struct uhc_hpmicro_qh *head, struct uhc_hpmicro_qh *remove)
@@ -476,6 +482,8 @@ static void qh_fill(struct uhc_hpmicro_qh *qh, const struct uhc_transfer *xfer, 
 		uint8_t mult = periodic ? USB_MPS_ADDITIONAL_TRANSACTIONS(xfer->mps) + 1U : 1U;
 
 		epcap |= FIELD_PREP(BIT_MASK(2) << 30, MIN(mult, 3U));
+	} else {
+		epcap |= FIELD_PREP(BIT_MASK(2) << 30, 1U);
 	}
 
 	qh->hw.hlp = HPM_USB_QH_END;
@@ -552,7 +560,8 @@ static int qtd_prepare(struct uhc_hpmicro_data *data, struct uhc_hpmicro_qtd **f
 static void qh_start(struct uhc_hpmicro_qh *qh, struct uhc_hpmicro_qtd *first)
 {
 	qh->first_qtd = first;
-	qh->hw.curr_qtd = (uint32_t)first & HPM_USB_QTD_MASK;
+	qh->hw.curr_qtd = 0U;
+	qh->hw.overlay.token &= HPM_USB_QTD_TOGGLE;
 	qh->hw.overlay.next_qtd = (uint32_t)first & HPM_USB_QTD_MASK;
 	qh->hw.overlay.alt_next_qtd = HPM_USB_QTD_END;
 }
@@ -1537,10 +1546,13 @@ static void uhc_hpmicro_port_event(const struct device *dev)
 		uint8_t speed = usb_get_port_speed(config->base);
 
 		if (speed == 0U) {
+			config->base->PORTSC1 &= ~USB_PORTSC1_STS_MASK;
 			(void)uhc_submit_event(dev, UHC_EVT_DEV_CONNECTED_FS, 0);
 		} else if (speed == 1U) {
+			config->base->PORTSC1 |= USB_PORTSC1_STS_MASK;
 			(void)uhc_submit_event(dev, UHC_EVT_DEV_CONNECTED_LS, 0);
 		} else {
+			config->base->PORTSC1 &= ~USB_PORTSC1_STS_MASK;
 			(void)uhc_submit_event(dev, UHC_EVT_DEV_CONNECTED_HS, 0);
 		}
 	} else {
@@ -1626,9 +1638,11 @@ static int uhc_hpmicro_init(const struct device *dev)
 		}
 	}
 
-	if (clock_set_source_divider(config->clock_name, config->clock_src, config->clock_div) !=
-	    status_success) {
-		return -EINVAL;
+	if (GET_CLK_SRC_GROUP_FROM_NAME(config->clock_name) != CLK_SRC_GROUP_AHB) {
+		if (clock_set_source_divider(config->clock_name, config->clock_src,
+					     config->clock_div) != status_success) {
+			return -EINVAL;
+		}
 	}
 
 	ret = clock_control_on(config->clock_dev, config->clock_subsys);
@@ -1762,6 +1776,8 @@ static int uhc_hpmicro_bus_reset(const struct device *dev)
 
 	memset(data->toggles, 0, sizeof(data->toggles));
 	usb_hcd_port_reset(config->base);
+	/* USB 2.0 section 7.1.7.5 requires reset recovery before the first transfer. */
+	k_sleep(K_MSEC(10));
 	(void)uhc_submit_event(dev, UHC_EVT_RESETED, 0);
 	return 0;
 }

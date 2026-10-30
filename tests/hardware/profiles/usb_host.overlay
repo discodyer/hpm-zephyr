@@ -1,0 +1,8 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+&usb0 {
+	status = "okay";
+	/* Route the PY pads through PIOC to the SoC IOC, as the SDK does. */
+	pinctrl-0 = <&py00_soc_gpio_y_00 &py01_soc_gpio_y_01 &py02_soc_gpio_y_02
+		     &py00_usb0_id &py01_usb0_oc &py02_usb0_pwr>;
+};
