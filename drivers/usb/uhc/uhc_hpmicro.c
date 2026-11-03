@@ -948,11 +948,23 @@ static int submit_control(const struct device *dev, struct uhc_transfer *xfer)
 		}
 
 		if (in) {
+			if (setup_length > net_buf_tailroom(xfer->buf)) {
+				LOG_ERR("Control IN length %u exceeds buffer space %u", setup_length,
+					net_buf_tailroom(xfer->buf));
+				ret = -ENOMEM;
+				goto error;
+			}
 			data_buffer = net_buf_tail(xfer->buf);
-			data_length = MIN(net_buf_tailroom(xfer->buf), setup_length);
+			data_length = setup_length;
 		} else {
+			if (setup_length > xfer->buf->len) {
+				LOG_ERR("Control OUT length %u exceeds buffer data %u", setup_length,
+					xfer->buf->len);
+				ret = -EINVAL;
+				goto error;
+			}
 			data_buffer = xfer->buf->data;
-			data_length = MIN(xfer->buf->len, setup_length);
+			data_length = setup_length;
 		}
 
 		ret = qtd_prepare(data, &data_qtd, &data_last, xfer, data_buffer, data_length,
