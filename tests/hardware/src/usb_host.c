@@ -170,6 +170,11 @@ ZTEST(hpm_usb_host, test_enumeration_hid_control_and_interrupt_in)
 	zassert_ok(usbh_req_setup(keyboard, 0x21, 0x0a, 0, interface, 0, NULL));
 	protocol = usbh_xfer_buf_alloc(keyboard, 1U);
 	zassert_not_null(protocol);
+	zassert_equal(usbh_req_setup(keyboard, 0xa1, 0x03, 0, interface, 33, protocol),
+		      -ENOMEM, "Undersized control IN buffer was accepted");
+	net_buf_unref(protocol);
+	protocol = usbh_xfer_buf_alloc(keyboard, 1U);
+	zassert_not_null(protocol);
 	ret = usbh_req_setup(keyboard, 0xa1, 0x03, 0, interface, 1, protocol);
 	if (ret == 0 && (protocol->len != 1U || protocol->data[0] != 0U)) {
 		ret = -EBADMSG;
