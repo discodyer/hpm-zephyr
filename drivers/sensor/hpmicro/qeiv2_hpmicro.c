@@ -6,6 +6,7 @@
 #define DT_DRV_COMPAT hpmicro_hpm_qeiv2
 
 #include <errno.h>
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -45,6 +46,13 @@ struct hpm_qeiv2_config {
 	void (*irq_config_func)(const struct device *dev);
 };
 
+struct hpm_qeiv2_speed_state {
+	int64_t previous_count;
+	int64_t previous_timestamp_ms;
+	int64_t rpm_milli;
+	bool initialized;
+};
+
 struct hpm_qeiv2_data {
 	struct k_spinlock lock;
 	int32_t position;
@@ -63,6 +71,7 @@ struct hpm_qeiv2_data {
 	uint32_t speed_window_cycles[HPM_QEIV2_SPEED_CHANNEL_COUNT];
 	uint32_t clock_rate;
 	bool speed_config_valid[HPM_QEIV2_SPEED_CHANNEL_COUNT];
+	struct hpm_qeiv2_speed_state speed_state[HPM_QEIV2_SPEED_CHANNEL_COUNT];
 };
 
 BUILD_ASSERT((uint32_t)HPM_QEIV2_EVENT_WATCHDOG == QEIV2_EVENT_WDOG_FLAG_MASK);
@@ -363,6 +372,7 @@ static int hpm_qeiv2_drv_configure_speed(const struct device *dev, uint8_t chann
 	data->pulse_count[channel] = pulse_count;
 	data->speed_window_cycles[channel] = cycle_count;
 	data->speed_config_valid[channel] = true;
+	memset(&data->speed_state[channel], 0, sizeof(data->speed_state[channel]));
 
 	return 0;
 }
@@ -483,6 +493,72 @@ static int hpm_qeiv2_drv_speed_to_rpm(const struct device *dev, uint8_t channel,
 
 	ret = sensor_value_from_milli(rpm, rpm_milli);
 	return ret;
+}
+
+static int hpm_qeiv2_drv_sample_speed(const struct device *dev, uint8_t channel,
+				      struct sensor_value *rpm)
+{
+	struct hpm_qeiv2_data *data = dev->data;
+	struct hpm_qeiv2_speed_state *state;
+	int64_t now_ms;
+	int64_t elapsed_ms;
+	int64_t total_count;
+	int64_t delta_count;
+	int64_t rpm_milli = 0;
+	uint32_t counts_per_revolution;
+	uint32_t clock_rate;
+	uint32_t speed_window_cycles;
+	uint32_t speed_window_ms;
+	k_spinlock_key_t key;
+	int ret;
+
+	if ((channel >= HPM_QEIV2_SPEED_CHANNEL_COUNT) || (rpm == NULL)) {
+		return -EINVAL;
+	}
+
+	key = k_spin_lock(&data->lock);
+	if (!data->speed_config_valid[channel] || (data->clock_rate == 0U)) {
+		k_spin_unlock(&data->lock, key);
+		return -EINVAL;
+	}
+	counts_per_revolution = data->active_counts_per_revolution;
+	clock_rate = data->clock_rate;
+	speed_window_cycles = data->speed_window_cycles[channel];
+	k_spin_unlock(&data->lock, key);
+
+	ret = sensor_sample_fetch_chan(dev, SENSOR_CHAN_ENCODER_COUNT);
+	if (ret != 0) {
+		return ret;
+	}
+	now_ms = k_uptime_get();
+	speed_window_ms = (uint32_t)(((uint64_t)speed_window_cycles * 1000U + clock_rate - 1U) /
+				      clock_rate);
+
+	key = k_spin_lock(&data->lock);
+	state = &data->speed_state[channel];
+	total_count = ((int64_t)data->revolutions * counts_per_revolution) + data->position;
+	elapsed_ms = now_ms - state->previous_timestamp_ms;
+
+	if (!state->initialized) {
+		state->previous_count = total_count;
+		state->previous_timestamp_ms = now_ms;
+		state->initialized = true;
+	} else if ((elapsed_ms > 0) && (elapsed_ms >= speed_window_ms)) {
+		delta_count = total_count - state->previous_count;
+		rpm_milli = (delta_count * 60000LL) /
+			    ((int64_t)counts_per_revolution * elapsed_ms);
+		if ((rpm_milli < INT32_MIN) || (rpm_milli > INT32_MAX)) {
+			k_spin_unlock(&data->lock, key);
+			return -ERANGE;
+		}
+		state->previous_count = total_count;
+		state->previous_timestamp_ms = now_ms;
+		state->rpm_milli = rpm_milli;
+	}
+	rpm_milli = state->rpm_milli;
+	k_spin_unlock(&data->lock, key);
+
+	return sensor_value_from_milli(rpm, rpm_milli);
 }
 
 static int hpm_qeiv2_drv_configure_sincos(const struct device *dev,
@@ -819,6 +895,7 @@ static DEVICE_API(hpm_qeiv2, hpm_qeiv2_api) = {
 	.configure_speed = hpm_qeiv2_drv_configure_speed,
 	.get_speed_snapshot = hpm_qeiv2_drv_get_speed_snapshot,
 	.speed_to_rpm = hpm_qeiv2_drv_speed_to_rpm,
+	.sample_speed = hpm_qeiv2_drv_sample_speed,
 	.configure_sincos = hpm_qeiv2_drv_configure_sincos,
 	.configure_watchdog = hpm_qeiv2_drv_configure_watchdog,
 	.configure_home = hpm_qeiv2_drv_configure_home,

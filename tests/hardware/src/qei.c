@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 #include <drivers/sensor/hpmicro_qeiv2.h>
+#include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/sensor.h>
@@ -9,6 +10,7 @@
 #include <zephyr/ztest.h>
 
 #define COUNTS_PER_REVOLUTION 64U
+#define SPEED_WINDOW_US        20000U
 #define COMPARE0_EVENT        HPM_QEIV2_EVENT_POSITION_COMPARE
 #define COMPARE1_EVENT        HPM_QEIV2_EVENT_POSITION2_COMPARE
 #define COMPARE_EVENTS        (COMPARE0_EVENT | COMPARE1_EVENT)
@@ -18,6 +20,7 @@ PINCTRL_DT_DEFINE(DT_NODELABEL(hw_fixture));
 static const struct device *const qei = DEVICE_DT_GET(DT_NODELABEL(qei1));
 static const struct gpio_dt_spec a = GPIO_DT_SPEC_GET(DT_NODELABEL(hw_fixture), a_gpios);
 static const struct gpio_dt_spec b = GPIO_DT_SPEC_GET(DT_NODELABEL(hw_fixture), b_gpios);
+static uint32_t speed_window_cycles;
 static const uint8_t gray_states[] = {0, 1, 3, 2};
 static uint8_t gray_index;
 static int callback_cookie;
@@ -138,6 +141,20 @@ static void configure_phase_comparators(void)
 	zassert_ok(hpm_qeiv2_clear_events(qei, HPM_QEIV2_EVENT_ALL));
 }
 
+static uint32_t get_speed_window_cycles(void)
+{
+	uint32_t clock_hz;
+	uint32_t cycles;
+
+	zassert_ok(clock_control_get_rate(DEVICE_DT_GET(DT_CLOCKS_CTLR(DT_NODELABEL(qei1))),
+					  (clock_control_subsys_t)DT_CLOCKS_CELL(DT_NODELABEL(qei1),
+									 name),
+					  &clock_hz));
+	cycles = (uint32_t)(((uint64_t)clock_hz * SPEED_WINDOW_US) / USEC_PER_SEC);
+	zassert_true(cycles > 0U);
+	return cycles;
+}
+
 static void qei_before(void *fixture)
 {
 	ARG_UNUSED(fixture);
@@ -154,6 +171,7 @@ static void qei_before(void *fixture)
 	k_busy_wait(100);
 	gray_index = 0U;
 	configure_decoder(COUNTS_PER_REVOLUTION);
+	speed_window_cycles = get_speed_window_cycles();
 	zassert_ok(hpm_qeiv2_clear_events(qei, HPM_QEIV2_EVENT_ALL));
 	atomic_clear(&callback_calls);
 	atomic_clear(&callback_errors);
@@ -231,6 +249,38 @@ ZTEST(hpm_qei_loop, test_compare_interrupt_mask_poll_and_recovery)
 	expect_callbacks(5, 3, 2);
 	expect_events(COMPARE_EVENTS);
 	printk("QEI: phase compares 8/16, IRQs 3/2, mask/poll/clear/rebind passed\n");
+}
+
+ZTEST(hpm_qei_loop, test_periodic_speed_from_standstill)
+{
+	struct sensor_value rpm;
+	int32_t total = 0;
+
+	zassert_equal(hpm_qeiv2_sample_speed(qei, HPM_QEIV2_SPEED_CHANNEL_COUNT, &rpm), -EINVAL);
+	zassert_equal(hpm_qeiv2_sample_speed(qei, 0U, NULL), -EINVAL);
+	zassert_equal(hpm_qeiv2_sample_speed(qei, 0U, &rpm), -EINVAL);
+
+	zassert_ok(hpm_qeiv2_configure_speed(qei, 0U, 64U, speed_window_cycles));
+	zassert_ok(hpm_qeiv2_sample_speed(qei, 0U, &rpm));
+	zassert_equal(sensor_value_to_milli(&rpm), 0);
+
+	k_msleep(SPEED_WINDOW_US / 1000U + 5U);
+	zassert_ok(hpm_qeiv2_sample_speed(qei, 0U, &rpm));
+	zassert_equal(sensor_value_to_milli(&rpm), 0);
+
+	/* Counts observed over the completed window must produce a signed RPM. */
+	advance_edges(COUNTS_PER_REVOLUTION, true, &total, COUNTS_PER_REVOLUTION);
+	k_msleep(SPEED_WINDOW_US / 1000U + 5U);
+	zassert_ok(hpm_qeiv2_sample_speed(qei, 0U, &rpm));
+	zassert_true(sensor_value_to_milli(&rpm) > 0,
+		     "unexpected forward speed %lld", sensor_value_to_milli(&rpm));
+
+	advance_edges(COUNTS_PER_REVOLUTION / 2U, false, &total, COUNTS_PER_REVOLUTION);
+	k_msleep(SPEED_WINDOW_US / 1000U + 5U);
+	zassert_ok(hpm_qeiv2_sample_speed(qei, 0U, &rpm));
+	zassert_true(sensor_value_to_milli(&rpm) < 0,
+		     "unexpected reverse speed %lld", sensor_value_to_milli(&rpm));
+	printk("QEI: periodic speed baseline, standstill, forward and reverse RPM passed\n");
 }
 
 ZTEST(hpm_qei_loop, test_runtime_reset_resolution_and_compare_source)

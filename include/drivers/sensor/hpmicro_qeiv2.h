@@ -231,6 +231,7 @@ __subsystem struct hpm_qeiv2_driver_api {
 			    enum hpm_qeiv2_speed_source source,
 			    const struct hpm_qeiv2_speed_snapshot *snapshot,
 			    struct sensor_value *rpm);
+	int (*sample_speed)(const struct device *dev, uint8_t channel, struct sensor_value *rpm);
 	int (*configure_sincos)(const struct device *dev,
 				const struct hpm_qeiv2_sincos_config *config);
 	int (*configure_watchdog)(const struct device *dev,
@@ -334,6 +335,32 @@ static inline int hpm_qeiv2_speed_to_rpm(const struct device *dev, uint8_t chann
 					 struct sensor_value *rpm)
 {
 	return DEVICE_API_GET(hpm_qeiv2, dev)->speed_to_rpm(dev, channel, source, snapshot, rpm);
+}
+
+/**
+ * @brief Sample a signed mechanical speed for a periodic control loop.
+ *
+ * The driver keeps the previous phase-count snapshot and timestamp for each
+ * channel. A count delta over at least the configured hardware speed window
+ * provides a valid zero or low-speed result, allowing a controller to start
+ * from rest without waiting for an encoder edge.
+ *
+ * The first call establishes a baseline and returns @ref sensor_value with
+ * zero RPM. Later calls remain valid across control-loop periods, including
+ * periods shorter than the configured hardware window.
+ *
+ * @param dev QEIV2 device.
+ * @param channel Speed channel, from 0 through 1.
+ * @param rpm Output signed speed in RPM.
+ *
+ * @retval 0 on success.
+ * @retval -EINVAL for an invalid argument or channel without speed setup.
+ * @retval -ERANGE if the result cannot be represented.
+ */
+static inline int hpm_qeiv2_sample_speed(const struct device *dev, uint8_t channel,
+					 struct sensor_value *rpm)
+{
+	return DEVICE_API_GET(hpm_qeiv2, dev)->sample_speed(dev, channel, rpm);
 }
 
 /**
