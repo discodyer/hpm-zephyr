@@ -98,6 +98,12 @@ USB_OTG 上完成枚举；HID SET_PROTOCOL/SET_IDLE 和 GET_PROTOCOL 回读通�
 操作者按键，后续 RDC/SEI 等待测配置还依赖模拟器或编码器 fixture。PWM
 接线可拆除，Host 测试可保留 OTG 适配器和有线 boot keyboard。
 
+2026-11-03 的构建更新在 UHC control 路径增加 buffer 容量校验：当 `wLength`
+超过 IN buffer tailroom 或 OUT buffer 数据长度时立即返回错误，不再静默缩短
+qTD 数据阶段；`usb_host` 配置同时加入 undersized control IN buffer 断言。
+该变体已通过 HPM5361 构建，但尚未重新执行需要键盘交互的 Host 硬件验收，
+因此此前 1/1 的 Host control/interrupt 结果仍作为硬件基线。
+
 RAM 模式尚未通过 v4.5.0 硬件验收：Zephyr 镜像把代码链接在 DLM
 `0x80000`，入口为 `0x80018`，而 SDK RAM 链接脚本把代码放在 ILM、仅把数据
 放在 DLM。`west flash --verify` 能写入并校验 21064 B，但随后串口运行的是
@@ -275,7 +281,10 @@ API 换算。连续 1 ms/25% 捕获检查每次回调的周期、脉宽、设备
 驱动修复共享 AHB 时钟初始化和数字模式的计数/角度读回：使用同一个 READ 快照的
 PH/Z，按 CPR 换算角度；更换回调不再丢弃 pending 事件。比较器保留 SDK 原有的
 `SPDCMP=0` 参与条件；移除该条件的诊断版本在比较值停留时挂起，不能作为修复。
-仅 QEI1 AB 输入通过硬件验证，Z/索引校准、其他模式、速度、模拟精度及外部时序仍待验收。
+仅 QEI1 AB 输入通过硬件验证，Z/索引校准、其他模式、模拟精度及外部时序仍待验收。
+2026-11-03 的构建更新增加第四个用例 `test_periodic_speed_from_standstill`：验证首次采样基线、
+静止有效零速、正反向 RPM 计数差分，以及模式重配后的测速状态复位。该用例仅完成
+HPM5361 构建验证，速度路径尚未重新执行硬件验收；此前 3/3 的 QEI 硬件结果仍然有效。
 接线见下文 QEI 回环节，完整记录见
 [硬件记录](../../../docs/agent/hardware-bringup.md#qei-profile-hardware-result-2026-10-29)。
 
@@ -615,7 +624,7 @@ OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、�
 | QEO/MMC/PLB/SYNT/TRGM | QEO 外部 PWM/ABZ 及波形、闭环 MMC、独立 predictor 停止、PLB filter、SYNT comparator/debug-stop、外部电机路由和中断 |
 | SDP/RNG/CRC/TSNS | cache/并发/故障注入压力、随机源统计质量、CRC 多项式矩阵、温度校准 |
 | OPAMP/ACMP | OPAMP1、其他拓扑和增益矩阵、校准精度/噪声；ACMP0、双通道并发、阈值精度、滤波/迟滞、反相、输出脚及传播延迟 |
-| QEIV2 | Z/索引校准、PD/UD/single/UVW/sincos、速度、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
+| QEIV2 | Z/索引校准、PD/UD/single/UVW/sincos、周期测速硬件复验、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
 | USB | 其他类、并发/STALL/取消/在途 reset、suspend/resume、remote wakeup、Host Hub/非 boot HID/等时传输/PM、VBUS/ID/OC/PWR 策略及运行时 OTG 切换 |
 | PWM | 其他输出/捕获实例组合、绝对频率精度、互补/死区/fault、参考输出、超长周期及高速/长 IRQ 延迟下的丢样 |
 | flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 烧写/lock/reload/region 仅在专用可消耗芯片另行验收 |
