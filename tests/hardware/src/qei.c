@@ -272,13 +272,13 @@ ZTEST(hpm_qei_loop, test_periodic_speed_from_standstill)
 	advance_edges(COUNTS_PER_REVOLUTION, true, &total, COUNTS_PER_REVOLUTION);
 	k_msleep(SPEED_WINDOW_US / 1000U + 5U);
 	zassert_ok(hpm_qeiv2_sample_speed(qei, 0U, &rpm));
-	zassert_true(sensor_value_to_milli(&rpm) > 0,
+	zassert_true(sensor_value_to_milli(&rpm) > 100000,
 		     "unexpected forward speed %lld", sensor_value_to_milli(&rpm));
 
 	advance_edges(COUNTS_PER_REVOLUTION / 2U, false, &total, COUNTS_PER_REVOLUTION);
 	k_msleep(SPEED_WINDOW_US / 1000U + 5U);
 	zassert_ok(hpm_qeiv2_sample_speed(qei, 0U, &rpm));
-	zassert_true(sensor_value_to_milli(&rpm) < 0,
+	zassert_true(sensor_value_to_milli(&rpm) < -100000,
 		     "unexpected reverse speed %lld", sensor_value_to_milli(&rpm));
 	printk("QEI: periodic speed baseline, standstill, forward and reverse RPM passed\n");
 }

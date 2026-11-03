@@ -546,7 +546,7 @@ static int hpm_qeiv2_drv_sample_speed(const struct device *dev, uint8_t channel,
 		state->initialized = true;
 	} else if ((elapsed_ms > 0) && (elapsed_ms >= speed_window_ms)) {
 		delta_count = total_count - state->previous_count;
-		rpm_milli = (delta_count * 60000LL) /
+		rpm_milli = (delta_count * 60000000LL) /
 			    ((int64_t)counts_per_revolution * elapsed_ms);
 		if ((rpm_milli < INT32_MIN) || (rpm_milli > INT32_MAX)) {
 			k_spin_unlock(&data->lock, key);
