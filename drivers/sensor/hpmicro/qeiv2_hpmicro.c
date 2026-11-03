@@ -193,6 +193,7 @@ static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2
 	data->revolutions = 0;
 	data->rotation_micro_degrees = 0U;
 	data->latched_events = 0U;
+	memset(data->speed_state, 0, sizeof(data->speed_state));
 	data->compare_source_valid = false;
 	data->active_mode = mode->mode;
 	data->active_counts_per_revolution = mode->counts_per_revolution;
