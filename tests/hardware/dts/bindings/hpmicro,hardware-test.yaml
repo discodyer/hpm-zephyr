@@ -12,3 +12,5 @@ properties:
     type: phandle-array
   b-gpios:
     type: phandle-array
+  z-gpios:
+    type: phandle-array

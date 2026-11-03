@@ -10,16 +10,18 @@
 #include <zephyr/ztest.h>
 
 #define COUNTS_PER_REVOLUTION 64U
-#define SPEED_WINDOW_US        20000U
+#define SPEED_WINDOW_US       20000U
 #define COMPARE0_EVENT        HPM_QEIV2_EVENT_POSITION_COMPARE
 #define COMPARE1_EVENT        HPM_QEIV2_EVENT_POSITION2_COMPARE
 #define COMPARE_EVENTS        (COMPARE0_EVENT | COMPARE1_EVENT)
+#define Z_EVENT               HPM_QEIV2_EVENT_Z_PHASE
 
 PINCTRL_DT_DEFINE(DT_NODELABEL(hw_fixture));
 
 static const struct device *const qei = DEVICE_DT_GET(DT_NODELABEL(qei1));
 static const struct gpio_dt_spec a = GPIO_DT_SPEC_GET(DT_NODELABEL(hw_fixture), a_gpios);
 static const struct gpio_dt_spec b = GPIO_DT_SPEC_GET(DT_NODELABEL(hw_fixture), b_gpios);
+static const struct gpio_dt_spec z = GPIO_DT_SPEC_GET(DT_NODELABEL(hw_fixture), z_gpios);
 static uint32_t speed_window_cycles;
 static const uint8_t gray_states[] = {0, 1, 3, 2};
 static uint8_t gray_index;
@@ -29,6 +31,9 @@ static atomic_t callback_errors;
 static atomic_t callback_events;
 static atomic_t compare0_calls;
 static atomic_t compare1_calls;
+static atomic_t z_calls;
+static atomic_t z_events;
+static atomic_t z_errors;
 
 static void expect_position(int32_t total, uint32_t counts_per_revolution)
 {
@@ -70,24 +75,49 @@ static void configure_decoder(uint32_t counts_per_revolution)
 	expect_position(0, counts_per_revolution);
 }
 
+static void step_edge(bool forward)
+{
+	uint8_t previous = gray_states[gray_index];
+	uint8_t state;
+
+	gray_index = (gray_index + (forward ? 1U : 3U)) % ARRAY_SIZE(gray_states);
+	state = gray_states[gray_index];
+	if (((previous ^ state) & BIT(0)) != 0U) {
+		zassert_ok(gpio_pin_set_dt(&a, state & BIT(0)));
+	} else {
+		zassert_ok(gpio_pin_set_dt(&b, (state >> 1) & BIT(0)));
+	}
+	k_busy_wait(100);
+}
+
 static void advance_edges(uint32_t edges, bool forward, int32_t *total,
 			  uint32_t counts_per_revolution)
 {
 	for (uint32_t edge = 0; edge < edges; ++edge) {
-		uint8_t previous = gray_states[gray_index];
-		uint8_t state;
-
-		gray_index = (gray_index + (forward ? 1U : 3U)) % ARRAY_SIZE(gray_states);
-		state = gray_states[gray_index];
-		if (((previous ^ state) & BIT(0)) != 0U) {
-			zassert_ok(gpio_pin_set_dt(&a, state & BIT(0)));
-		} else {
-			zassert_ok(gpio_pin_set_dt(&b, (state >> 1) & BIT(0)));
-		}
-		k_busy_wait(100);
+		step_edge(forward);
 		*total += forward ? 1 : -1;
 		expect_position(*total, counts_per_revolution);
 	}
+}
+
+static void expect_raw_position(int32_t phase, int32_t revolutions)
+{
+	struct sensor_value count = {0};
+	struct sensor_value revolution_count = {0};
+	struct sensor_value rotation = {0};
+	int64_t expected_rotation = (int64_t)phase * 360000000 / COUNTS_PER_REVOLUTION;
+
+	zassert_ok(sensor_sample_fetch(qei));
+	zassert_ok(sensor_channel_get(qei, SENSOR_CHAN_ENCODER_COUNT, &count));
+	zassert_ok(sensor_channel_get(qei, SENSOR_CHAN_ENCODER_REVOLUTIONS, &revolution_count));
+	zassert_ok(sensor_channel_get(qei, SENSOR_CHAN_ROTATION, &rotation));
+	zassert_equal(count.val1, phase, "phase %d expected %d", count.val1, phase);
+	zassert_equal(count.val2, 0);
+	zassert_equal(revolution_count.val1, revolutions, "Z count %d expected %d",
+		      revolution_count.val1, revolutions);
+	zassert_equal(revolution_count.val2, 0);
+	zassert_equal(sensor_value_to_micro(&rotation), expected_rotation,
+		      "incorrect angle for phase %d", phase);
 }
 
 static void event_callback(const struct device *dev, uint32_t events, void *user_data)
@@ -126,6 +156,26 @@ static void expect_events(uint32_t expected)
 		      events & COMPARE_EVENTS, expected);
 }
 
+static void z_event_callback(const struct device *dev, uint32_t events, void *user_data)
+{
+	if ((dev != qei) || (user_data != &callback_cookie) || !k_is_in_isr()) {
+		atomic_or(&z_errors, BIT(0));
+	}
+	if ((events & Z_EVENT) == 0U) {
+		atomic_or(&z_errors, BIT(1));
+	}
+	atomic_or(&z_events, events);
+	atomic_inc(&z_calls);
+}
+
+static void expect_z_callbacks(int count)
+{
+	zassert_true(WAIT_FOR(atomic_get(&z_calls) == count, 50000, k_busy_wait(10)),
+		     "Z callback count %ld expected %d", (long)atomic_get(&z_calls), count);
+	zassert_equal(atomic_get(&z_events), Z_EVENT);
+	zassert_equal(atomic_get(&z_errors), 0, "invalid Z callback metadata or event mask");
+}
+
 static void configure_phase_comparators(void)
 {
 	struct hpm_qeiv2_compare_config compare = {
@@ -146,10 +196,9 @@ static uint32_t get_speed_window_cycles(void)
 	uint32_t clock_hz;
 	uint32_t cycles;
 
-	zassert_ok(clock_control_get_rate(DEVICE_DT_GET(DT_CLOCKS_CTLR(DT_NODELABEL(qei1))),
-					  (clock_control_subsys_t)DT_CLOCKS_CELL(DT_NODELABEL(qei1),
-									 name),
-					  &clock_hz));
+	zassert_ok(clock_control_get_rate(
+		DEVICE_DT_GET(DT_CLOCKS_CTLR(DT_NODELABEL(qei1))),
+		(clock_control_subsys_t)DT_CLOCKS_CELL(DT_NODELABEL(qei1), name), &clock_hz));
 	cycles = (uint32_t)(((uint64_t)clock_hz * SPEED_WINDOW_US) / USEC_PER_SEC);
 	zassert_true(cycles > 0U);
 	return cycles;
@@ -161,8 +210,11 @@ static void qei_before(void *fixture)
 	zassert_true(device_is_ready(qei));
 	zassert_true(gpio_is_ready_dt(&a));
 	zassert_true(gpio_is_ready_dt(&b));
+	zassert_true(gpio_is_ready_dt(&z));
 	zassert_ok(pinctrl_apply_state(PINCTRL_DT_DEV_CONFIG_GET(DT_NODELABEL(hw_fixture)),
 				       PINCTRL_STATE_DEFAULT));
+	zassert_ok(gpio_pin_configure_dt(&z, GPIO_OUTPUT_INACTIVE));
+	k_busy_wait(100);
 	zassert_ok(hpm_qeiv2_set_event_callback(qei, 0U, NULL, NULL));
 	zassert_ok(hpm_qeiv2_set_event_route(qei, HPM_QEIV2_EVENT_ROUTE_INTERRUPT,
 					     HPM_QEIV2_EVENT_ALL, false));
@@ -178,6 +230,9 @@ static void qei_before(void *fixture)
 	atomic_clear(&callback_events);
 	atomic_clear(&compare0_calls);
 	atomic_clear(&compare1_calls);
+	atomic_clear(&z_calls);
+	atomic_clear(&z_events);
+	atomic_clear(&z_errors);
 }
 
 static void qei_after(void *fixture)
@@ -189,6 +244,7 @@ static void qei_after(void *fixture)
 	(void)hpm_qeiv2_clear_events(qei, HPM_QEIV2_EVENT_ALL);
 	(void)gpio_pin_configure_dt(&a, GPIO_INPUT);
 	(void)gpio_pin_configure_dt(&b, GPIO_INPUT);
+	(void)gpio_pin_configure_dt(&z, GPIO_INPUT);
 }
 
 ZTEST(hpm_qei_loop, test_quadrature_forward_reverse_and_wrap)
@@ -272,15 +328,16 @@ ZTEST(hpm_qei_loop, test_periodic_speed_from_standstill)
 	advance_edges(COUNTS_PER_REVOLUTION, true, &total, COUNTS_PER_REVOLUTION);
 	k_msleep(SPEED_WINDOW_US / 1000U + 5U);
 	zassert_ok(hpm_qeiv2_sample_speed(qei, 0U, &rpm));
-	zassert_true(sensor_value_to_milli(&rpm) > 100000,
-		     "unexpected forward speed %lld", sensor_value_to_milli(&rpm));
+	zassert_true(sensor_value_to_milli(&rpm) > 100000, "unexpected forward speed %lld",
+		     sensor_value_to_milli(&rpm));
 
 	advance_edges(COUNTS_PER_REVOLUTION / 2U, false, &total, COUNTS_PER_REVOLUTION);
 	k_msleep(SPEED_WINDOW_US / 1000U + 5U);
 	zassert_ok(hpm_qeiv2_sample_speed(qei, 0U, &rpm));
-	zassert_true(sensor_value_to_milli(&rpm) < -100000,
-		     "unexpected reverse speed %lld", sensor_value_to_milli(&rpm));
-	printk("QEI: periodic speed baseline, standstill, forward and reverse RPM passed\n");
+	zassert_true(sensor_value_to_milli(&rpm) < -100000, "unexpected reverse speed %lld",
+		     sensor_value_to_milli(&rpm));
+	printk("QEI: periodic speed baseline, standstill, forward and reverse RPM "
+	       "passed\n");
 }
 
 ZTEST(hpm_qei_loop, test_runtime_reset_resolution_and_compare_source)
@@ -315,6 +372,61 @@ ZTEST(hpm_qei_loop, test_runtime_reset_resolution_and_compare_source)
 	advance_edges(256U, false, &total, 128U);
 	zassert_equal(total, 0);
 	printk("QEI: runtime reset and CPR 64 -> 128, compare source reset passed\n");
+}
+
+ZTEST(hpm_qei_loop, test_z_index_calibration_and_event)
+{
+	const struct hpm_qeiv2_mode_config mode = {
+		.mode = HPM_QEIV2_MODE_ABZ,
+		.counts_per_revolution = COUNTS_PER_REVOLUTION,
+		.phase_index = 12U,
+		.z_calibration = true,
+	};
+	uint32_t events;
+	int32_t total = 0;
+
+	zassert_ok(hpm_qeiv2_configure_mode(qei, &mode));
+	expect_raw_position(0, 0);
+	advance_edges(20U, true, &total, COUNTS_PER_REVOLUTION);
+	expect_raw_position(20, 0);
+
+	zassert_ok(hpm_qeiv2_set_event_callback(qei, Z_EVENT, z_event_callback, &callback_cookie));
+
+	/* A rising edge captures a high Z pulse and reloads PHCNT from PHIDX. */
+	zassert_ok(gpio_pin_set_dt(&z, 1));
+	k_busy_wait(100);
+	step_edge(true);
+	expect_z_callbacks(1);
+	expect_raw_position(12, 1);
+	zassert_ok(hpm_qeiv2_get_events(qei, &events));
+	zassert_equal(events & Z_EVENT, Z_EVENT, "missing Z hardware event in 0x%08x", events);
+	zassert_ok(hpm_qeiv2_clear_events(qei, Z_EVENT));
+	zassert_ok(gpio_pin_set_dt(&z, 0));
+	k_busy_wait(100);
+
+	/* Counting continues from PHIDX and keeps the Z revolution count. */
+	for (uint32_t edge = 0U; edge < 8U; ++edge) {
+		step_edge(true);
+	}
+	expect_raw_position(20, 1);
+
+	/*
+	 * Reverse capture is synchronized to A falling. Establish reverse
+	 * direction with Z low, then keep Z high until the next reverse A falling
+	 * edge (the fifth reverse edge from the current quadrature state).
+	 */
+	step_edge(false);
+	zassert_ok(gpio_pin_set_dt(&z, 1));
+	k_busy_wait(100);
+	for (uint32_t edge = 0U; edge < 4U; ++edge) {
+		step_edge(false);
+	}
+	zassert_ok(gpio_pin_set_dt(&z, 0));
+	k_busy_wait(100);
+	expect_z_callbacks(2);
+	expect_raw_position(11, 0);
+	printk("QEI: Z index phase 12/11 reload, rising/falling captures and ZCNT "
+	       "+/- passed\n");
 }
 
 ZTEST_SUITE(hpm_qei_loop, NULL, NULL, qei_before, qei_after, NULL);
