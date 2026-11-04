@@ -160,6 +160,13 @@ tests:
     harness_config:
       fixture: hpm_usb_host_keyboard
     timeout: 180
+  hpmicro.hardware.usb_host_hub:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/usb_host_hub.conf
+      - DTC_OVERLAY_FILE=profiles/usb_host.overlay
+    harness_config:
+      fixture: hpm_usb_host_hub
+    timeout: 180
   hpmicro.hardware.usb_host_hid_report:
     extra_args:
       - EXTRA_CONF_FILE=profiles/usb_host_hid_report.conf

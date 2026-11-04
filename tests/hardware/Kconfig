@@ -146,4 +146,13 @@ config HPM_TEST_USB_HOST_HID_REPORT
 
 endchoice
 
+config HPM_TEST_USB_HOST_HUB
+	bool "USB host external hub"
+	depends on HPM_TEST_USB_HOST
+	help
+	  Require the boot keyboard to be connected through an external
+	  high-speed USB hub and validate the downstream low-speed split path.
+	  The test also checks the Hub parent relationship and negotiated speeds
+	  so that a directly connected keyboard cannot satisfy the profile.
+
 source "Kconfig.zephyr"

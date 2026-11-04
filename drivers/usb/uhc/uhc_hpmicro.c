@@ -211,6 +211,7 @@ struct uhc_hpmicro_data {
 	uint32_t *frame_list;
 	struct hpm_usb_toggle toggles[CONFIG_UHC_HPMICRO_QH_COUNT];
 	bool port_connected;
+	bool port_pre_reset;
 };
 
 enum uhc_hpmicro_event {
@@ -223,10 +224,10 @@ static inline bool qtd_is_active(const struct hpm_ehci_qtd *qtd)
 	return (qtd->token & HPM_USB_QTD_STATUS_ACTIVE) != 0U;
 }
 
-static inline bool qtd_has_error(const struct hpm_ehci_qtd *qtd)
+static inline bool qtd_is_halted(const struct hpm_ehci_qtd *qtd)
 {
-	return ((qtd->token & (HPM_USB_QTD_STATUS_HALTED | HPM_USB_QTD_STATUS_ERRORS)) != 0U) &&
-	       !qtd_is_active(qtd);
+	/* Error status bits are only meaningful when the controller halted the qTD. */
+	return !qtd_is_active(qtd) && ((qtd->token & HPM_USB_QTD_STATUS_HALTED) != 0U);
 }
 
 static inline uint32_t qtd_remaining(const struct hpm_ehci_qtd *qtd)
@@ -949,8 +950,8 @@ static int submit_control(const struct device *dev, struct uhc_transfer *xfer)
 
 		if (in) {
 			if (setup_length > net_buf_tailroom(xfer->buf)) {
-				LOG_ERR("Control IN length %u exceeds buffer space %u", setup_length,
-					net_buf_tailroom(xfer->buf));
+				LOG_ERR("Control IN length %u exceeds buffer space %u",
+					setup_length, net_buf_tailroom(xfer->buf));
 				ret = -ENOMEM;
 				goto error;
 			}
@@ -958,8 +959,8 @@ static int submit_control(const struct device *dev, struct uhc_transfer *xfer)
 			data_length = setup_length;
 		} else {
 			if (setup_length > xfer->buf->len) {
-				LOG_ERR("Control OUT length %u exceeds buffer data %u", setup_length,
-					xfer->buf->len);
+				LOG_ERR("Control OUT length %u exceeds buffer data %u",
+					setup_length, xfer->buf->len);
 				ret = -EINVAL;
 				goto error;
 			}
@@ -1197,11 +1198,8 @@ static int qh_completion_status(const struct uhc_hpmicro_qh *qh)
 		if (qtd_is_active(&qtd->hw)) {
 			return -EINPROGRESS;
 		}
-		if (qtd_has_error(&qtd->hw)) {
-			if ((qtd->hw.token & HPM_USB_QTD_STATUS_HALTED) != 0U) {
-				return -EPIPE;
-			}
-			return -EIO;
+		if (qtd_is_halted(&qtd->hw)) {
+			return -EPIPE;
 		}
 	}
 
@@ -1221,6 +1219,11 @@ static struct uhc_transfer *qh_complete(const struct device *dev, struct uhc_hpm
 	*err_out = err;
 	if (err == -EINPROGRESS) {
 		return NULL;
+	}
+	if ((err != 0) && (qh->first_qtd != NULL)) {
+		LOG_DBG("QH error: addr %u ep 0x%02x speed %u err %d token 0x%08x",
+			xfer->udev->addr, xfer->ep, xfer->udev->speed, err,
+			qh->first_qtd->hw.token);
 	}
 
 	if ((xfer->type != USB_EP_TYPE_CONTROL) && (err == 0) && (transferred != 0U)) {
@@ -1379,6 +1382,10 @@ static void uhc_hpmicro_scan_itd(const struct device *dev)
 			break;
 		}
 
+		if (err != 0) {
+			LOG_DBG("Transfer failed: addr %u ep 0x%02x speed %u err %d",
+				completed->udev->addr, completed->ep, completed->udev->speed, err);
+		}
 		uhc_xfer_return(dev, completed, err);
 	}
 
@@ -1551,11 +1558,25 @@ static void uhc_hpmicro_port_event(const struct device *dev)
 	if (!connected) {
 		uhc_hpmicro_flush_xfers(dev, -ENODEV);
 		memset(data->toggles, 0, sizeof(data->toggles));
+		data->port_pre_reset = false;
 	}
 
 	data->port_connected = connected;
 	if (connected) {
-		uint8_t speed = usb_get_port_speed(config->base);
+		uint8_t speed;
+
+		/*
+		 * A high-speed device only completes its chirp during reset. Do
+		 * the reset before reporting the connection so usbh_core records
+		 * the negotiated speed instead of the pre-reset full-speed value.
+		 */
+		usb_hcd_port_reset(config->base);
+		k_sleep(K_MSEC(10));
+		data->port_pre_reset = true;
+		portsc = config->base->PORTSC1;
+		speed = usb_get_port_speed(config->base);
+
+		LOG_DBG("Port connected: PORTSC=0x%08x speed=%u", portsc, speed);
 
 		if (speed == 0U) {
 			config->base->PORTSC1 &= ~USB_PORTSC1_STS_MASK;
@@ -1568,6 +1589,7 @@ static void uhc_hpmicro_port_event(const struct device *dev)
 			(void)uhc_submit_event(dev, UHC_EVT_DEV_CONNECTED_HS, 0);
 		}
 	} else {
+		LOG_DBG("Port disconnected: PORTSC=0x%08x", portsc);
 		(void)uhc_submit_event(dev, UHC_EVT_DEV_REMOVED, 0);
 	}
 }
@@ -1787,9 +1809,12 @@ static int uhc_hpmicro_bus_reset(const struct device *dev)
 	struct uhc_hpmicro_data *data = uhc_get_private(dev);
 
 	memset(data->toggles, 0, sizeof(data->toggles));
-	usb_hcd_port_reset(config->base);
-	/* USB 2.0 section 7.1.7.5 requires reset recovery before the first transfer. */
-	k_sleep(K_MSEC(10));
+	if (data->port_pre_reset) {
+		data->port_pre_reset = false;
+	} else {
+		usb_hcd_port_reset(config->base);
+		k_sleep(K_MSEC(10));
+	}
 	(void)uhc_submit_event(dev, UHC_EVT_RESETED, 0);
 	return 0;
 }

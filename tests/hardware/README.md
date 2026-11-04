@@ -5,13 +5,13 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 25 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
+本轮已在 HPM5300EVK RevD 上验证 26 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
 `watchdog`、`can`、`ptpc`、`motor`、`gpio`、`uart`、`i2c`、`spi`、`analog`、
 `front_end`、`pwm`、`qei`、`qei_pd`、`qei_ud`、`qei_single`、`qei_uvw`、
-`usb_device`、`usb_endpoints`、`usb_endpoints_fs`、`usb_host` 和
-`usb_host_hid_report`，分别通过 8/8、2/2、6/6、1/1、4/4、2/2、4/4、5/5、4/4、
-4/4、3/3、1/1、6/6、3/3、3/3、5/5、4/4、4/4、3/3、3/3、1/1、1/1、1/1、1/1
-和 1/1 项，共 80 项测试。两个 endpoint 配置共用同一份测试源码。
+`usb_device`、`usb_endpoints`、`usb_endpoints_fs`、`usb_host`、`usb_host_hub`
+和 `usb_host_hid_report`，分别通过 8/8、2/2、6/6、1/1、4/4、2/2、4/4、5/5、4/4、
+4/4、3/3、1/1、6/6、3/3、3/3、5/5、4/4、4/4、3/3、3/3、1/1、1/1、1/1、1/1、
+1/1 和 1/1 项，共 81 项测试。两个 endpoint 配置共用同一份测试源码。
 历史候选 profile 的 build-only 记录保留在下文，
 不代表这些候选已纳入本轮提交或通过硬件验收。
 
@@ -168,6 +168,21 @@ boot keyboard 接线。测试完整读取 65 字节 HID Report Descriptor，发�
 `build/hw-usb-host-hid-report-build.log`。首次串口捕获因 OpenOCD 访问同一
 FT2232 时串口重枚举而中断，记录在 `...-capture-attempt.uart.log`，不计入验收。
 
+2026-11-04 新增 `usb_host_hub` profile，使用 GenesysLogic `05e3:0610` USB 2.1
+High-Speed、Single-TT、四端口自供电 Hub，下游 Port 1 接 VID:PID `2a7a:8a57`
+低速 boot keyboard。验证过程中发现并修复两个 HPM UHC 问题：连接事件在 USB2
+High-Speed chirp 前把设备误报为 Full-Speed，以及驱动把非 Halted qTD 的粘滞
+`XACTERR` 误判为 `-EIO` 并丢弃已成功收到的数据。修复后在连接阶段完成 port
+reset、按 reset 后 PSPD 上报真实速度，并且只在 qTD `Halted=1` 时判定失败。
+正式用例同时断言键盘确有 Hub 父设备、Hub 为 High-Speed、键盘为 Low-Speed 且
+层级为 2。烧录首轮和三次独立复位均 1/1 通过，耗时分别为 0.972/0.726/0.598/
+0.689 s；每轮仅有一个启动 banner，均以 `PROJECT EXECUTION SUCCESSFUL` 结束。
+构建和烧录证据为 `build/hw-usb-host-hub-formal-build-final.log` 与
+`build/hw-usb-host-hub-final-flash.log`；UART/reset 证据为
+`build/hw-usb-host-hub-final-{flash,reset1,reset2,reset3}.uart.log` 和
+`build/hw-usb-host-hub-final-reset{1,2,3}.log`。诊断日志
+`build/hw-usb-host-hub-token-run1.uart.log` 保留作 qTD 失败定位，不计入验收。
+
 2026-11-04 新增 `qei_uvw` 后，对注册后的全部 profile 重新执行 Twister build-only
 回归：23/23 配置构建成功，发现 73 项测试，0 失败/错误，无编译器或 Twister
 汇总警告；报告为 `build/twister-qei-uvw-registered/twister.json`。
@@ -180,8 +195,12 @@ FT2232 时串口重枚举而中断，记录在 `...-capture-attempt.uart.log`，
 JSON 中合计 80 项测试，0 失败/错误，无编译器或 Twister 汇总警告；报告为
 `build/twister-ptpc-registered/twister.json`。
 
-当前 25 个注册配置均已在 v4.5.0 上构建通过，共注册 80 项测试，现已全部通过
-硬件验收（80/80）。Host 验收仍需操作者按键，后续 RDC/SEI 等待测配置还依赖
+2026-11-04 新增 `usb_host_hub` 后再次执行 Twister build-only 回归：26/26 配置
+构建成功，JSON 中合计 81 项测试，0 失败/错误，无编译器或 Twister 汇总警告；
+报告为 `build/twister-usb-host-hub-registered/twister.json`。
+
+当前 26 个注册配置均已在 v4.5.0 上构建通过，共注册 81 项测试，现已全部通过
+硬件验收（81/81）。Host 验收仍需操作者按键，后续 RDC/SEI 等待测配置还依赖
 模拟器或编码器 fixture。PWM 接线可拆除，Host 测试可保留 OTG 适配器和有线
 boot keyboard。
 
@@ -518,7 +537,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 25 个已上板验收 profile 配置，具体范围及限制见前述运行记录。
+下表列出 26 个已上板验收 profile 配置，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -543,6 +562,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `usb_device` | `hpm_usb_device` | J1 USB_OTG 数据线连接 PC，保留 J8 USB_DEBUG | 高速枚举、CDC line coding/DTR 和 27 帧双向数据校验，主机脚本逐帧 ACK |
 | `usb_endpoints` / `usb_endpoints_fs` | `hpm_usb_device` | 同上，主机运行 `usb_endpoint_peer.py` | HS/FS 实际速度与 MPS、EP1～EP15 全部 IN/OUT、各 405 次应用层交换及逐端点完成回调 |
 | `usb_host` | `hpm_usb_host_keyboard` | J1 USB_OTG 接 OTG 适配器，再接有线 boot keyboard；保留 J8 USB_DEBUG | 设备枚举与 VID/PID、HID boot protocol 控制请求、8 字节 interrupt-IN 的 `a` 按下/释放报告 |
+| `usb_host_hub` | `hpm_usb_host_hub` | J1 USB_OTG → OTG 适配器 → 自供电 GenesysLogic `05e3:0610` HS Hub；Hub Port 1 → 低速 boot keyboard | 断言 HS Host 经 Single-TT Hub 枚举 LS 键盘、Hub/键盘父子层级，以及 SET_PROTOCOL/SET_IDLE、GET_PROTOCOL 和 interrupt-IN 按下/释放报告 |
 | `usb_host_hid_report` | `hpm_usb_host_hid_report` | 同 `usb_host`；使用 boot-capable 有线键盘 | 完整 HID Report Descriptor、`SET_PROTOCOL(report)` 与 `GET_PROTOCOL` 读回、非零按键和全零释放 interrupt-IN 报告 |
 | `can` | `hpm5300evk` | MCAN0 静默内部 loopback，无外部 CAN 总线 | 16 帧标准 classic/FD/BRS、8/64 B 数据及 TX/RX ISR；另 20 帧 PTPC0→TSU SOF 64 位捕获，有效/无丢失/递增、8 槽及两次回绕、PTPC 发送前后时间包络 |
 | `ptpc` | `hpm5300evk` | 无外部接线，同时启用 PTPC0/PTPC1 | 两通道初始化进度、时间设置及正负调整、`1.05/0.95` 速率调整、PPS 控制值 0/1/2/4/15、事件锁存/清除，以及共享 IRQ 39 两通道 compare 分发 |
@@ -738,13 +758,14 @@ RevD 上两次独立复位通过。`usb_host_hid_report` 随后在同一边界�
 Report Descriptor、选择 Report Protocol 并验证通用按键按下/释放报告，也已
 两次独立复位通过。boot protocol 与 report protocol 当前针对的都是
 `1c4f:00b7` boot-capable 键盘，不能据此宣称已支持任意非 boot HID 设备。
+`usb_host_hub` 进一步通过 GenesysLogic `05e3:0610` 自供电 HS Hub，验证了 Hub
+下游低速键盘的 Single-TT 分拆事务和 HID interrupt-IN 路径。
 J1 的 CC1/CC2 在 RevC 原理图中没有板载主机上拉（R30/R31 DNP），因此必须使用
 带 OTG/CC 处理的适配器；普通 C-to-C 线不会让该板进入 Host 连接状态。J1 的
 VBUS 由板载 AP2151 开关提供，无需外部注入 5 V。
 
-这些 profile 尚未覆盖 USB Hub、非 boot HID 类、异步/周期性 Hub 传输、等时
-音频或 Host 侧挂起/恢复。设备端点容量同样不能用于推断 Host 侧 Hub 的端点
-容量。
+这些 profile 尚未覆盖多层/非 TT Hub、任意非 boot HID 类、等时音频或 Host
+侧挂起/恢复。设备端点容量同样不能用于推断 Host 侧 Hub 的端点容量。
 
 挂起/远程唤醒草稿已尝试上板，尚未通过。当前容器 `/sys` 为只读，操作者在 VM
 容器外只为 `1209:0003` 配置自动挂起；guest 连续 17 s 报告 suspended 时，固件在

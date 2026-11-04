@@ -4,6 +4,7 @@
 #include <zephyr/drivers/usb/uhc.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/byteorder.h>
+#include <zephyr/usb/class/usb_hub.h>
 #include <zephyr/usb/usbh.h>
 #include <zephyr/ztest.h>
 
@@ -12,6 +13,8 @@
 #include <usbh_class.h>
 #include <usbh_desc.h>
 #include <usbh_device.h>
+
+#define HID_REPORT_TIMEOUT_SECONDS (IS_ENABLED(CONFIG_HPM_TEST_USB_HOST_HUB) ? 180 : 60)
 
 USBH_CONTROLLER_DEFINE(host, DEVICE_DT_GET(DT_NODELABEL(usb0)));
 static K_SEM_DEFINE(attached, 0, 1);
@@ -161,6 +164,17 @@ ZTEST(hpm_usb_host, test_enumeration_hid_control_and_interrupt_in)
 	keyboard_locked = true;
 	zassert_not_null(keyboard);
 	zassert_equal(keyboard->state, USB_STATE_CONFIGURED);
+	if (IS_ENABLED(CONFIG_HPM_TEST_USB_HOST_HUB)) {
+		zassert_not_null(keyboard->hub, "Keyboard is not behind an external hub");
+		zassert_equal(keyboard->hub->dev_desc.bDeviceClass, USB_HUB_CLASS_CODE);
+		zassert_equal(keyboard->hub->speed, USB_SPEED_SPEED_HS);
+		zassert_equal(keyboard->speed, USB_SPEED_SPEED_LS);
+		zassert_equal(keyboard->level, 2U);
+		printk("USB host hub: VID:PID %04x:%04x, address %u, speed %u\n",
+		       sys_le16_to_cpu(keyboard->hub->dev_desc.idVendor),
+		       sys_le16_to_cpu(keyboard->hub->dev_desc.idProduct), keyboard->hub->addr,
+		       keyboard->hub->speed);
+	}
 	printk("USB host: VID:PID %04x:%04x, address %u, speed %u, interface %u, IN %02x\n",
 	       sys_le16_to_cpu(keyboard->dev_desc.idVendor),
 	       sys_le16_to_cpu(keyboard->dev_desc.idProduct), keyboard->addr, keyboard->speed,
@@ -170,8 +184,8 @@ ZTEST(hpm_usb_host, test_enumeration_hid_control_and_interrupt_in)
 	zassert_ok(usbh_req_setup(keyboard, 0x21, 0x0a, 0, interface, 0, NULL));
 	protocol = usbh_xfer_buf_alloc(keyboard, 1U);
 	zassert_not_null(protocol);
-	zassert_equal(usbh_req_setup(keyboard, 0xa1, 0x03, 0, interface, 33, protocol),
-		      -ENOMEM, "Undersized control IN buffer was accepted");
+	zassert_equal(usbh_req_setup(keyboard, 0xa1, 0x03, 0, interface, 33, protocol), -ENOMEM,
+		      "Undersized control IN buffer was accepted");
 	net_buf_unref(protocol);
 	protocol = usbh_xfer_buf_alloc(keyboard, 1U);
 	zassert_not_null(protocol);
@@ -181,8 +195,8 @@ ZTEST(hpm_usb_host, test_enumeration_hid_control_and_interrupt_in)
 	}
 	net_buf_unref(protocol);
 	zassert_ok(ret, "HID GET_PROTOCOL did not confirm boot protocol");
-	printk("USB host: press and release 'a' now (60 s)\n");
-	deadline = k_uptime_get() + 60000;
+	printk("USB host: press and release 'a' now (%d s)\n", HID_REPORT_TIMEOUT_SECONDS);
+	deadline = k_uptime_get() + (int64_t)HID_REPORT_TIMEOUT_SECONDS * 1000;
 
 	while (!saw_release && k_uptime_get() < deadline) {
 		bool has_a = false;
