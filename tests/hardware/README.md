@@ -200,9 +200,9 @@ JSON 中合计 80 项测试，0 失败/错误，无编译器或 Twister 汇总�
 报告为 `build/twister-usb-host-hub-registered/twister.json`。
 
 当前 26 个注册配置均已在 v4.5.0 上构建通过，共注册 81 项测试，现已全部通过
-硬件验收（81/81）。Host 验收仍需操作者按键，后续 RDC/SEI 等待测配置还依赖
-模拟器或编码器 fixture。PWM 接线可拆除，Host 测试可保留 OTG 适配器和有线
-boot keyboard。
+硬件验收（81/81）。Host 验收仍需操作者按键；RDC、SEI 协议和 USB
+suspend/remote wakeup 验收现由用户暂缓，详见下文。PWM 接线可拆除，Host
+测试可保留 OTG 适配器和有线 boot keyboard。
 
 2026-11-03 的构建更新在 UHC control 路径增加 buffer 容量校验：当 `wLength`
 超过 IN buffer tailroom 或 OUT buffer 数据长度时立即返回错误，不再静默缩短
@@ -782,6 +782,18 @@ suspend/resume，guest 中看到的 suspend 是虚拟端口状态。待其他硬
 或 USB/IP 结果声明 suspend、host resume 或 remote wakeup 通过。Power 测试及
 远程唤醒驱动改动继续作为未验收草稿。
 
+## 暂缓的硬件验收
+
+以下草稿和待验证项不计入注册 profile，也不声明通过或失败。待具备对应设备后，
+再注册 Twister fixture、补充接线记录并执行烧录和独立复位。
+
+| 项目 | 草稿/待验证范围 | 暂缓原因与恢复条件 |
+|---|---|---|
+| RDC | `rdc.conf`、`rdc.overlay`、`src/rdc.c`；激励、I/Q ADC 流、ACC IRQ 和角度 | 用户当前没有与 PA28 激励同步的旋变信号模拟器；具备可提供 I/Q 反馈的 resolver simulator 后恢复 |
+| SEI SSI | `sei.conf`、`sei.overlay`、`src/sei.c`；1 Mbit/s SSI、帧解码和 SYNT 时间戳 | 缺少 SSI 编码器或协议模拟器；能提供固定 `0x536abc` 参考帧及时钟/DE 信号后恢复 |
+| 其他 SEI 协议 | Tamagawa、BiSS-C、EnDat、Nikon 等 consumer 及协议 fixture | 缺少对应编码器/主站模拟器和 CRC/时序验证条件；取得真实或可编程模拟器后恢复 |
+| USB suspend/wakeup | `usb_power` 草稿、peer 脚本和 FPR 改动 | 当前 WSL2 + Docker 通过 USB/IP/`vhci_hcd` 接入，不能传播物理 suspend/resume；迁移到原生 Linux 主机或 Linux SBC 后恢复 |
+
 ## Flash、cache 与验收边界
 
 `flash` profile 缩小 `slot0_partition`，仅擦写相对 NOR 偏移 `0xef000` 开始的
@@ -819,6 +831,7 @@ OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、�
 | CAN/PTPC | 实体收发器和总线、bus-off、共享 MRAM 并发；TSU 与外部绝对时间关联、PPS 引脚电气/占空比、PPS 控制值 5–14 及最大值 IRQ 压力 |
 | MBX/GPIOM | 跨核通信/FIFO、跨控制器访问、锁定持久性 |
 | QEO/MMC/PLB/SYNT/TRGM | QEO 外部 PWM/ABZ 及波形、闭环 MMC、独立 predictor 停止、PLB filter、SYNT comparator/debug-stop、外部电机路由和中断 |
+| RDC/SEI | RDC resolver simulator 和 SEI SSI/Tamagawa/BiSS-C/EnDat/Nikon 编码器 fixture；当前由用户暂缓，不能以 build-only 记为硬件通过 |
 | SDP/RNG/CRC/TSNS | cache/并发/故障注入压力、随机源统计质量、CRC 多项式矩阵、温度校准 |
 | OPAMP/ACMP | OPAMP1、其他拓扑和增益矩阵、校准精度/噪声；ACMP0、双通道并发、阈值精度、滤波/迟滞、反相、输出脚及传播延迟 |
 | QEIV2 | sincos、UVW 外部高速/非法相态/滤波、PD/UD 外部高速/毛刺/滤波、外部 Z 脉宽/时序、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
