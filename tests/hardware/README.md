@@ -835,7 +835,7 @@ OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、�
 | SDP/RNG/CRC/TSNS | cache/并发/故障注入压力、随机源统计质量、CRC 多项式矩阵、温度校准 |
 | OPAMP/ACMP | OPAMP1、其他拓扑和增益矩阵、校准精度/噪声；ACMP0、双通道并发、阈值精度、滤波/迟滞、反相、输出脚及传播延迟 |
 | QEIV2 | sincos、UVW 外部高速/非法相态/滤波、PD/UD 外部高速/毛刺/滤波、外部 Z 脉宽/时序、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
-| USB | 其他类、并发/STALL/取消/在途 reset、suspend/resume、remote wakeup、Host Hub/非 boot HID/等时传输/PM、VBUS/ID/OC/PWR 策略及运行时 OTG 切换 |
+| USB | 其他类、并发/STALL/取消/在途 reset、suspend/resume、remote wakeup、多层/非 TT Host Hub、非 boot HID、等时传输/PM、VBUS/ID/OC/PWR 策略及运行时 OTG 切换 |
 | PWM | 其他输出/捕获实例组合、绝对频率精度、互补/死区/fault、参考输出、超长周期及高速/长 IRQ 延迟下的丢样 |
 | flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 烧写/lock/reload/region 仅在专用可消耗芯片另行验收 |
 
