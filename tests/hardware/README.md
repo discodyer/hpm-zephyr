@@ -813,7 +813,9 @@ XPI flash driver 的 ROM API helper 位于可执行 ILM，BootROM
 保护仍开启。写入/擦除后驱动执行 D-cache 区间失效和 I-cache 全量失效；读路径只
 失效对应 D-cache 区间，避免 Andes VA CCTL 对 XIP scratch 地址产生访问异常。
 
-OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、不锁定、不 reload。
+OTP 驱动按项目约束永久只读，只读取 UUID words 88–91 两次，不打印标识、不烧写、
+不锁定、不 reload；即使启用 `CONFIG_OTP_PROGRAM`，标准 `otp_program()` 也返回
+`-ENOSYS`。
 看门狗测试只验证 IRQ，不自动执行 SoC reset。motor 测试不配置外部 PWM/pinctrl
 输出，GPIOM 测试只修改输入可见性并恢复，不驱动 PA24。
 
@@ -837,12 +839,13 @@ OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、�
 | QEIV2 | sincos、UVW 外部高速/非法相态/滤波、PD/UD 外部高速/毛刺/滤波、外部 Z 脉宽/时序、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
 | USB | 其他类、并发/STALL/取消/在途 reset、suspend/resume、remote wakeup、多层/非 TT Host Hub、非 boot HID、等时传输/PM、VBUS/ID/OC/PWR 策略及运行时 OTG 切换 |
 | PWM | 其他输出/捕获实例组合、绝对频率精度、互补/死区/fault、参考输出、超长周期及高速/长 IRQ 延迟下的丢样 |
-| flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 烧写/lock/reload/region 仅在专用可消耗芯片另行验收 |
+| flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 的 program/lock/region 在当前范围明确不实现 |
 
 generic 9-bit UART、DMA P2P、CPU-core-only/multistage watchdog、TRGM 独立事件
 回调、HPM5361 PLB ABZ 和 SDP 真正 IRQ 异步不伪造正向通过测试。
-其他外设及能力限制仍由工作区 `docs/agent/driver-review.md` 跟踪；RTC、
-SEC/SECMON/KEYM 按当前优先级延后。
+其他外设及能力限制仍由工作区 `docs/agent/driver-review.md` 跟踪；RTC 延后。
+SEC/SECMON/KEYM 没有匹配的 Zephyr 子系统 API，按当前范围不新增自定义驱动；
+其不可逆操作也不会提供写接口。
 
 PLB 的 `SW_INJECT` 只回读软件注入值，不能用作实时计数器读回；模块接口返回
 `-ENOTSUP` 并保留输出参数。硬件数据单元操作通过 TRGM 内部比较器输出核对。

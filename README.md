@@ -19,7 +19,7 @@ modules/hpm_sdk/             HPM SDK integration glue
 
 | Board | Target | Console | Build status | Hardware status |
 |---|---|---|---|---|
-| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and 24 hardware profiles (76 tests) pass |
+| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and 26 hardware profiles (81 tests) pass |
 | HPM5361ICB | `hpm5361icb/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | Not validated |
 
 Both targets currently provide interrupt routing, machine timer, clock/PLL and
@@ -41,12 +41,13 @@ and initialization execute from RAM while XIP is active.
 Build-only validation is complete for both boards, including the Twister
 smoke test. EVK RevD XIP startup, basic polling UART echo/heartbeat,
 OpenOCD flash/verify and GDB breakpoints/single-step passed. The hardware
-acceptance profiles passed 76 tests: `core` (8/8), `dma` (2/2), `crypto` (6/6),
-`flash` (1/1), `watchdog` (4/4), `can` (2/2), `motor` (5/5), `gpio` (4/4),
-`uart` (4/4), `i2c` (3/3), `spi` (1/1), `analog` (6/6), `front_end` (3/3),
-`pwm` (3/3), `qei` (5/5), `qei_pd` (4/4), `qei_ud` (4/4), `qei_single` (3/3),
-`qei_uvw` (3/3), `usb_device` (1/1), `usb_endpoints` (1/1), `usb_endpoints_fs`
-(1/1), `usb_host` (1/1) and `usb_host_hid_report` (1/1).
+acceptance profiles passed 81 tests: `core` (8/8), `dma` (2/2), `crypto` (6/6),
+`flash` (1/1), `watchdog` (4/4), `can` (2/2), `ptpc` (4/4), `motor` (5/5),
+`gpio` (4/4), `uart` (4/4), `i2c` (3/3), `spi` (1/1), `analog` (6/6),
+`front_end` (3/3), `pwm` (3/3), `qei` (5/5), `qei_pd` (4/4), `qei_ud` (4/4),
+`qei_single` (3/3), `qei_uvw` (3/3), `usb_device` (1/1), `usb_endpoints`
+(1/1), `usb_endpoints_fs` (1/1), `usb_host` (1/1), `usb_host_hub` (1/1) and
+`usb_host_hid_report` (1/1).
 Coverage includes internal CAN/TSU loopback, motor-block math and routing,
 GPIO edge interrupts, UART1 DMA/RTS/CTS,
 paired I2C DMA/repeated START/SMBus block/PEC transfers, and SPI1 four-mode
@@ -55,8 +56,9 @@ plus DAC0-to-ADC0 synchronous/asynchronous, preemption, TRGM, step and buffer
 paths, plus OPAMP0 follower voltage and ACMP1 edge, disable/rearm and pending
 callback paths. PWM0-to-PWM1 capture covers period, duty, polarity, counter wrap
 and constant output levels. QEI1 covers ABZ, Z calibration, periodic signed RPM,
-pulse/direction, up/down, single-phase and UVW sector decoding. USB Host boot- and
-report-protocol keyboard enumeration, HID control and interrupt-IN traffic also
+pulse/direction, up/down, single-phase and UVW sector decoding. PTPC covers both
+timestamp channels, rate adjustment, PPS events and shared IRQ dispatch. USB Host
+boot/report HID and one HS Single-TT hub with a downstream LS keyboard also
 passed. Analog accuracy and external waveform timing remain unvalidated.
 
 Each result covers the paths listed in the
@@ -65,8 +67,9 @@ to erase/program/read/cache behavior in the reserved scratch sector;
 JEDEC/geometry, boundaries and latency remain unvalidated. The crypto result
 covers synchronous SDP known-answer tests; async completion and stress remain
 open. USB Device enumeration, the endpoint matrix and Host boot/report keyboard
-paths are covered by the USB profiles; Host hubs, non-boot HID, isochronous
-traffic, power management and suspend/resume/remote wakeup remain unvalidated. SPI
+paths are covered by the USB profiles; multi-level/non-TT hubs, non-boot HID,
+isochronous traffic, power management and suspend/resume/remote wakeup remain
+unvalidated. SPI
 acceptance is limited to MOSI/MISO loopback; external slave
 timing, native CS behavior and electrical measurements remain open.
 Analog acceptance covers the DAC0.OUT-to-ADC0.IN13 loopback and the OPAMP0/ACMP1
@@ -125,7 +128,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Core alarm path hardware-tested | GPTMR alarm IRQ and clock recovery passed in the core profile; top/wrap boundaries and other timer channels remain unvalidated |
 | Watchdog | EWDG0-1, PEWDG | `watchdog` | EWDG0 IRQ-only paths hardware-tested | Thread/ISR feeding, delayed feeding, repeated timeout, disable/reinstall and 500 ms to 2500 ms reconfiguration passed; SoC reset, window mode and sleep/debug pause remain unvalidated; CPU-core-only reset and multistage watchdog are unsupported |
 | RTC | None | N/A | Not applicable | HPM5300/HPM5361 has no independent RTC block; use a board-level external RTC if wall-clock time is required |
-| USB HS OTG | 1 | UDC/UHC | Device HS/FS and Host boot/report keyboard paths hardware-tested | Zephyr UDC reuses the unmodified SDK qTD/qDHD engine; HS CDC enumeration, EP1-15 IN/OUT bulk traffic and the address-before-status path passed, as did forced FS. Zephyr UHC passed boot- and report-protocol wired-keyboard enumeration, HID control and interrupt-IN traffic. qHD/qTD storage is in HPM5361 fixed uncached DLM. Hubs, non-boot HID, isochronous traffic, Host PM, suspend/resume/remote wakeup and runtime OTG role switching remain unvalidated; CherryUSB/TinyUSB are not adopted |
+| USB HS OTG | 1 | UDC/UHC | Device HS/FS and Host boot/report/keyboard-plus-hub paths hardware-tested | Zephyr UDC reuses the unmodified SDK qTD/qDHD engine; HS CDC enumeration, EP1-15 IN/OUT bulk traffic and the address-before-status path passed, as did forced FS. Zephyr UHC passed boot- and report-protocol wired-keyboard enumeration, HID control and one HS Single-TT hub with an LS keyboard. qHD/qTD storage is in HPM5361 fixed uncached DLM. Multi-level/non-TT hubs, non-boot HID, isochronous traffic, Host PM, suspend/resume/remote wakeup and runtime OTG role switching remain unvalidated; CherryUSB/TinyUSB are not adopted |
 | MBX | MBX0A/B | `mbox` | Core path hardware-tested | Bidirectional message ordering passed in the core profile; separate 4-word FIFO, signalling-only mode and cross-core shared-memory IPC remain unvalidated |
 | GPIOM | 1 | `hpm_gpiom` | Input visibility path hardware-tested | PA24 FGPIO0 input visibility toggle and restore passed without driving the physical pin; ownership, other controllers, locks and security behavior remain unvalidated |
 | TRGM | 1 | `mux` + custom extension | Implemented core (build-only) | One mux control per TRGM output with runtime source selection and readback; input filters, output inversion and edge-pulse conversion, eight DMA request routes, the ADC/DAC/position matrices, and named motor-control routes for SYNT/MMC/SEI/RDC/QEO/PLB inter-IP connections. The route helper validates fixed SDK mux indices at build time and leaves endpoint register configuration to the owning drivers. Interrupt routing is available through output 133/134 plus the existing output API, but no TRGM-specific IRQ callback is claimed because the block has no independent status/clear register |
@@ -139,10 +142,10 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | CRC | 1 block, 8 channels | `crc` | Core path hardware-tested | Streaming CRC32 known-answer test passed; other widths, polynomials and reflection combinations remain unvalidated |
 | TSNS | 1 | `sensor` | Core path hardware-tested | Temperature read and threshold IRQ passed; calibration/accuracy and operating-range coverage remain unvalidated |
 | RNG | 1 | `entropy` | Core path hardware-tested | Startup self-test, data reads and nonblocking ISR budget passed; adapter FIFO/reseed waits are bounded, but waits inside the pinned SDK initialization/self-test are not; entropy quality/statistical testing remains unvalidated |
-| PTPC | 1 block, 2 timestamp counters | `ptp_clock` + custom extension | Core and MCAN TSU paths partially hardware-tested | Progress, compare IRQ, internal TRGM capture and PTPC0-correlated 64-bit MCAN TSU timestamps passed; absolute precision, external capture, PPS, rate adjustment and the second counter remain unvalidated |
+| PTPC | 1 block, 2 timestamp counters | `ptp_clock` + custom extension | Two-channel time/PPS/rate and MCAN TSU paths hardware-tested | Both timestamp channels, positive/negative time adjustment, 1.05/0.95 rate adjustment, PPS controls 0/1/2/4/15, shared IRQ dispatch, internal TRGM capture and MCAN TSU timestamps passed; external PPS electrical measurements, sustained high-rate IRQ load and broader CAN routes remain unvalidated |
 | SDP | 1 | `crypto` | Synchronous KAT paths hardware-tested | AES-128/256 ECB/CBC/CTR/CCM, SHA-1/SHA-256/SM3/CRC32 and SM4 ECB/CBC/CTR through the standard API and HPM extensions, using the unmodified SDK backend. Six KATs including CCM tag rejection passed; true IRQ-driven async completion and stress remain unvalidated |
-| SEC / SECMON / KEYM | 1 each | Custom/security | Missing | No Zephyr integration |
-| OTP | 1 | `otp` | Read-only path hardware-tested | UUID shadow reads were repeatable; fuse programming, lock/region operations and reload remain unvalidated and irreversible actions stay opt-in |
+| SEC / SECMON / KEYM | 1 each | No matching API | Not implemented by policy | SEC/PSEC lifecycle, SECMON/PMON monitoring and KEYM management require custom APIs; no such vendor-only security API is added under the current scope |
+| OTP | 1 | `otp` | Read-only path hardware-tested | UUID shadow reads were repeatable. The driver is permanently read-only: programming, lock, reload and region reconfiguration are not implemented; `otp_program()` returns `-ENOSYS` when the Zephyr option is enabled |
 
 Hardware acceptance applies only to the paths listed above; other behavior
 remains build-only until its corresponding hardware test is completed.
