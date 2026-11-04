@@ -751,10 +751,15 @@ VBUS 由板载 AP2151 开关提供，无需外部注入 5 V。
 退出和关时钟前读到 `PORTSC=0x18000205`（SUSP=0）、`USBINTR=0x147`，且
 FRINDEX 在约 100 ms 内从 `0x31a1` 推进至 `0x3519`。当前 VMware 链路没有使
 物理 USB 总线进入挂起，不能据 guest 状态判定通过，也不能据此断言驱动故障。
-需要可实际挂起 USB 总线的主机环境继续验证。诊断日志为
-`build/hw-usb-power-diagnostic.uart.log` 和 `.peer.log`；退出后 guest 设备节点已删除。
-Power 测试及远程唤醒驱动改动仍为未验收草稿，不计入本次提交；Host 验收
-代码已单独提交。
+诊断日志为 `build/hw-usb-power-diagnostic.uart.log` 和 `.peer.log`；退出后
+guest 设备节点已删除。
+
+2026-11-04 起该测试正式挂起。当前环境为 WSL2 + Docker，USB 设备通过 USB/IP
+和 `vhci_hcd` 接入；USB/IP 只转发 URB submit/unlink，不转发物理 port
+suspend/resume，guest 中看到的 suspend 是虚拟端口状态。待其他硬件测试完成后，
+使用原生 Linux 主机或 Linux SBC 直接连接 J1 再继续，不能通过 WSL2、VMware
+或 USB/IP 结果声明 suspend、host resume 或 remote wakeup 通过。Power 测试及
+远程唤醒驱动改动继续作为未验收草稿。
 
 ## Flash、cache 与验收边界
 
