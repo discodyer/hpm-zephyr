@@ -100,6 +100,12 @@ config HPM_TEST_QEI_UD
 	  Verify QEIV2 up/down decoding with independent GPIO-generated up and
 	  down pulse signals over external loopback wires.
 
+config HPM_TEST_QEI_SINGLE
+	bool "Single-phase encoder"
+	help
+	  Verify QEIV2 single-phase decoding using a GPIO-generated pulse
+	  train over an external loopback wire.
+
 config HPM_TEST_QEI_UVW
 	bool "UVW encoder"
 	help

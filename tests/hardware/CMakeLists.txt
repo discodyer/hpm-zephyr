@@ -17,6 +17,7 @@ endforeach()
 
 target_sources_ifdef(CONFIG_HPM_TEST_QEI_PD app PRIVATE src/qei_pd.c)
 target_sources_ifdef(CONFIG_HPM_TEST_QEI_UD app PRIVATE src/qei_ud.c)
+target_sources_ifdef(CONFIG_HPM_TEST_QEI_SINGLE app PRIVATE src/qei_single.c)
 target_sources_ifdef(CONFIG_HPM_TEST_QEI_UVW app PRIVATE src/qei_uvw.c)
 target_sources_ifdef(CONFIG_HPM_TEST_USB_DEVICE app PRIVATE src/usb_device.c)
 target_sources_ifdef(CONFIG_HPM_TEST_USB_ENDPOINTS app PRIVATE src/usb_endpoints.c)

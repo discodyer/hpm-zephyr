@@ -1,0 +1,34 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+&qei1 {
+	status = "okay";
+	pinctrl-0 = <&pb04_qei1_a>;
+	pinctrl-names = "default";
+	mode = "single";
+	counts-per-revolution = <64>;
+};
+
+/ {
+	hw_fixture: hardware-test {
+		compatible = "hpmicro,hardware-test";
+		pinctrl-0 = <&pb08_gpio_b_08>;
+		pinctrl-names = "default";
+		a-gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&gpiob {
+	status = "okay";
+};
+
+&pb04_qei1_a {
+	group0 {
+		input-enable;
+	};
+};
+
+&pb08_gpio_b_08 {
+	group0 {
+		input-enable;
+	};
+};
