@@ -88,6 +88,18 @@ config HPM_TEST_QEI
 	  Verify QEIV2 digital counts, rotation and comparator callbacks using
 	  GPIO-generated A/B quadrature signals over external loopback wires.
 
+config HPM_TEST_QEI_PD
+	bool "Pulse/direction encoder"
+	help
+	  Verify QEIV2 pulse/direction decoding with GPIO-generated pulse and
+	  direction signals over external loopback wires.
+
+config HPM_TEST_QEI_UD
+	bool "Up/down encoder"
+	help
+	  Verify QEIV2 up/down decoding with independent GPIO-generated up and
+	  down pulse signals over external loopback wires.
+
 config HPM_TEST_QEI_UVW
 	bool "UVW encoder"
 	help
@@ -111,6 +123,12 @@ config HPM_TEST_USB_HOST
 	help
 	  Verify USB0 host enumeration, HID control requests and interrupt-IN
 	  reports using a USB boot keyboard connected through an OTG adapter.
+
+config HPM_TEST_USB_HOST_HID_REPORT
+	bool "USB host HID report protocol"
+	help
+	  Verify USB0 host HID report-descriptor retrieval and interrupt-IN
+	  traffic while a boot-capable keyboard operates in report protocol.
 
 endchoice
 

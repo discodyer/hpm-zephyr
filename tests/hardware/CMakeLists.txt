@@ -15,12 +15,15 @@ foreach(profile core dma flash watchdog can motor gpio uart i2c spi analog front
   target_sources_ifdef(CONFIG_HPM_TEST_${symbol} app PRIVATE src/${profile}.c)
 endforeach()
 
+target_sources_ifdef(CONFIG_HPM_TEST_QEI_PD app PRIVATE src/qei_pd.c)
+target_sources_ifdef(CONFIG_HPM_TEST_QEI_UD app PRIVATE src/qei_ud.c)
 target_sources_ifdef(CONFIG_HPM_TEST_QEI_UVW app PRIVATE src/qei_uvw.c)
 target_sources_ifdef(CONFIG_HPM_TEST_USB_DEVICE app PRIVATE src/usb_device.c)
 target_sources_ifdef(CONFIG_HPM_TEST_USB_ENDPOINTS app PRIVATE src/usb_endpoints.c)
 target_sources_ifdef(CONFIG_HPM_TEST_USB_HOST app PRIVATE src/usb_host.c)
+target_sources_ifdef(CONFIG_HPM_TEST_USB_HOST_HID_REPORT app PRIVATE src/usb_host_hid_report.c)
 
-if(CONFIG_HPM_TEST_USB_HOST)
+if(CONFIG_HPM_TEST_USB_HOST OR CONFIG_HPM_TEST_USB_HOST_HID_REPORT)
   target_include_directories(app PRIVATE ${ZEPHYR_BASE}/subsys/usb/host)
 endif()
 

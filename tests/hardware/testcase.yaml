@@ -102,6 +102,18 @@ tests:
       - DTC_OVERLAY_FILE=profiles/qei.overlay
     harness_config:
       fixture: hpm_qei_loop
+  hpmicro.hardware.qei_pd:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/qei_pd.conf
+      - DTC_OVERLAY_FILE=profiles/qei_pd.overlay
+    harness_config:
+      fixture: hpm_qei_pd_loop
+  hpmicro.hardware.qei_ud:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/qei_ud.conf
+      - DTC_OVERLAY_FILE=profiles/qei_ud.overlay
+    harness_config:
+      fixture: hpm_qei_ud_loop
   hpmicro.hardware.qei_uvw:
     extra_args:
       - EXTRA_CONF_FILE=profiles/qei_uvw.conf
@@ -135,4 +147,11 @@ tests:
       - DTC_OVERLAY_FILE=profiles/usb_host.overlay
     harness_config:
       fixture: hpm_usb_host_keyboard
+    timeout: 180
+  hpmicro.hardware.usb_host_hid_report:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/usb_host_hid_report.conf
+      - DTC_OVERLAY_FILE=profiles/usb_host.overlay
+    harness_config:
+      fixture: hpm_usb_host_hid_report
     timeout: 180

@@ -5,12 +5,12 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 20 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
+本轮已在 HPM5300EVK RevD 上验证 23 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
 `watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c`、`spi`、`analog`、`front_end`、
-`pwm`、`qei`、`qei_uvw`、`usb_device`、`usb_endpoints`、`usb_endpoints_fs` 和 `usb_host`，
-分别通过
+`pwm`、`qei`、`qei_pd`、`qei_ud`、`qei_uvw`、`usb_device`、`usb_endpoints`、
+`usb_endpoints_fs`、`usb_host` 和 `usb_host_hid_report`，分别通过
 8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3、1/1、6/6、3/3、3/3、5/5、
-3/3、1/1、1/1、1/1 和 1/1 项，共 64 项测试。两个 endpoint 配置共用同一份测试源码。
+4/4、4/4、3/3、1/1、1/1、1/1、1/1 和 1/1 项，共 73 项测试。两个 endpoint 配置共用同一份测试源码。
 历史候选 profile 的 build-only 记录保留在下文，
 不代表这些候选已纳入本轮提交或通过硬件验收。
 
@@ -70,6 +70,40 @@ P1-40/PB11→P1-32/PB05（QEI1_B）复测 `qei`。烧录首轮和两次独立复
 3/3 通过（每次 0.158 s），`west flash --verify` 成功。日志为
 `build/hw-qei-zephyr-4.5.0-run{1,2,3,4}*.uart.log`。
 
+2026-11-03 新增 `qei_pd` profile，并以同一组 QEI1_A/B 跳线验证 pulse/direction
+模式。首版用例按“每个完整脉冲计 1 count、方向高为正向”建模，三项均失败；实测该
+SDK 配置同时启用 A 相上升沿和下降沿，且当前板级路径中方向低递增、方向高递减。
+用例据此明确覆盖方向低 10 个脉冲 `+20`、方向高 10 个脉冲 `-20`、CPR 64 的 32
+脉冲回绕，以及运行时 CPR 64→128。修正后烧录首轮和两次独立复位均 4/4 通过
+（每次 0.270 s），`west flash --verify` 成功。证据为
+`build/hw-qei-pd-fixed-run{1,2}.uart.log`、
+`build/hw-qei-pd-fixed-reset{1,2}.log`、`build/hw-qei-pd-build2.log` 和
+`build/hw-qei-pd-flash2.log`；首版失败日志 `build/hw-qei-pd-run2.uart.log`
+仅保留作诊断，不计入验收。
+
+2026-11-03 新增 `qei_ud` profile，沿用同一组 QEI1_A/B 跳线验证独立的 up/down
+脉冲输入，并保持 QEI1_Z 断开。四个用例覆盖 10 个 up 脉冲 `+20`、10 个 down
+脉冲 `-20`、CPR 64 下完整 up/down 一圈回到 0，以及运行时 CPR 64→128 后完整
+上下各一圈回到 0。当前 SDK UD 配置同样启用 A/B 双沿，因此每个完整 up 或 down
+脉冲周期均计 2 counts。修正后的四用例镜像在完整烧录后经两次独立复位均 4/4
+通过（每次 0.233 s），`west flash --verify` 成功。证据为
+`build/hw-qei-ud-flash4.log`、`build/hw-qei-ud-run{2,3}.uart.log`、
+`build/hw-qei-ud-reset{2,3}.log` 和 `build/hw-qei-ud-build1.log`。首次烧录误用
+不含 `hpm_xpi` 的 Zephyr SDK OpenOCD，记录为 `build/hw-qei-ud-flash1.log` 并
+排除；UD 验收不需要修改驱动或 SDK。
+
+2026-11-04 新增 `qei_uvw` profile，使用 QEI1 的 U/V/W 三根独立信号跳线。
+三个正式用例覆盖六扇区的正向 UVW 相序、GPIO 与 QEI A/B 回读、Q32 扇区中心
+POSITION、编码器 count/角度换算、正反各两圈 `PHASE_CNT` 往返，以及运行时
+counts-per-revolution 64→128 重配。首次正式运行因 PB07/W 回读缺少 pad
+`input-enable` 而只有 1/3，正反相序用例已证明 UVW 解码本身正常；补齐 overlay
+后重新构建并烧录，三次独立复位均 3/3 通过（每次 0.113 s），每轮仅有一个启动
+banner，均以 `PROJECT EXECUTION SUCCESSFUL` 结束。构建、烧录和 UART 证据为
+`build/hw-qei-uvw-build-formal4.log`、`build/hw-qei-uvw-flash-formal4.log` 和
+`build/hw-qei-uvw-run-formal4-{1,2,3}.uart.log`；对应复位记录为
+`build/hw-qei-uvw-run-formal4-{1,2,3}.reset.log`。旧 1/3 日志保留作诊断，
+不计入验收。
+
 2026-10-30 已在 Zephyr v4.5.0 上复测 `usb_device`。首次混合记录在虚拟机
 挂载前等待 DTR 超时，已排除；随后三次“复位后立即启动 CDC peer”均 1/1 通过
 （1.181/1.393/1.187 s），高速、MPS 512、27 次交换，每方向 11334 字节校验。
@@ -95,25 +129,24 @@ USB_OTG 上完成枚举；HID SET_PROTOCOL/SET_IDLE 和 GET_PROTOCOL 回读通�
 一次烧录、校验和物理复位复测，1/1 通过（16.891 s），日志为
 `build/hw-usb-host-wired-keyboard-retest3-093111.uart.log`。
 
-2026-11-03 新增 QEI1_Z/index 后，QEI profile 重新执行 Twister build-only
-回归，1/1 构建成功，无失败、错误或警告；报告为
-`build/twister-qei-z-index-format/twister.json`。
+2026-11-03 新增 `usb_host_hid_report` profile，并沿用上述 OTG 适配器和有线
+boot keyboard 接线。测试完整读取 65 字节 HID Report Descriptor，发送
+`SET_PROTOCOL(report)` 后读回 `GET_PROTOCOL=1`，并验证按键非零报告
+`00 00 04 00 00 00 00 00` 和全零释放报告。烧录后首轮与一次独立物理复位均
+1/1 通过，耗时 7.614/6.058 s；`west flash --verify` 成功。证据为
+`build/hw-usb-host-hid-report-run{1,2}.uart.log`、
+`build/hw-usb-host-hid-report-run1.flash.log` 和
+`build/hw-usb-host-hid-report-build.log`。首次串口捕获因 OpenOCD 访问同一
+FT2232 时串口重枚举而中断，记录在 `...-capture-attempt.uart.log`，不计入验收。
 
-2026-11-04 新增 `qei_uvw` profile，使用 QEI1 的 U/V/W 三根独立信号跳线。
-三个正式用例覆盖六扇区的正向 UVW 相序、GPIO 与 QEI A/B 回读、Q32 扇区中心
-POSITION、编码器 count/角度换算、正反各两圈 `PHASE_CNT` 往返，以及运行时
-counts-per-revolution 64→128 重配。首次正式运行因 PB07/W 回读缺少 pad
-`input-enable` 而只有 1/3，正反相序用例已证明 UVW 解码本身正常；补齐 overlay
-后重新构建并烧录，三次独立复位均 3/3 通过（每次 0.113 s），每轮仅有一个启动
-banner，均以 `PROJECT EXECUTION SUCCESSFUL` 结束。构建、烧录和 UART 证据为
-`build/hw-qei-uvw-build-formal4.log`、`build/hw-qei-uvw-flash-formal4.log` 和
-`build/hw-qei-uvw-run-formal4-{1,2,3}.uart.log`；对应复位记录为
-`build/hw-qei-uvw-run-formal4-{1,2,3}.reset.log`。旧 1/3 日志保留作诊断，
-不计入验收。
+2026-11-04 新增 `qei_uvw` 后，对注册后的全部 profile 重新执行 Twister build-only
+回归：23/23 配置构建成功，发现 73 项测试，0 失败/错误，无编译器或 Twister
+汇总警告；报告为 `build/twister-qei-uvw-registered/twister.json`。
 
-当前 20 个注册配置均已在 v4.5.0 上通过，共 64/64 项测试；Host 验收仍需
-操作者按键，后续 RDC/SEI 等待测配置还依赖模拟器或编码器 fixture。PWM
-接线可拆除，Host 测试可保留 OTG 适配器和有线 boot keyboard。
+当前 23 个注册配置均已在 v4.5.0 上构建通过，共注册 73 项测试，现已全部通过
+硬件验收（73/73）。Host 验收仍需操作者按键，后续 RDC/SEI 等待测配置还依赖
+模拟器或编码器 fixture。PWM 接线可拆除，Host 测试可保留 OTG 适配器和有线
+boot keyboard。
 
 2026-11-03 的构建更新在 UHC control 路径增加 buffer 容量校验：当 `wLength`
 超过 IN buffer tailroom 或 OUT buffer 数据长度时立即返回错误，不再静默缩短
@@ -448,7 +481,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 20 个已上板验收 profile 配置，具体范围及限制见前述运行记录。
+下表列出 23 个已上板验收 profile 配置，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -467,9 +500,12 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `pwm` | `hpm_pwm_loop` | P1-31/PB04 → J7-20/PB08；P1-8/PB08 → P1-40/PB11，复用前端接线 | PWM0.P4 输出、PWM1.P4 捕获；108 组周期/占空比/极性/类型，单位换算、连续回绕、停用/恢复、busy/timeout，以及 GPIO 恒定电平 |
 | `qei` | `hpm_qei_loop` | PB08 → PB04，PB11 → PB05，PB07 → PB06；见下文 | QEI1 AB 相位/圈数/角度、Z/index 正反向校准与事件、双比较器 IRQ/轮询/pending、复位及 CPR 重配；静止零速基线及正反向 RPM 测速通过 |
 | `qei_uvw` | `hpm_qei_uvw_loop` | PB08 U → PB04/QEI1_A，PB11 V → PB05/QEI1_B，PB07 W → PB06/QEI1_Z；见下文 | 六扇区正向/反向相序、GPIO 与 QEI A/B 回读、Q32 扇区中心 POSITION、count/角度换算、正反两圈 `PHASE_CNT` 往返及运行时 CPR 64→128 重配 |
+| `qei_pd` | `hpm_qei_pd_loop` | PB08 pulse → PB04/QEI1_A，PB11 direction → PB05/QEI1_B；见下文 | PD 每脉冲周期双沿计数、方向低 `+2`/方向高 `-2`、CPR 64 回绕及运行时 CPR 64→128 重配 |
+| `qei_ud` | `hpm_qei_ud_loop` | PB08 up → PB04/QEI1_A，PB11 down → PB05/QEI1_B；见下文 | UD 每个完整 up/down 脉冲周期双沿各计 2 counts、10 脉冲 `+20`/`-20`、CPR 64 完整上下回零及运行时 CPR 64→128 重配 |
 | `usb_device` | `hpm_usb_device` | J1 USB_OTG 数据线连接 PC，保留 J8 USB_DEBUG | 高速枚举、CDC line coding/DTR 和 27 帧双向数据校验，主机脚本逐帧 ACK |
 | `usb_endpoints` / `usb_endpoints_fs` | `hpm_usb_device` | 同上，主机运行 `usb_endpoint_peer.py` | HS/FS 实际速度与 MPS、EP1～EP15 全部 IN/OUT、各 405 次应用层交换及逐端点完成回调 |
 | `usb_host` | `hpm_usb_host_keyboard` | J1 USB_OTG 接 OTG 适配器，再接有线 boot keyboard；保留 J8 USB_DEBUG | 设备枚举与 VID/PID、HID boot protocol 控制请求、8 字节 interrupt-IN 的 `a` 按下/释放报告 |
+| `usb_host_hid_report` | `hpm_usb_host_hid_report` | 同 `usb_host`；使用 boot-capable 有线键盘 | 完整 HID Report Descriptor、`SET_PROTOCOL(report)` 与 `GET_PROTOCOL` 读回、非零按键和全零释放 interrupt-IN 报告 |
 | `can` | `hpm5300evk` | MCAN0 静默内部 loopback，无外部 CAN 总线 | 16 帧标准 classic/FD/BRS、8/64 B 数据及 TX/RX ISR；另 20 帧 PTPC0→TSU SOF 64 位捕获，有效/无丢失/递增、8 槽及两次回绕、PTPC 发送前后时间包络 |
 | `flash` | `hpm_flash_scratch` | 板载 XPI NOR，允许擦写下述专用测试扇区 | 全扇区擦除、256 B 写读、二次擦除、先填充 XIP 映射 cache 再验证写/擦后的映射一致性 |
 | `watchdog` | `hpm5300evk` | 无 | EWDG0 仅中断：每 100 ms 喂狗三次；500 ms 超时后延迟 2200 ms 再喂狗并验证重复超时；ISR 内喂狗；停用后无 IRQ、重装完整周期；500 ms → 2500 ms 分频重配；容差分别 ±80/160 ms |
@@ -531,6 +567,35 @@ P1-32 与 P1-31 正对，丝印 GPIO26；P1-30、P1-34 为 GND。仅接信号脚
 不能保留把 PB08 与 PB11 短接的旧模拟前端/PWM 接法，因为本测试独立驱动 A/B。
 普通 GPIO 生成低速边沿，不能代替外部编码器、电气/滤波/最高频率、Z 脉宽/时序和
 模拟解码精度验收。
+
+### Pulse/direction 回环接线
+
+`qei_pd` 只使用两根跳线，并必须断开 `qei` 的 Z 跳线：
+
+| GPIO 输出/方向 | QEI1 输入 |
+|---|---|
+| J7-20 / PB08：pulse | P1-31 / PB04 / QEI1_A |
+| P1-40 / PB11：direction | P1-32 / PB05 / QEI1_B |
+
+PB07/P1-5 与 PB06/P1-3 之间的 QEI1_Z 跳线保持断开。当前 HPM SDK 的 PD 配置同时
+启用 A 相上升沿和下降沿，因此一个完整 pulse 周期计 2 counts。实测本板路径中
+direction 为低时递增、为高时递减；用例固定这两个方向语义，避免把“每脉冲 1
+count”或手册中的通用方向描述误当作当前实现行为。该测试不覆盖外部 PD 信号频率、
+滤波/延迟、毛刺、Z 与 PD 组合或另一 QEIV2 实例。
+
+### Up/down 回环接线
+
+`qei_ud` 使用与 `qei_pd` 相同的两根跳线，但两个 GPIO 都作为独立脉冲输入；
+QEI1_Z 必须保持断开：
+
+| GPIO 输出/方向 | QEI1 输入 |
+|---|---|
+| J7-20 / PB08：up pulse | P1-31 / PB04 / QEI1_A |
+| P1-40 / PB11：down pulse | P1-32 / PB05 / QEI1_B |
+
+测试一次只驱动 up 或 down 中一路，另一路保持低电平。当前 HPM SDK 的 UD 配置
+启用两路输入的双沿，因此每个完整 up/down 脉冲周期均计 2 counts。该测试不覆盖
+两路同时翻转、外部编码器频率、滤波/延迟、毛刺、与其他模式组合或另一 QEIV2 实例。
 
 ### UVW 回环接线
 
@@ -615,15 +680,18 @@ STALL/取消或在途请求跨 bus reset 的验收。
 
 ### Host 与电源管理验收
 
-Host 已用 USB-C 转 USB-A OTG 适配器和有线 boot keyboard 在 RevD 上两次独立
-复位通过。
+Host boot protocol 已用 USB-C 转 USB-A OTG 适配器和有线 boot keyboard 在
+RevD 上两次独立复位通过。`usb_host_hid_report` 随后在同一边界读取完整
+Report Descriptor、选择 Report Protocol 并验证通用按键按下/释放报告，也已
+两次独立复位通过。boot protocol 与 report protocol 当前针对的都是
+`1c4f:00b7` boot-capable 键盘，不能据此宣称已支持任意非 boot HID 设备。
 J1 的 CC1/CC2 在 RevC 原理图中没有板载主机上拉（R30/R31 DNP），因此必须使用
 带 OTG/CC 处理的适配器；普通 C-to-C 线不会让该板进入 Host 连接状态。J1 的
 VBUS 由板载 AP2151 开关提供，无需外部注入 5 V。
 
-该 profile 使用低编号 HID boot 键盘路径，尚未覆盖 USB Hub、非 boot HID、
-异步/周期性 Hub 传输、等时音频或 Host 侧挂起/恢复。设备端点容量同样不能用于
-推断 Host 侧 Hub 的端点容量。
+这些 profile 尚未覆盖 USB Hub、非 boot HID 类、异步/周期性 Hub 传输、等时
+音频或 Host 侧挂起/恢复。设备端点容量同样不能用于推断 Host 侧 Hub 的端点
+容量。
 
 挂起/远程唤醒草稿已尝试上板，尚未通过。当前容器 `/sys` 为只读，操作者在 VM
 容器外只为 `1209:0003` 配置自动挂起；guest 连续 17 s 报告 suspended 时，固件在
@@ -674,7 +742,7 @@ OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、�
 | QEO/MMC/PLB/SYNT/TRGM | QEO 外部 PWM/ABZ 及波形、闭环 MMC、独立 predictor 停止、PLB filter、SYNT comparator/debug-stop、外部电机路由和中断 |
 | SDP/RNG/CRC/TSNS | cache/并发/故障注入压力、随机源统计质量、CRC 多项式矩阵、温度校准 |
 | OPAMP/ACMP | OPAMP1、其他拓扑和增益矩阵、校准精度/噪声；ACMP0、双通道并发、阈值精度、滤波/迟滞、反相、输出脚及传播延迟 |
-| QEIV2 | PD/UD/single/sincos、UVW 外部高速/非法相态/滤波、外部 Z 脉宽/时序、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
+| QEIV2 | single-phase/sincos、UVW 外部高速/非法相态/滤波、PD/UD 外部高速/毛刺/滤波、外部 Z 脉宽/时序、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
 | USB | 其他类、并发/STALL/取消/在途 reset、suspend/resume、remote wakeup、Host Hub/非 boot HID/等时传输/PM、VBUS/ID/OC/PWR 策略及运行时 OTG 切换 |
 | PWM | 其他输出/捕获实例组合、绝对频率精度、互补/死区/fault、参考输出、超长周期及高速/长 IRQ 延迟下的丢样 |
 | flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 烧写/lock/reload/region 仅在专用可消耗芯片另行验收 |
