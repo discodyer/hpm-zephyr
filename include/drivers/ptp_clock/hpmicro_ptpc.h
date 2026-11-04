@@ -157,17 +157,23 @@ static inline int hpm_ptpc_configure_compare(const struct device *dev,
 }
 
 /**
- * @brief Configure the PPS output frequency.
+ * @brief Configure the PPS output using the hardware control value.
+ *
+ * A value of 0 produces one PTPC-clock-wide pulse per second. Values from 1
+ * through 15 produce a digital-rollover clock at a nominal 2^(control - 1) Hz;
+ * the maximum value is 16.384 kHz. The output cannot be disabled independently
+ * of the timestamp counter; use hpm_ptpc_set_event_callback() to control PPS
+ * interrupts.
  *
  * @param dev PTPC timestamp channel.
- * @param frequency_exponent Zero disables PPS, otherwise the output is 2^exponent Hz.
+ * @param control PPS_CTRL field value, from 0 through 15.
  *
  * @retval 0 on success.
- * @retval -EINVAL if the hardware does not support the requested exponent.
+ * @retval -EINVAL if @p control is greater than 15.
  */
-static inline int hpm_ptpc_configure_pps(const struct device *dev, uint8_t frequency_exponent)
+static inline int hpm_ptpc_configure_pps(const struct device *dev, uint8_t control)
 {
-	return DEVICE_API_GET(hpm_ptpc, dev)->configure_pps(dev, frequency_exponent);
+	return DEVICE_API_GET(hpm_ptpc, dev)->configure_pps(dev, control);
 }
 
 /**

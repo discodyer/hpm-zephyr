@@ -33,6 +33,14 @@ config HPM_TEST_CAN
 	  Verify classic CAN, CAN FD and PTPC timestamps using internal MCAN0
 	  loopback, without requiring an external CAN bus.
 
+config HPM_TEST_PTPC
+	bool "PTPC clock, PPS and rate adjustment"
+	help
+	  Verify both PTPC timestamp channels, shared interrupt dispatch, PPS
+	  events, time adjustment and rate adjustment without external wiring.
+	  The profile also checks counter initialization from reset and per-channel
+	  callback dispatch.
+
 config HPM_TEST_MOTOR
 	bool "motor"
 	help

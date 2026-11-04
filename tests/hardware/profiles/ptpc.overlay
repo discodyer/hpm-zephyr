@@ -1,0 +1,9 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+&ptpc0 {
+	status = "okay";
+};
+
+&ptpc1 {
+	status = "okay";
+};

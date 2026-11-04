@@ -5,12 +5,13 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 24 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
-`watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c`、`spi`、`analog`、`front_end`、
-`pwm`、`qei`、`qei_pd`、`qei_ud`、`qei_single`、`qei_uvw`、`usb_device`、
-`usb_endpoints`、`usb_endpoints_fs`、`usb_host` 和 `usb_host_hid_report`，分别通过
-8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3、1/1、6/6、3/3、3/3、5/5、
-4/4、3/3、3/3、1/1、1/1、1/1、1/1 和 1/1 项，共 76 项测试。两个 endpoint 配置共用同一份测试源码。
+本轮已在 HPM5300EVK RevD 上验证 25 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
+`watchdog`、`can`、`ptpc`、`motor`、`gpio`、`uart`、`i2c`、`spi`、`analog`、
+`front_end`、`pwm`、`qei`、`qei_pd`、`qei_ud`、`qei_single`、`qei_uvw`、
+`usb_device`、`usb_endpoints`、`usb_endpoints_fs`、`usb_host` 和
+`usb_host_hid_report`，分别通过 8/8、2/2、6/6、1/1、4/4、2/2、4/4、5/5、4/4、
+4/4、3/3、1/1、6/6、3/3、3/3、5/5、4/4、4/4、3/3、3/3、1/1、1/1、1/1、1/1
+和 1/1 项，共 80 项测试。两个 endpoint 配置共用同一份测试源码。
 历史候选 profile 的 build-only 记录保留在下文，
 不代表这些候选已纳入本轮提交或通过硬件验收。
 
@@ -116,6 +117,22 @@ CPR 64 一圈，以及运行时 CPR 64→128 后 64 个脉冲完成 128 counts �
 `build/hw-qei-single-reset-run{1,2,3}.log`。单相模式没有方向输入，因此不声明反向
 计数验收。
 
+2026-11-04 新增 `ptpc` profile，同时启用 PTPC0/PTPC1，无需外部接线。首轮诊断
+发现驱动只使能了定时器，却没有执行硬件要求的 `INIT_TIMER` 脉冲，两个计数器均
+停在 `0.000000000`，因此 PPS IRQ 不产生。驱动改为在 `ptpc_init()` 后调用
+`ptpc_init_timer()`；同时按手册修正 PPS API 的 4 位控制值语义，并绕过 SDK 对
+合法最大值 15（数字模式 16.384 kHz）的错误拒绝。正式四用例覆盖两通道独立设置
+时间和正负调整、`1.05/0.95` 速率调整、PPS 控制值 0/1/2/4/15、事件锁存/清除，
+以及 PTPC0/PTPC1 共享 IRQ 39 的独立 compare 回调。烧录首轮和三次独立复位均
+4/4 通过（每次 7.162 s），每轮仅有一个启动 banner，均以
+`PROJECT EXECUTION SUCCESSFUL` 结束。实测控制值 0/1/2/4 在 1101 ms 内分别收到
+1/2/4/15 次边沿；`1.05/0.95` 速率测得约
+`+49956~49967/-50015~50017 ppm`。构建、烧录和 UART
+证据为 `build/hw-ptpc-build-final.log`、`build/hw-ptpc-flash-final.log` 和
+`build/hw-ptpc-reset-final-run{1,2,3}.uart.log`；对应复位记录为
+`build/hw-ptpc-reset-final-run{1,2,3}.reset.log`。首轮诊断日志
+`build/hw-ptpc-diagnostic{1,2,3}.uart.log` 保留作缺陷定位，不计入验收。
+
 2026-10-30 已在 Zephyr v4.5.0 上复测 `usb_device`。首次混合记录在虚拟机
 挂载前等待 DTR 超时，已排除；随后三次“复位后立即启动 CDC peer”均 1/1 通过
 （1.181/1.393/1.187 s），高速、MPS 512、27 次交换，每方向 11334 字节校验。
@@ -159,8 +176,12 @@ FT2232 时串口重枚举而中断，记录在 `...-capture-attempt.uart.log`，
 成功，JSON 中合计 76 项测试，0 失败/错误，无编译器或 Twister 汇总警告；报告为
 `build/twister-qei-single-registered/twister.json`。
 
-当前 24 个注册配置均已在 v4.5.0 上构建通过，共注册 76 项测试，现已全部通过
-硬件验收（76/76）。Host 验收仍需操作者按键，后续 RDC/SEI 等待测配置还依赖
+2026-11-04 新增 `ptpc` 后再次执行 Twister build-only 回归：25/25 配置构建成功，
+JSON 中合计 80 项测试，0 失败/错误，无编译器或 Twister 汇总警告；报告为
+`build/twister-ptpc-registered/twister.json`。
+
+当前 25 个注册配置均已在 v4.5.0 上构建通过，共注册 80 项测试，现已全部通过
+硬件验收（80/80）。Host 验收仍需操作者按键，后续 RDC/SEI 等待测配置还依赖
 模拟器或编码器 fixture。PWM 接线可拆除，Host 测试可保留 OTG 适配器和有线
 boot keyboard。
 
@@ -497,7 +518,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 24 个已上板验收 profile 配置，具体范围及限制见前述运行记录。
+下表列出 25 个已上板验收 profile 配置，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -524,6 +545,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `usb_host` | `hpm_usb_host_keyboard` | J1 USB_OTG 接 OTG 适配器，再接有线 boot keyboard；保留 J8 USB_DEBUG | 设备枚举与 VID/PID、HID boot protocol 控制请求、8 字节 interrupt-IN 的 `a` 按下/释放报告 |
 | `usb_host_hid_report` | `hpm_usb_host_hid_report` | 同 `usb_host`；使用 boot-capable 有线键盘 | 完整 HID Report Descriptor、`SET_PROTOCOL(report)` 与 `GET_PROTOCOL` 读回、非零按键和全零释放 interrupt-IN 报告 |
 | `can` | `hpm5300evk` | MCAN0 静默内部 loopback，无外部 CAN 总线 | 16 帧标准 classic/FD/BRS、8/64 B 数据及 TX/RX ISR；另 20 帧 PTPC0→TSU SOF 64 位捕获，有效/无丢失/递增、8 槽及两次回绕、PTPC 发送前后时间包络 |
+| `ptpc` | `hpm5300evk` | 无外部接线，同时启用 PTPC0/PTPC1 | 两通道初始化进度、时间设置及正负调整、`1.05/0.95` 速率调整、PPS 控制值 0/1/2/4/15、事件锁存/清除，以及共享 IRQ 39 两通道 compare 分发 |
 | `flash` | `hpm_flash_scratch` | 板载 XPI NOR，允许擦写下述专用测试扇区 | 全扇区擦除、256 B 写读、二次擦除、先填充 XIP 映射 cache 再验证写/擦后的映射一致性 |
 | `watchdog` | `hpm5300evk` | 无 | EWDG0 仅中断：每 100 ms 喂狗三次；500 ms 超时后延迟 2200 ms 再喂狗并验证重复超时；ISR 内喂狗；停用后无 IRQ、重装完整周期；500 ms → 2500 ms 分频重配；容差分别 ±80/160 ms |
 | `motor` | `hpm5300evk` | 无外部接线，不配置 PWM/pinctrl 输出 | SYNT 推进/冻结/恢复；PLB TYPE_B0 slice15 LOAD/KEEP 和实时比较器；QEO0 四配置×四象限×三通道数值；MMC0 1 turn/s 位移/SYNT 时间一致性及整块停启；GPIOM PA24 可见性切换/恢复读回 |
@@ -768,7 +790,7 @@ OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、�
 | I2C/SMBus | 10-bit、zero-count response、block process call、timeout/故障注入、总线恢复及重复 START 电气时序 |
 | DMA | 错误 IRQ、暂停边界竞争、压力/并发；循环完成 IRQ 密集度也需记录 |
 | Watchdog | SoC reset、窗口模式、睡眠/调试暂停、挂起 IRQ 与停用的竞争、其他实例 |
-| CAN/PTPC | 实体收发器和总线、bus-off、共享 MRAM 并发；TSU 与绝对时间关联、PTPC PPS/频率调整及双通道共享 IRQ |
+| CAN/PTPC | 实体收发器和总线、bus-off、共享 MRAM 并发；TSU 与外部绝对时间关联、PPS 引脚电气/占空比、PPS 控制值 5–14 及最大值 IRQ 压力 |
 | MBX/GPIOM | 跨核通信/FIFO、跨控制器访问、锁定持久性 |
 | QEO/MMC/PLB/SYNT/TRGM | QEO 外部 PWM/ABZ 及波形、闭环 MMC、独立 predictor 停止、PLB filter、SYNT comparator/debug-stop、外部电机路由和中断 |
 | SDP/RNG/CRC/TSNS | cache/并发/故障注入压力、随机源统计质量、CRC 多项式矩阵、温度校准 |

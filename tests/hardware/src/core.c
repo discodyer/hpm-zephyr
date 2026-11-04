@@ -88,7 +88,6 @@ static void core_after(void *fixture)
 	struct hpm_ptpc_compare_config disabled = {.enable = false};
 
 	(void)hpm_ptpc_configure_compare(ptpc, &disabled);
-	(void)hpm_ptpc_configure_pps(ptpc, 0);
 	const struct hpm_ptpc_capture_config capture_off = {.edge = HPM_PTPC_CAPTURE_DISABLED};
 	const struct hpm_trgm_output_config route_off = {0};
 

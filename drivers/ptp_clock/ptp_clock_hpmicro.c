@@ -291,22 +291,22 @@ static int hpm_ptpc_drv_configure_compare(const struct device *dev,
 	return 0;
 }
 
-static int hpm_ptpc_drv_configure_pps(const struct device *dev, uint8_t frequency_exponent)
+static int hpm_ptpc_drv_configure_pps(const struct device *dev, uint8_t control)
 {
 	const struct hpm_ptpc_config *config = dev->config;
 	struct hpm_ptpc_data *data = dev->data;
 	k_spinlock_key_t key;
-	hpm_stat_t status;
 
-	if (frequency_exponent > 15U) {
+	if (control > 15U) {
 		return -EINVAL;
 	}
 
 	key = k_spin_lock(&data->event_lock);
-	status = ptpc_set_pps(config->base, config->index, frequency_exponent);
+	/* The SDK rejects valid digital-mode control value 15. */
+	config->base->PTPC[config->index].PPS_CTRL = PTPC_PTPC_PPS_CTRL_PPS_CTRL_SET(control);
 	k_spin_unlock(&data->event_lock, key);
 
-	return hpm_ptpc_status_to_errno(status);
+	return 0;
 }
 
 static int hpm_ptpc_drv_configure_can_time_source(const struct device *dev, uint8_t can_port,
@@ -564,6 +564,8 @@ static int hpm_ptpc_init(const struct device *dev)
 	if (status != status_success) {
 		return hpm_ptpc_status_to_errno(status);
 	}
+	/* ptpc_init() enables the counter but requires a separate initialization pulse. */
+	ptpc_init_timer(config->base, config->index);
 
 	/* Keep the SDK-derived coarse step until the caller requests rate tuning. */
 	data->fine_increment = (uint8_t)counter_incr;
