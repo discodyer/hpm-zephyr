@@ -5,12 +5,12 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 19 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
+本轮已在 HPM5300EVK RevD 上验证 20 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
 `watchdog`、`can`、`motor`、`gpio`、`uart`、`i2c`、`spi`、`analog`、`front_end`、
-`pwm`、`qei`、`usb_device`、`usb_endpoints`、`usb_endpoints_fs` 和 `usb_host`，
+`pwm`、`qei`、`qei_uvw`、`usb_device`、`usb_endpoints`、`usb_endpoints_fs` 和 `usb_host`，
 分别通过
 8/8、2/2、6/6、1/1、4/4、2/2、5/5、4/4、4/4、3/3、1/1、6/6、3/3、3/3、5/5、
-1/1、1/1、1/1 和 1/1 项，共 61 项测试。两个 endpoint 配置共用同一份测试源码。
+3/3、1/1、1/1、1/1 和 1/1 项，共 64 项测试。两个 endpoint 配置共用同一份测试源码。
 历史候选 profile 的 build-only 记录保留在下文，
 不代表这些候选已纳入本轮提交或通过硬件验收。
 
@@ -99,7 +99,19 @@ USB_OTG 上完成枚举；HID SET_PROTOCOL/SET_IDLE 和 GET_PROTOCOL 回读通�
 回归，1/1 构建成功，无失败、错误或警告；报告为
 `build/twister-qei-z-index-format/twister.json`。
 
-当前 19 个注册配置均已在 v4.5.0 上通过，共 61/61 项测试；Host 验收仍需
+2026-11-04 新增 `qei_uvw` profile，使用 QEI1 的 U/V/W 三根独立信号跳线。
+三个正式用例覆盖六扇区的正向 UVW 相序、GPIO 与 QEI A/B 回读、Q32 扇区中心
+POSITION、编码器 count/角度换算、正反各两圈 `PHASE_CNT` 往返，以及运行时
+counts-per-revolution 64→128 重配。首次正式运行因 PB07/W 回读缺少 pad
+`input-enable` 而只有 1/3，正反相序用例已证明 UVW 解码本身正常；补齐 overlay
+后重新构建并烧录，三次独立复位均 3/3 通过（每次 0.113 s），每轮仅有一个启动
+banner，均以 `PROJECT EXECUTION SUCCESSFUL` 结束。构建、烧录和 UART 证据为
+`build/hw-qei-uvw-build-formal4.log`、`build/hw-qei-uvw-flash-formal4.log` 和
+`build/hw-qei-uvw-run-formal4-{1,2,3}.uart.log`；对应复位记录为
+`build/hw-qei-uvw-run-formal4-{1,2,3}.reset.log`。旧 1/3 日志保留作诊断，
+不计入验收。
+
+当前 20 个注册配置均已在 v4.5.0 上通过，共 64/64 项测试；Host 验收仍需
 操作者按键，后续 RDC/SEI 等待测配置还依赖模拟器或编码器 fixture。PWM
 接线可拆除，Host 测试可保留 OTG 适配器和有线 boot keyboard。
 
@@ -454,6 +466,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `front_end` | `hpm_front_end_loop` | J7-20/PB08 → P1-31/PB04；P1-8/PB08 → P1-40/PB11，见下文 | OPAMP0 follower 四电平回读；ACMP1 单/双边沿精确次数及 ISR 来源、禁用/重装、pending 读清及同步 callback 派发 |
 | `pwm` | `hpm_pwm_loop` | P1-31/PB04 → J7-20/PB08；P1-8/PB08 → P1-40/PB11，复用前端接线 | PWM0.P4 输出、PWM1.P4 捕获；108 组周期/占空比/极性/类型，单位换算、连续回绕、停用/恢复、busy/timeout，以及 GPIO 恒定电平 |
 | `qei` | `hpm_qei_loop` | PB08 → PB04，PB11 → PB05，PB07 → PB06；见下文 | QEI1 AB 相位/圈数/角度、Z/index 正反向校准与事件、双比较器 IRQ/轮询/pending、复位及 CPR 重配；静止零速基线及正反向 RPM 测速通过 |
+| `qei_uvw` | `hpm_qei_uvw_loop` | PB08 U → PB04/QEI1_A，PB11 V → PB05/QEI1_B，PB07 W → PB06/QEI1_Z；见下文 | 六扇区正向/反向相序、GPIO 与 QEI A/B 回读、Q32 扇区中心 POSITION、count/角度换算、正反两圈 `PHASE_CNT` 往返及运行时 CPR 64→128 重配 |
 | `usb_device` | `hpm_usb_device` | J1 USB_OTG 数据线连接 PC，保留 J8 USB_DEBUG | 高速枚举、CDC line coding/DTR 和 27 帧双向数据校验，主机脚本逐帧 ACK |
 | `usb_endpoints` / `usb_endpoints_fs` | `hpm_usb_device` | 同上，主机运行 `usb_endpoint_peer.py` | HS/FS 实际速度与 MPS、EP1～EP15 全部 IN/OUT、各 405 次应用层交换及逐端点完成回调 |
 | `usb_host` | `hpm_usb_host_keyboard` | J1 USB_OTG 接 OTG 适配器，再接有线 boot keyboard；保留 J8 USB_DEBUG | 设备枚举与 VID/PID、HID boot protocol 控制请求、8 字节 interrupt-IN 的 `a` 按下/释放报告 |
@@ -518,6 +531,22 @@ P1-32 与 P1-31 正对，丝印 GPIO26；P1-30、P1-34 为 GND。仅接信号脚
 不能保留把 PB08 与 PB11 短接的旧模拟前端/PWM 接法，因为本测试独立驱动 A/B。
 普通 GPIO 生成低速边沿，不能代替外部编码器、电气/滤波/最高频率、Z 脉宽/时序和
 模拟解码精度验收。
+
+### UVW 回环接线
+
+`qei_uvw` 复用 `qei` 的三根独立信号跳线，三个 GPIO 分别驱动 U/V/W 相；
+QEI1_Z 在本模式中作为 W 相输入，不再作为索引脉冲：
+
+| GPIO 输出 | QEI1 输入 |
+|---|---|
+| J7-20 / PB08：U | P1-31 / PB04 / QEI1_A |
+| P1-40 / PB11：V | P1-32 / PB05 / QEI1_B |
+| P1-5 / PB07：W | P1-3 / PB06 / QEI1_Z |
+
+测试依次输出正向六扇区序列 `101`、`100`、`110`、`010`、`011`、`001`，
+并反向返回。HPM QEIV2 的 UVW POSITION 使用 Q32 格式的 60° 扇区中心；
+`counts-per-revolution` 只保留为速度换算参数，不选择 UVW 扇区表。该测试不覆盖
+外部高速 UVW、非法相态、滤波/输入延迟或 QEIV2 的其他实例。
 
 ## USB Device 主机连接与运行
 
@@ -645,7 +674,7 @@ OTP 测试只读取 UUID words 88–91 两次，不打印标识、不烧写、�
 | QEO/MMC/PLB/SYNT/TRGM | QEO 外部 PWM/ABZ 及波形、闭环 MMC、独立 predictor 停止、PLB filter、SYNT comparator/debug-stop、外部电机路由和中断 |
 | SDP/RNG/CRC/TSNS | cache/并发/故障注入压力、随机源统计质量、CRC 多项式矩阵、温度校准 |
 | OPAMP/ACMP | OPAMP1、其他拓扑和增益矩阵、校准精度/噪声；ACMP0、双通道并发、阈值精度、滤波/迟滞、反相、输出脚及传播延迟 |
-| QEIV2 | PD/UD/single/UVW/sincos、外部 Z 脉宽/时序、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
+| QEIV2 | PD/UD/single/sincos、UVW 外部高速/非法相态/滤波、外部 Z 脉宽/时序、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
 | USB | 其他类、并发/STALL/取消/在途 reset、suspend/resume、remote wakeup、Host Hub/非 boot HID/等时传输/PM、VBUS/ID/OC/PWR 策略及运行时 OTG 切换 |
 | PWM | 其他输出/捕获实例组合、绝对频率精度、互补/死区/fault、参考输出、超长周期及高速/长 IRQ 延迟下的丢样 |
 | flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 烧写/lock/reload/region 仅在专用可消耗芯片另行验收 |

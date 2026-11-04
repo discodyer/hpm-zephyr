@@ -142,7 +142,21 @@ static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2
 	key = k_spin_lock(&data->lock);
 	qeiv2_disable_irq(config->base, HPM_QEIV2_EVENT_ALL);
 	qeiv2_clear_status(config->base, HPM_QEIV2_EVENT_ALL);
-	qeiv2_config_mode(config->base, &sdk_config);
+	if (mode->mode == HPM_QEIV2_MODE_UVW) {
+		/*
+		 * The UVW path follows the SDK sample sequence. PHCFG and PHASE_PARAM are
+		 * only defined for the ABZ/PD/UD modes, so keep their reset values.
+		 */
+		qeiv2_set_work_mode(config->base, qeiv2_work_mode_uvw);
+		qeiv2_config_z_phase_counter_mode(config->base, sdk_config.z_count_inc_mode);
+		qeiv2_config_abz_uvw_signal_edge(config->base, true, true, true, true, true);
+		/* The UVW decoder requires PHIDX = 5 and does not use Z calibration. */
+		qeiv2_config_z_phase_calibration(config->base, 5U, false, false);
+		/* Keep the decoder stopped while the UVW sector table is programmed. */
+		qeiv2_reset_counter(config->base);
+	} else {
+		qeiv2_config_mode(config->base, &sdk_config);
+	}
 
 	switch (mode->mode) {
 	case HPM_QEIV2_MODE_ABZ:
@@ -157,6 +171,11 @@ static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2
 		break;
 	case HPM_QEIV2_MODE_UVW:
 		qeiv2_get_uvw_position_defconfig(&uvw_config);
+		/*
+		 * Current-point mode targets MMC and does not update POSITION for a held sector.
+		 * Use the SDK QEO/sample option so the generic sensor reports the sector center.
+		 */
+		uvw_config.pos_opt = qeiv2_uvw_pos_opt_next;
 		status = qeiv2_config_uvw_position(config->base, &uvw_config);
 		break;
 	case HPM_QEIV2_MODE_SINGLE:
@@ -171,6 +190,9 @@ static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2
 	}
 
 	if (status != status_success) {
+		if (mode->mode == HPM_QEIV2_MODE_UVW) {
+			qeiv2_release_counter(config->base);
+		}
 		data->compare_source_valid = false;
 		if ((data->callback != NULL) || (data->interrupt_route_mask != 0U)) {
 			qeiv2_enable_irq(config->base,
@@ -180,8 +202,10 @@ static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2
 		return -EIO;
 	}
 
-	qeiv2_set_phase_cnt(config->base, 0U);
-	qeiv2_set_position(config->base, 0U);
+	if (mode->mode != HPM_QEIV2_MODE_UVW) {
+		qeiv2_set_phase_cnt(config->base, 0U);
+		qeiv2_set_position(config->base, 0U);
+	}
 	if (config->filter_length != 0U) {
 		qeiv2_config_filter(config->base, qeiv2_filter_phase_a, false,
 				    qeiv2_filter_mode_delay, false, config->filter_length);
@@ -197,6 +221,9 @@ static int hpm_qeiv2_apply_mode(const struct device *dev, const struct hpm_qeiv2
 	data->compare_source_valid = false;
 	data->active_mode = mode->mode;
 	data->active_counts_per_revolution = mode->counts_per_revolution;
+	if (mode->mode == HPM_QEIV2_MODE_UVW) {
+		qeiv2_release_counter(config->base);
+	}
 	if ((data->callback != NULL) || (data->interrupt_route_mask != 0U)) {
 		qeiv2_enable_irq(config->base,
 				 data->callback_event_mask | data->interrupt_route_mask);
@@ -242,8 +269,16 @@ static int hpm_qeiv2_sample_fetch(const struct device *dev, enum sensor_channel 
 		break;
 	default:
 		data->position = (int32_t)qeiv2_get_postion(config->base);
-		data->rotation_micro_degrees =
-			(uint32_t)(((uint64_t)qeiv2_get_angle(config->base) * 360000000ULL) >> 32);
+		if (data->active_mode == HPM_QEIV2_MODE_UVW) {
+			data->rotation_micro_degrees =
+				(uint32_t)(((uint64_t)(uint32_t)data->position * 360000000ULL) >>
+					   32);
+		} else {
+			data->rotation_micro_degrees =
+				(uint32_t)(((uint64_t)qeiv2_get_angle(config->base) *
+					    360000000ULL) >>
+					   32);
+		}
 		break;
 	}
 	k_spin_unlock(&data->lock, key);

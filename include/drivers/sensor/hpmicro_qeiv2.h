@@ -26,6 +26,11 @@ extern "C" {
  * hardware read snapshot. Without Z calibration, the revolution counter changes
  * when the phase counter wraps. In ABZ mode, every A or B transition is one count.
  *
+ * In UVW mode, the encoder count channel reports the signed 32-bit Q32 position
+ * of the current 60-degree sector center. The rotation channel converts that
+ * position to degrees. The counts-per-revolution value remains available for
+ * speed conversion but does not select the UVW sector table.
+ *
  * @defgroup hpm_qeiv2_interface HPMicro QEIV2
  * @ingroup sensor_interface_ext
  * @{

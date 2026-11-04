@@ -19,7 +19,7 @@ modules/hpm_sdk/             HPM SDK integration glue
 
 | Board | Target | Console | Build status | Hardware status |
 |---|---|---|---|---|
-| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and eighteen hardware profiles (58 tests) pass |
+| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and 20 hardware profiles (64 tests) pass |
 | HPM5361ICB | `hpm5361icb/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | Not validated |
 
 Both targets currently provide interrupt routing, machine timer, clock/PLL and
@@ -41,11 +41,11 @@ and initialization execute from RAM while XIP is active.
 Build-only validation is complete for both boards, including the Twister
 smoke test. EVK RevD XIP startup, basic polling UART echo/heartbeat,
 OpenOCD flash/verify and GDB breakpoints/single-step passed. The hardware
-acceptance profiles passed 58 tests: `core` (8/8), `dma` (2/2), `crypto` (6/6),
+acceptance profiles passed 64 tests: `core` (8/8), `dma` (2/2), `crypto` (6/6),
 `flash` (1/1), `watchdog` (4/4), `can` (2/2), `motor` (5/5), `gpio` (4/4),
 `uart` (4/4), `i2c` (3/3), `spi` (1/1), `analog` (6/6), `front_end` (3/3),
-`pwm` (3/3), `qei` (3/3), `usb_device` (1/1), `usb_endpoints` (1/1) and
-`usb_endpoints_fs` (1/1).
+`pwm` (3/3), `qei` (5/5), `qei_uvw` (3/3), `usb_device` (1/1),
+`usb_endpoints` (1/1) and `usb_endpoints_fs` (1/1).
 Coverage includes internal CAN/TSU loopback, motor-block math and routing,
 GPIO edge interrupts, UART1 DMA/RTS/CTS,
 paired I2C DMA/repeated START/SMBus block/PEC transfers, and SPI1 four-mode
@@ -53,7 +53,8 @@ GPIO-CS loopback with synchronous and asynchronous linked-block DMA transfers,
 plus DAC0-to-ADC0 synchronous/asynchronous, preemption, TRGM, step and buffer
 paths, plus OPAMP0 follower voltage and ACMP1 edge, disable/rearm and pending
 callback paths. PWM0-to-PWM1 capture covers period, duty, polarity, counter wrap
-and constant output levels. Analog accuracy and external waveform timing remain
+and constant output levels. QEI1 covers ABZ, Z calibration, periodic signed RPM
+and UVW sector decoding. Analog accuracy and external waveform timing remain
 unvalidated.
 
 Each result covers the paths listed in the
@@ -125,7 +126,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | MBX | MBX0A/B | `mbox` | Core path hardware-tested | Bidirectional message ordering passed in the core profile; separate 4-word FIFO, signalling-only mode and cross-core shared-memory IPC remain unvalidated |
 | GPIOM | 1 | `hpm_gpiom` | Input visibility path hardware-tested | PA24 FGPIO0 input visibility toggle and restore passed without driving the physical pin; ownership, other controllers, locks and security behavior remain unvalidated |
 | TRGM | 1 | `mux` + custom extension | Implemented core (build-only) | One mux control per TRGM output with runtime source selection and readback; input filters, output inversion and edge-pulse conversion, eight DMA request routes, the ADC/DAC/position matrices, and named motor-control routes for SYNT/MMC/SEI/RDC/QEO/PLB inter-IP connections. The route helper validates fixed SDK mux indices at build time and leaves endpoint register configuration to the owning drivers. Interrupt routing is available through output 133/134 plus the existing output API, but no TRGM-specific IRQ callback is claimed because the block has no independent status/clear register |
-| QEIV2 | 2 | `sensor` + custom extension | Implemented core (build-only) | ABZ, pulse/direction, up/down, single-phase, UVW and ADC sine/cosine decoding; configurable counts and Z calibration, A/B delay filter, angle, raw position and revolution count; two pulse/duration speed counters with RPM conversion, phase/position comparators, watchdog, HOME/FAULT configuration, event routing to interrupt/DMA/trigger/read and callbacks. ADC sampling and TRGM ADC-matrix setup remain owned by ADC/TRGM; hardware behavior is not validated |
+| QEIV2 | 2 | `sensor` + custom extension | QEI1 ABZ and UVW paths hardware-tested | ABZ, pulse/direction, up/down, single-phase, UVW and ADC sine/cosine decoding; configurable counts and Z calibration, A/B delay filter, angle, raw position and revolution count; two pulse/duration speed counters with RPM conversion, phase/position comparators, watchdog, HOME/FAULT configuration, event routing to interrupt/DMA/trigger/read and callbacks. ADC sampling and TRGM ADC-matrix setup remain owned by ADC/TRGM. QEI1 ABZ/Z/speed and UVW paths passed hardware acceptance; PD/UD, single-phase, sine/cosine accuracy, external high-rate timing and other instances remain unvalidated |
 | QEO | 2 | Custom `hpm_qeo` | Cosine debug-value path hardware-tested | Four amplitude/midpoint configurations, four quadrants and three channels passed; ABZ/pulse/direction/PWM outputs, external waveforms and safety routing remain unvalidated |
 | SEI | 2 channels | Custom `hpm_sei` | Implemented core, SSI, Tamagawa, BiSS-C, EnDat, HIPERFACE and Nikon consumers (build-only) | Protocol-neutral transceiver, timing-point, command/data-register, instruction, latch/output, engine and W1C event APIs; external/periodic triggers, per-channel interrupt callbacks and whole-block consumer ownership. The SSI, Tamagawa, BiSS-C, EnDat 2.1/2.2, HIPERFACE and Nikon CDF0 master consumers cover position, status/checksum and timestamp capture with periodic polling and watchdog recovery. BiSS-C, EnDat, HIPERFACE and Nikon use fixed receive points because the vendor dynamic-delay calibration requires the E00047-affected RX latch path. HIPERFACE uses the vendor checksum sequence; E00025 requires a hardware parity workaround that is not yet implemented, so the 8E1 path remains hardware-unvalidated |
 | MMC | 2 | Custom `hpm_mmc` | Open-loop math and module control hardware-tested | 1 turn/s prediction matched SYNT elapsed time and whole-module disable/resume passed; predictor BR_EN alone did not freeze continuous prediction; closed-loop behavior, external routes and IRQs remain unvalidated |
@@ -262,8 +263,8 @@ Peripheral hardware acceptance tests for HPM5300EVK are in
 Ztest profiles, wiring/fixture requirements, build/flash commands, detailed
 results and limits for the verified profiles listed above. Historical
 build-only regressions are recorded separately from hardware results. Against
-Zephyr `v4.5.0`, the current worktree rebuilt all 18 hardware profiles
-(58 tests), 17 historical EVK/ICB scenarios (26 configurations after platform
+Zephyr `v4.5.0`, the current worktree rebuilt all 20 hardware profiles
+(64 tests), 17 historical EVK/ICB scenarios (26 configurations after platform
 filtering), 10 native-sim motor-math tests, and the bringup sample in both XIP
 and RAM modes. These were build-only checks; they did not repeat hardware
 acceptance. The compatibility scenarios use semicolon-separated configuration

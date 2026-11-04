@@ -102,6 +102,12 @@ tests:
       - DTC_OVERLAY_FILE=profiles/qei.overlay
     harness_config:
       fixture: hpm_qei_loop
+  hpmicro.hardware.qei_uvw:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/qei_uvw.conf
+      - DTC_OVERLAY_FILE=profiles/qei_uvw.overlay
+    harness_config:
+      fixture: hpm_qei_uvw_loop
   hpmicro.hardware.usb_device:
     extra_args:
       - EXTRA_CONF_FILE=profiles/usb_device.conf

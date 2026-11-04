@@ -88,6 +88,12 @@ config HPM_TEST_QEI
 	  Verify QEIV2 digital counts, rotation and comparator callbacks using
 	  GPIO-generated A/B quadrature signals over external loopback wires.
 
+config HPM_TEST_QEI_UVW
+	bool "UVW encoder"
+	help
+	  Verify QEIV2 UVW decoding with GPIO-generated three-phase U, V and W
+	  signals over external loopback wires.
+
 config HPM_TEST_USB_DEVICE
 	bool "USB device CDC ACM"
 	help
