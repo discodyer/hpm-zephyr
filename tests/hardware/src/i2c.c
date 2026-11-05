@@ -333,6 +333,66 @@ ZTEST(hpm_i2c_pair, test_smbus_block_pec_and_invalid_count)
 	zassert_mem_equal(received, sent, count);
 }
 
+ZTEST(hpm_i2c_pair, test_smbus_zero_count_response)
+{
+	const struct device *smbus = DEVICE_DT_GET(DT_NODELABEL(smbus0));
+	uint8_t payload[] = {0x5a};
+	uint8_t received[SMBUS_BLOCK_BYTES_MAX] = {0};
+	uint8_t count = 0U;
+	int ret;
+
+	zassert_true(device_is_ready(smbus));
+	zassert_ok(smbus_configure(smbus, SMBUS_MODE_CONTROLLER));
+
+	select_target(0x52, 0U);
+	memory[0x90] = 0U;
+	count = 0xffU;
+	ret = smbus_block_read(smbus, 0x52, 0x90, &count, received);
+	zassert_equal(ret, -ENODATA, "SMBus accepted zero-length block read: %d", ret);
+	zassert_equal(count, 0xffU, "SMBus published a count for invalid block read");
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+	zassert_equal(atomic_get(&stop_events), 1);
+
+	memory[0x90] = 1U;
+	memory[0x91] = 0x3cU;
+	ret = smbus_block_read(smbus, 0x52, 0x90, &count, received);
+	zassert_ok(ret, "SMBus block read after zero count returned %d", ret);
+	zassert_equal(count, 1U);
+	zassert_equal(received[0], 0x3cU);
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+
+	zassert_ok(smbus_configure(smbus, SMBUS_MODE_CONTROLLER | SMBUS_MODE_PEC));
+	select_target(0x52, 0U);
+	memory[0x90] = 0U;
+	/* CRC-8/SMBus of [0xa4, 0x90, address-R=0xa5, count=0]. */
+	memory[0x91] = 0x57U;
+	count = 0xffU;
+	ret = smbus_block_read(smbus, 0x52, 0x90, &count, received);
+	zassert_equal(ret, -ENODATA, "SMBus accepted zero-length PEC block read: %d", ret);
+	zassert_equal(count, 0xffU, "SMBus published a count for invalid PEC block read");
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+
+	select_target(0x52, 0U);
+	memory[0xa2] = 0U;
+	/* CRC-8/SMBus of [0xa4, 0xa0, 0x01, 0x5a, 0xa5, count=0]. */
+	memory[0xa3] = 0x6cU;
+	count = 0xffU;
+	ret = smbus_block_pcall(smbus, 0x52, 0xa0, sizeof(payload), payload, &count, received);
+	zassert_equal(ret, -ENODATA, "SMBus accepted zero-length block process call: %d", ret);
+	zassert_equal(count, 0xffU, "SMBus published a count for invalid block process call");
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+
+	select_target(0x52, 0U);
+	memory[0xa2] = 1U;
+	memory[0xa3] = 0x3cU;
+	/* CRC-8/SMBus of [0xa4, 0xa0, 0x01, 0x5a, 0xa5, 0x01, 0x3c]. */
+	memory[0xa4] = 0xa2U;
+	ret = smbus_block_pcall(smbus, 0x52, 0xa0, sizeof(payload), payload, &count, received);
+	zassert_ok(ret, "SMBus block process call after zero count returned %d", ret);
+	zassert_equal(count, 1U);
+	zassert_equal(received[0], 0x3cU);
+}
+
 ZTEST(hpm_i2c_pair, test_smbus_block_process_call)
 {
 	const struct device *smbus = DEVICE_DT_GET(DT_NODELABEL(smbus0));
