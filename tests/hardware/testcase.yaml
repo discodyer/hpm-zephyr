@@ -72,6 +72,12 @@ tests:
       - DTC_OVERLAY_FILE=profiles/uart.overlay
     harness_config:
       fixture: hpm_uart_loop
+  hpmicro.hardware.lin:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/lin.conf
+      - DTC_OVERLAY_FILE=profiles/lin.overlay
+    harness_config:
+      fixture: hpm_lin_uart_pair
   hpmicro.hardware.i2c:
     extra_args:
       - EXTRA_CONF_FILE=profiles/i2c.conf

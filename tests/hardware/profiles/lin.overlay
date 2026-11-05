@@ -1,0 +1,57 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/ {
+	aliases {
+		lin-commander = &lin0;
+		lin-responder = &lin1;
+	};
+
+	lin0: lin@f0044000 {
+		reg = <0xf0044000 0x1000>;
+		compatible = "hpmicro,hpm-uart-lin";
+		status = "okay";
+		uart = <&uart1>;
+		tx-gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>;
+		bitrate = <19200>;
+		break-len = <13>;
+		break-delimiter = <1>;
+		commander;
+		pinctrl-0 = <&pb07_uart1_txd &pb06_uart1_rxd>;
+		pinctrl-1 = <&lin_uart1_tx_gpio>;
+		pinctrl-names = "default", "tx_gpio";
+	};
+
+	lin1: lin@f0048000 {
+		reg = <0xf0048000 0x1000>;
+		compatible = "hpmicro,hpm-uart-lin";
+		status = "okay";
+		uart = <&uart2>;
+		tx-gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+		bitrate = <19200>;
+		break-len = <13>;
+		break-delimiter = <1>;
+		pinctrl-0 = <&pb08_uart2_txd &pb09_uart2_rxd>;
+		pinctrl-1 = <&lin_uart2_tx_gpio>;
+		pinctrl-names = "default", "tx_gpio";
+	};
+};
+
+&pinctrl {
+	lin_uart1_tx_gpio: lin_uart1_tx_gpio {
+		group0 {
+			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTB, 7),
+						 IOC_TYPE_IOC, 0, 0)>;
+		};
+	};
+
+	lin_uart2_tx_gpio: lin_uart2_tx_gpio {
+		group0 {
+			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTB, 8),
+						 IOC_TYPE_IOC, 0, 0)>;
+		};
+	};
+};
+
+&gpiob {
+	status = "okay";
+};

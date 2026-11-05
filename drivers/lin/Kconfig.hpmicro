@@ -1,0 +1,17 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_UART_LIN := hpmicro,hpm-uart-lin
+
+config LIN_HPMICRO
+	bool "HPMicro UART-based LIN driver"
+	default y
+	depends on LIN
+	depends on DT_HAS_HPMICRO_HPM_UART_LIN_ENABLED
+	depends on HAS_HPMSDK_UART
+	depends on GPIO
+	depends on PINCTRL
+	select USE_HPMSDK_UART
+	help
+	  Enable the HPMicro LIN controller implemented with an HPM UART and
+	  GPIO-controlled break generation.

@@ -4,6 +4,7 @@
 add_subdirectory(clock_control)
 add_subdirectory(pinctrl)
 add_subdirectory(serial)
+add_subdirectory(lin)
 add_subdirectory(gpio)
 add_subdirectory(gpiom)
 add_subdirectory(flash)

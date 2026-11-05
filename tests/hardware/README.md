@@ -5,13 +5,13 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 26 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
-`watchdog`、`can`、`ptpc`、`motor`、`gpio`、`uart`、`i2c`、`spi`、`analog`、
+本轮已在 HPM5300EVK RevD 上验证 27 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
+`watchdog`、`can`、`ptpc`、`motor`、`gpio`、`uart`、`lin`、`i2c`、`spi`、`analog`、
 `front_end`、`pwm`、`qei`、`qei_pd`、`qei_ud`、`qei_single`、`qei_uvw`、
 `usb_device`、`usb_endpoints`、`usb_endpoints_fs`、`usb_host`、`usb_host_hub`
 和 `usb_host_hid_report`，分别通过 8/8、2/2、6/6、1/1、4/4、2/2、4/4、5/5、4/4、
-4/4、3/3、1/1、6/6、3/3、3/3、5/5、4/4、4/4、3/3、3/3、1/1、1/1、1/1、1/1、
-1/1 和 1/1 项，共 81 项测试。两个 endpoint 配置共用同一份测试源码。
+4/4、6/6、3/3、1/1、6/6、3/3、3/3、5/5、4/4、4/4、3/3、3/3、1/1、1/1、1/1、1/1、
+1/1 和 1/1 项，共 87 项测试。两个 endpoint 配置共用同一份测试源码。
 历史候选 profile 的 build-only 记录保留在下文，
 不代表这些候选已纳入本轮提交或通过硬件验收。
 
@@ -36,6 +36,14 @@ API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK m
 P1-31/PB04 CTS↔P1-32/PB05 RTS，以及 P1-5/PB07 TX↔P1-3/PB06 RX。
 烧录首轮和三次独立复位均 4/4 通过（每次 0.094 s），`west flash --verify`
 成功。日志为 `build/hw-uart-zephyr-4.5.0-run{1,2,3,4}*.uart.log`。
+
+2026-11-04 新增 `lin` profile，将 UART1 和 UART2 分别实例化为 LIN
+commander 与 responder，并验证标准 Zephyr `lin` API。正式固件在烧录后两次
+独立复位均为 6/6 通过（每次 0.143 s），覆盖 commander 写/读、
+classic/enhanced checksum、responder read/response、PID 过滤、接收超时、
+wakeup 生成及 configure/start/stop 错误语义。build/flash 证据为
+`build/hw-lin-final-build.log`、`build/hw-lin-final-flash.log`，UART/reset
+证据为 `build/hw-lin-final-run{1,2}.{uart,reset}.log`。
 
 2026-10-29 已在 Zephyr v4.5.0 上用两根跳线复测 `i2c`：
 P1-28/PB02 SCL↔P1-5/PB07 SCL，P1-27/PB03 SDA↔P1-3/PB06 SDA。
@@ -537,7 +545,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 26 个已上板验收 profile 配置，具体范围及限制见前述运行记录。
+下表列出 27 个已上板验收 profile 配置，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -549,6 +557,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `crypto` | `hpm5300evk` | 无 | 复用已知答案向量：AES-128/256 ECB/CBC/CTR、SHA-1/SHA-256/SM3、CRC32、SM4 ECB/CBC/CTR、CCM 加解密及错误 tag 拒绝 |
 | `gpio` | `hpm_gpio_loop` | PB04 → PB05，P1-31 ↔ P1-32；按 RevD 丝印核对 | 四项通过：电平及 raw set/clear/mask/toggle；上升/下降沿各 20 次，反向不触发；双边沿 20 次及 masked 写入 2 次边沿、同值无额外回调；停用时 20 次无回调、重装恢复，核 ISR/来源/次数 |
 | `uart` | `hpm_uart_loop` | PB07 TX → PB06 RX（P1-5 ↔ P1-3）；PB05 RTS → PB04 CTS（P1-32 ↔ P1-31） | 257 B 无流控 DMA、97 B + 160 B 分段 offset、RTS/CTS 回环与配置读回、RX disable/re-enable；校验 TX/RX 事件、buffer、offset/length 和数据 |
+| `lin` | `hpm_lin_uart_pair` | UART1 PB07 TX/P1-5 ↔ UART2 PB09 RX/P1-10；UART1 PB06 RX/P1-3 ↔ UART2 PB08 TX/P1-8；另接 GND | 标准 `lin` API 的 commander 写/读、classic/enhanced checksum、responder read/response、PID 过滤、接收超时、wakeup、configure/start/stop 错误语义；两次独立复位均 6/6 |
 | `i2c` | `hpm_i2c_pair` | PB02 SCL ↔ PB07 SCL（RevC P1-28 ↔ P1-5）；PB03 SDA ↔ PB06 SDA（P1-27 ↔ P1-3）；按 RevD 丝印核对，板载已有 10 kΩ 上拉 | I2C0 DMA controller → I2C1 target `0x52`；65 B 写、重复 START 后 64 B 读、STOP 回调；SMBus byte/word、32 B block、1/32 B block PEC、错误 PEC 拒绝、count=33 拒绝及后续恢复 |
 | `spi` | `hpm_spi_loop` | PA29/MOSI ↔ PA28/MISO（P1-19 ↔ P1-21）；保留 PA27/SCLK（P1-23），GPIO PB04/P1-31 CS 由固件控制；按 RevD 丝印核对 | SPI1 1 MHz，Motorola mode 0-3；每种模式 256 B sync 与 async linked-block DMA 回环，TX/RX 各两块不同分割；全量比较、ISR completion 和 CS inactive 检查 |
 | `analog` | `hpm_analog_loop` | PB08/DAC0.OUT（J7-20）→ PB05/ADC0.IN13（P1-32）；按 RevD 丝印核对 | ADC 同步/异步、双通道、抢占 DMA、TRGM 上升沿触发；DAC direct/step/buffer 输出由 ADC 回读 |
@@ -572,6 +581,32 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 PA24 是 LIN 12 V 电源使能，未引到 P1。GPIO profile 仅驱动 PB04；motor profile
 只切换 PA24 的输入可见性，不配置该引脚输出。
+
+### LIN UART 双节点接线与结果
+
+`lin` profile 使用标准 Zephyr `lin` API，将 UART1 和 UART2 分别实例化为
+commander 与 responder，并在 TTL 侧交叉接线：
+
+| UART1 信号 | 连接到 | UART2 信号 |
+|---|---|---|
+| PB07 / TX，P1-5 | ↔ | PB09 / RX，P1-10 |
+| PB06 / RX，P1-3 | ↔ | PB08 / TX，P1-8 |
+
+同一块 EVK 上还需连接任一 GND，例如 P1-30 或 P1-34。不得连接 3.3 V。
+固件在发送 break 或 wakeup 时临时将 PB07/PB08 切为 GPIO，随后恢复 UART
+mux。测试覆盖 classic/enhanced checksum、commander 写/读、responder
+read/response、PID 过滤、接收超时、wakeup 生成以及 configure/start/stop
+错误语义。
+
+首版诊断发现 `lin_response()` 在 ISR 中无法把 9 字节帧一次性写入 UART
+FIFO；驱动改为 TX-slot 中断逐字节入队，并在最后一字节后启用 TX-idle 完成
+检测。失败日志保留为 `build/hw-lin-run1.uart.log` 和
+`build/hw-lin-diag{1,2}.uart.log`，不计入验收。
+
+该 TTL 回环只验证 UART 实现的 LIN 帧状态机，不验证板载 12 V LIN 收发器、
+总线电气特性或外部 LIN 节点。板载 J9-5 LIN 接口需要在另一项 fixture 中
+启用 `lin-transceiver-gpio`、PA13/PA24 控制及 `rx-header-echo` 后单独验收。
+自动波特率同步和 bus conflict detection 当前明确不支持。
 
 ### 模拟前端回环接线
 
@@ -827,6 +862,7 @@ OTP 驱动按项目约束永久只读，只读取 UUID words 88–91 两次，�
 |---|---|
 | clock/pinctrl/GPIO/counter | 全时钟树、PIOC/PY、上拉/开漏电气特性、独立基准频率、counter top/wrap |
 | UART | CTS 阻塞/背压、双 buffer 连续 RX、RS-485 DE 时序及地址匹配 |
+| LIN | 板载 LIN 收发器、J9-5 外部 peer、真实总线边沿/唤醒脉冲时序、自动同步及冲突检测 |
 | I2C/SMBus | 10-bit、zero-count response、block process call、timeout/故障注入、总线恢复及重复 START 电气时序 |
 | DMA | 错误 IRQ、暂停边界竞争、压力/并发；循环完成 IRQ 密集度也需记录 |
 | Watchdog | SoC reset、窗口模式、睡眠/调试暂停、挂起 IRQ 与停用的竞争、其他实例 |

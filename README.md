@@ -19,7 +19,7 @@ modules/hpm_sdk/             HPM SDK integration glue
 
 | Board | Target | Console | Build status | Hardware status |
 |---|---|---|---|---|
-| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and 26 hardware profiles (81 tests) pass |
+| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and 27 hardware profiles (87 tests) pass |
 | HPM5361ICB | `hpm5361icb/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | Not validated |
 
 Both targets currently provide interrupt routing, machine timer, clock/PLL and
@@ -41,15 +41,16 @@ and initialization execute from RAM while XIP is active.
 Build-only validation is complete for both boards, including the Twister
 smoke test. EVK RevD XIP startup, basic polling UART echo/heartbeat,
 OpenOCD flash/verify and GDB breakpoints/single-step passed. The hardware
-acceptance profiles passed 81 tests: `core` (8/8), `dma` (2/2), `crypto` (6/6),
+acceptance profiles passed 87 tests across 27 configurations: `core` (8/8), `dma` (2/2), `crypto` (6/6),
 `flash` (1/1), `watchdog` (4/4), `can` (2/2), `ptpc` (4/4), `motor` (5/5),
-`gpio` (4/4), `uart` (4/4), `i2c` (3/3), `spi` (1/1), `analog` (6/6),
+`gpio` (4/4), `uart` (4/4), `lin` (6/6), `i2c` (3/3), `spi` (1/1), `analog` (6/6),
 `front_end` (3/3), `pwm` (3/3), `qei` (5/5), `qei_pd` (4/4), `qei_ud` (4/4),
 `qei_single` (3/3), `qei_uvw` (3/3), `usb_device` (1/1), `usb_endpoints`
 (1/1), `usb_endpoints_fs` (1/1), `usb_host` (1/1), `usb_host_hub` (1/1) and
 `usb_host_hid_report` (1/1).
 Coverage includes internal CAN/TSU loopback, motor-block math and routing,
-GPIO edge interrupts, UART1 DMA/RTS/CTS,
+GPIO edge interrupts, UART1 DMA/RTS/CTS, UART1/UART2 TTL LIN commander and
+responder traffic,
 paired I2C DMA/repeated START/SMBus block/PEC transfers, and SPI1 four-mode
 GPIO-CS loopback with synchronous and asynchronous linked-block DMA transfers,
 plus DAC0-to-ADC0 synchronous/asynchronous, preemption, TRGM, step and buffer
@@ -59,7 +60,11 @@ and constant output levels. QEI1 covers ABZ, Z calibration, periodic signed RPM,
 pulse/direction, up/down, single-phase and UVW sector decoding. PTPC covers both
 timestamp channels, rate adjustment, PPS events and shared IRQ dispatch. USB Host
 boot/report HID and one HS Single-TT hub with a downstream LS keyboard also
-passed. Analog accuracy and external waveform timing remain unvalidated.
+passed. The LIN profile uses the Zephyr standard API over an HPM UART; its six
+UART1/UART2 TTL cases passed twice after independent resets. Analog accuracy
+and external waveform timing remain unvalidated. Board-level LIN transceiver
+timing, external peers, automatic baud synchronization and bus-conflict
+detection remain unvalidated or unsupported.
 
 Each result covers the paths listed in the
 [hardware test record](tests/hardware/README.md). Flash coverage is limited
@@ -114,6 +119,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | Clock / PLL | 1 PLLCTLV2 | `clock_control` | GPTMR clock recovery hardware-tested | Clock gating and rate queries; full clock-tree coverage and PM/PDGO domains remain separate |
 | IOC / PIOC | 2 controllers | `pinctrl` | Implemented (build-only) | Pad mux and pad settings; build-time conflict checks only |
 | UART | UART0-7, PUART | `serial` | UART1 DMA and RTS/CTS loopback hardware-tested | Polling, interrupt-driven and async/DMA APIs; 257 B transfer, segmented RX offsets, RTS/CTS loopback and RX disable/re-enable passed; CTS backpressure, continuous dual-buffer RX, RS-485 and address matching remain unvalidated |
+| LIN | UART-based controller | `lin` | UART1/UART2 TTL commander and responder paths hardware-tested | Commander/responder framing, classic/enhanced checksum, PID filtering, receive timeout and GPIO break/wakeup generation passed twice after independent resets. TX completion uses slot-interrupt streaming and TX-idle detection. Board transceiver timing, external LIN peers, auto-sync and conflict detection remain unvalidated or unsupported |
 | GPIO | GPIOA/B enabled by default; GPIOX/Y, FGPIOA/B/X/Y, PGPIO disabled | `gpio` | PB04/PB05 loopback hardware-tested | Raw levels, set/clear/masked/toggle, rising/falling/both-edge IRQs and disable/rearm passed; level IRQs, other ports and electrical characteristics remain unvalidated; FGPIO has no interrupt output |
 | I2C | 4 | `i2c` | Paired DMA and SMBus paths hardware-tested | Controller/target, 7/10-bit addressing, standard/fast/fast-plus, multi-message transfers, DMA, bus recovery and SMBus helpers; paired DMA/repeated START, byte/word/block transfers, valid/corrupt PEC and malformed-count recovery passed; 10-bit, process calls, bus recovery and fault injection remain unvalidated |
 | SPI | 4 | `spi` | SPI1 GPIO-CS and linked-block DMA loopback hardware-tested | Four Motorola modes passed synchronous 8-bit scatter/gather and asynchronous 8-bit linked-block DMA loopback with a 256-byte pattern; 16/24/32-bit sync, 16/32-bit DMA, native CS, half-duplex, dual/quad, hold/lock, external slave timing and electrical measurements remain unvalidated |

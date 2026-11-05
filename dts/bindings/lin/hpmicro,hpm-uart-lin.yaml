@@ -1,0 +1,34 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: HPMicro UART-based LIN controller
+
+compatible: "hpmicro,hpm-uart-lin"
+
+include: [lin-controller.yaml, pinctrl-device.yaml]
+
+properties:
+  reg:
+    required: true
+
+  uart:
+    type: phandle
+    required: true
+    description: |
+      HPM UART instance used for LIN frame data. The referenced UART node
+      supplies its register block, interrupt and clock configuration.
+
+  tx-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      UART TX pin used as a GPIO while emitting a LIN break or wakeup pulse.
+      The controller pin state named "tx_gpio" must switch this pin from its
+      UART function to GPIO.
+
+  rx-header-echo:
+    type: boolean
+    description: |
+      Set when the transceiver feeds the commander's own break, sync and PID
+      bytes back into UART RX. Direct UART-to-UART fixtures normally leave this
+      unset.

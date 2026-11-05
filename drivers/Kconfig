@@ -4,6 +4,7 @@
 rsource "clock_control/Kconfig.hpmicro"
 rsource "pinctrl/Kconfig.hpmicro"
 rsource "serial/Kconfig.hpmicro"
+rsource "lin/Kconfig.hpmicro"
 rsource "gpio/Kconfig.hpmicro"
 rsource "gpiom/Kconfig.hpmicro"
 rsource "flash/Kconfig.hpmicro"
