@@ -22,6 +22,7 @@ static const struct device *const mbx_b = DEVICE_DT_GET(DT_NODELABEL(mbx0b));
 static K_SEM_DEFINE(irq_done, 0, 1);
 static uint32_t irq_word;
 static uint32_t ptpc_events;
+static atomic_t top_events;
 static int rng_isr_result;
 static uint32_t rng_isr_cycles;
 static bool rng_in_isr;
@@ -32,6 +33,12 @@ static void alarm_cb(const struct device *dev, uint8_t chan, uint32_t ticks, voi
 	ARG_UNUSED(chan);
 	ARG_UNUSED(ticks);
 	k_sem_give(data);
+}
+
+static void top_cb(const struct device *dev, void *data)
+{
+	ARG_UNUSED(dev);
+	atomic_inc((atomic_t *)data);
 }
 
 static void mailbox_cb(const struct device *dev, uint32_t chan, void *data, struct mbox_msg *msg)
@@ -77,8 +84,13 @@ static void rng_offload(const void *data)
 static void core_after(void *fixture)
 {
 	ARG_UNUSED(fixture);
+	struct counter_top_cfg top_off = {
+		.ticks = counter_get_max_top_value(timer),
+	};
+
 	(void)counter_cancel_channel_alarm(timer, 0);
 	(void)counter_stop(timer);
+	(void)counter_set_top_value(timer, &top_off);
 	(void)mbox_set_enabled(mbx_a, 0, false);
 	(void)mbox_set_enabled(mbx_b, 0, false);
 	(void)mbox_register_callback(mbx_a, 0, NULL, NULL);
@@ -131,6 +143,109 @@ ZTEST(hpm_core, test_timer_alarm_and_clock_recovery)
 	zassert_within(k_uptime_get() - started, 20, 10, "GPTMR/system timer disagreement");
 	zassert_ok(counter_get_value(timer, &after));
 	zassert_not_equal(before, after);
+}
+
+ZTEST(hpm_core, test_counter_top_reload_and_update_flags)
+{
+	const uint32_t max_top = counter_get_max_top_value(timer);
+	const uint32_t top_ticks = counter_us_to_ticks(timer, 2000);
+	struct counter_alarm_cfg alarm = {
+		.callback = alarm_cb,
+		.user_data = &irq_done,
+	};
+	struct counter_top_cfg top_cfg = {
+		.ticks = max_top,
+	};
+	uint32_t value;
+
+	zassert_true(top_ticks > 1U);
+	zassert_ok(counter_stop(timer));
+	zassert_ok(counter_set_top_value(timer, &top_cfg));
+	zassert_ok(counter_start(timer));
+
+	alarm.ticks = counter_us_to_ticks(timer, 500000);
+	zassert_ok(counter_set_channel_alarm(timer, 0, &alarm));
+	top_cfg.ticks = max_top / 2U;
+	zassert_equal(counter_set_top_value(timer, &top_cfg), -EBUSY,
+		      "top update must reject an active alarm");
+	zassert_ok(counter_cancel_channel_alarm(timer, 0));
+	zassert_ok(counter_stop(timer));
+
+	atomic_clear(&top_events);
+	top_cfg = (struct counter_top_cfg){
+		.ticks = top_ticks,
+		.callback = top_cb,
+		.user_data = &top_events,
+	};
+	zassert_ok(counter_set_top_value(timer, &top_cfg));
+	zassert_equal(counter_get_top_value(timer), top_ticks);
+	zassert_equal(counter_set_value(timer, top_ticks + 1U), -EINVAL);
+	zassert_ok(counter_start(timer));
+	k_sleep(K_MSEC(20));
+	zassert_true(atomic_get(&top_events) >= 3U, "top callback did not repeat");
+	zassert_ok(counter_get_value(timer, &value));
+	zassert_true(value <= top_ticks, "counter exceeded configured top");
+	zassert_ok(counter_stop(timer));
+
+	zassert_ok(counter_set_value(timer, top_ticks / 4U));
+	top_cfg = (struct counter_top_cfg){
+		.ticks = top_ticks * 2U,
+		.flags = COUNTER_TOP_CFG_DONT_RESET,
+	};
+	zassert_ok(counter_set_top_value(timer, &top_cfg));
+	zassert_ok(counter_get_value(timer, &value));
+	zassert_equal(value, top_ticks / 4U, "DONT_RESET readback %u, expected %u", value,
+		      top_ticks / 4U);
+
+	zassert_ok(counter_set_value(timer, top_ticks * 2U));
+	top_cfg.ticks = top_ticks;
+	zassert_equal(counter_set_top_value(timer, &top_cfg), -ETIME,
+		      "late DONT_RESET update must report -ETIME");
+	top_cfg.flags |= COUNTER_TOP_CFG_RESET_WHEN_LATE;
+	zassert_ok(counter_set_top_value(timer, &top_cfg));
+	zassert_ok(counter_get_value(timer, &value));
+	zassert_equal(value, 0U, "late update did not reset the counter");
+	zassert_equal(counter_get_top_value(timer), top_ticks);
+}
+
+ZTEST(hpm_core, test_counter_32bit_wrap)
+{
+	const uint32_t max_top = counter_get_max_top_value(timer);
+	const uint32_t delta = counter_us_to_ticks(timer, 5000);
+	struct counter_top_cfg top_cfg = {
+		.ticks = max_top,
+	};
+	uint32_t previous;
+	uint32_t value;
+	uint32_t elapsed;
+	int64_t started;
+	bool wrapped = false;
+
+	zassert_equal(max_top, UINT32_MAX);
+	zassert_true(delta > 1U && delta < max_top / 4U);
+	zassert_ok(counter_stop(timer));
+	zassert_ok(counter_set_top_value(timer, &top_cfg));
+	zassert_ok(counter_set_value(timer, max_top - delta));
+	zassert_ok(counter_start(timer));
+	zassert_ok(counter_get_value(timer, &previous));
+	started = k_uptime_get();
+
+	do {
+		zassert_ok(counter_get_value(timer, &value));
+		if ((value < previous) && (value < delta * 2U)) {
+			wrapped = true;
+			break;
+		}
+		previous = value;
+		k_busy_wait(50);
+		elapsed = (uint32_t)(k_uptime_get() - started);
+	} while (elapsed < 100U);
+
+	zassert_true(wrapped, "GPTMR did not wrap across the 32-bit boundary");
+	elapsed = (uint32_t)(k_uptime_get() - started);
+	zassert_true(elapsed >= 2U && elapsed <= 50U, "unexpected wrap latency: %u ms", elapsed);
+	zassert_true(value < delta * 2U);
+	zassert_ok(counter_stop(timer));
 }
 
 ZTEST(hpm_core, test_rng_selftest_and_data)
