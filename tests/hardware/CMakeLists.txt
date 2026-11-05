@@ -17,6 +17,8 @@ endforeach()
 
 target_sources_ifdef(CONFIG_HPM_TEST_UART_ADDRESS app PRIVATE src/uart_address.c)
 target_sources_ifdef(CONFIG_HPM_TEST_UART_RS485 app PRIVATE src/uart_rs485.c)
+target_sources_ifdef(CONFIG_HPM_TEST_I2C_FAST app PRIVATE src/i2c.c)
+target_sources_ifdef(CONFIG_HPM_TEST_I2C_FAST_PLUS app PRIVATE src/i2c.c)
 target_sources_ifdef(CONFIG_HPM_TEST_QEI_PD app PRIVATE src/qei_pd.c)
 target_sources_ifdef(CONFIG_HPM_TEST_QEI_UD app PRIVATE src/qei_ud.c)
 target_sources_ifdef(CONFIG_HPM_TEST_QEI_SINGLE app PRIVATE src/qei_single.c)

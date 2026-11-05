@@ -85,6 +85,18 @@ config HPM_TEST_I2C
 	  7/10-bit addressing, repeated START, SMBus data/PEC and SCL/SDA bus
 	  recovery using external loopback wires.
 
+config HPM_TEST_I2C_FAST
+	bool "i2c fast mode"
+	help
+	  Run the I2C0/I2C1 acceptance suite at 400 kHz with the target
+	  configured for Fast-mode timing.
+
+config HPM_TEST_I2C_FAST_PLUS
+	bool "i2c fast-plus mode"
+	help
+	  Run the I2C0/I2C1 acceptance suite at 1 MHz with the target
+	  configured for Fast-mode Plus timing.
+
 config HPM_TEST_SPI
 	bool "spi"
 	help

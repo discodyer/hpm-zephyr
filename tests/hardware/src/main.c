@@ -15,7 +15,8 @@ BUILD_ASSERT(IS_ENABLED(CONFIG_UART_ASYNC_API), "UART profile requires async API
 #if defined(CONFIG_HPM_TEST_SPI)
 BUILD_ASSERT(IS_ENABLED(CONFIG_SPI_HPMICRO_DMA), "SPI profile must exercise DMA");
 #endif
-#if defined(CONFIG_HPM_TEST_I2C)
+#if defined(CONFIG_HPM_TEST_I2C) || defined(CONFIG_HPM_TEST_I2C_FAST) ||                           \
+	defined(CONFIG_HPM_TEST_I2C_FAST_PLUS)
 BUILD_ASSERT(IS_ENABLED(CONFIG_I2C_HPMICRO_DMA), "I2C profile must exercise DMA");
 #endif
 #if defined(CONFIG_HPM_TEST_ANALOG)

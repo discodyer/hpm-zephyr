@@ -21,13 +21,17 @@ static const struct gpio_dt_spec recovery_sda =
 	GPIO_DT_SPEC_GET(DT_NODELABEL(i2c_recovery), sda_gpios);
 static uint8_t memory[256];
 static uint8_t cursor;
-static bool address_byte;
+static bool command_byte;
 static bool registered;
 static bool recovery_callback_added;
 static atomic_t write_requests;
 static atomic_t received_bytes;
 static atomic_t read_requests;
 static atomic_t stop_events;
+static atomic_t write_callbacks;
+static atomic_t read_processed_callbacks;
+static atomic_t write_error_after;
+static atomic_t read_processed_error_after;
 static atomic_t recovery_rising_edges;
 static atomic_t recovery_callback_errors;
 static struct gpio_callback recovery_scl_callback;
@@ -53,17 +57,24 @@ static int write_requested(struct i2c_target_config *config)
 {
 	ARG_UNUSED(config);
 	atomic_inc(&write_requests);
-	address_byte = true;
+	command_byte = true;
 	return 0;
 }
 
 static int write_received(struct i2c_target_config *config, uint8_t value)
 {
+	int callback = atomic_inc(&write_callbacks);
+	int error_after = atomic_get(&write_error_after);
+
 	ARG_UNUSED(config);
+	if ((error_after >= 0) && (callback >= error_after)) {
+		return -EIO;
+	}
+
 	atomic_inc(&received_bytes);
-	if (address_byte) {
+	if (command_byte) {
 		cursor = value;
-		address_byte = false;
+		command_byte = false;
 	} else {
 		memory[cursor++] = value;
 	}
@@ -80,7 +91,14 @@ static int read_requested(struct i2c_target_config *config, uint8_t *value)
 
 static int read_processed(struct i2c_target_config *config, uint8_t *value)
 {
+	int callback = atomic_inc(&read_processed_callbacks);
+	int error_after = atomic_get(&read_processed_error_after);
+
 	ARG_UNUSED(config);
+	if ((error_after >= 0) && (callback >= error_after)) {
+		return -EIO;
+	}
+
 	*value = memory[cursor++];
 	return 0;
 }
@@ -102,6 +120,14 @@ static const struct i2c_target_callbacks callbacks = {
 };
 static struct i2c_target_config target_config = {.address = 0x52, .callbacks = &callbacks};
 
+#if defined(CONFIG_HPM_TEST_I2C_FAST_PLUS)
+#define HPM_I2C_TEST_SPEED I2C_SPEED_FAST_PLUS
+#elif defined(CONFIG_HPM_TEST_I2C_FAST)
+#define HPM_I2C_TEST_SPEED I2C_SPEED_FAST
+#else
+#define HPM_I2C_TEST_SPEED I2C_SPEED_STANDARD
+#endif
+
 static void select_target(uint16_t address, uint8_t flags)
 {
 	if (registered) {
@@ -118,6 +144,10 @@ static void select_target(uint16_t address, uint8_t flags)
 	atomic_clear(&received_bytes);
 	atomic_clear(&read_requests);
 	atomic_clear(&stop_events);
+	atomic_clear(&write_callbacks);
+	atomic_clear(&read_processed_callbacks);
+	atomic_set(&write_error_after, -1);
+	atomic_set(&read_processed_error_after, -1);
 }
 
 static void i2c_before(void *fixture)
@@ -126,7 +156,7 @@ static void i2c_before(void *fixture)
 	zassert_true(device_is_ready(controller));
 	zassert_true(device_is_ready(target));
 	zassert_ok(
-		i2c_configure(controller, I2C_MODE_CONTROLLER | I2C_SPEED_SET(I2C_SPEED_STANDARD)));
+		i2c_configure(controller, I2C_MODE_CONTROLLER | I2C_SPEED_SET(HPM_I2C_TEST_SPEED)));
 	select_target(0x52, 0U);
 }
 
@@ -147,8 +177,18 @@ static void i2c_after(void *fixture)
 	zassert_ok(pinctrl_apply_state(PINCTRL_DT_DEV_CONFIG_GET(DT_NODELABEL(i2c1)),
 				       PINCTRL_STATE_DEFAULT));
 	zassert_ok(
-		i2c_configure(controller, I2C_MODE_CONTROLLER | I2C_SPEED_SET(I2C_SPEED_STANDARD)));
+		i2c_configure(controller, I2C_MODE_CONTROLLER | I2C_SPEED_SET(HPM_I2C_TEST_SPEED)));
 	k_sem_reset(&stopped);
+}
+
+ZTEST(hpm_i2c_pair, test_configured_bus_speed)
+{
+	uint32_t config;
+
+	zassert_ok(i2c_get_config(controller, &config));
+	zassert_equal(I2C_SPEED_GET(config), HPM_I2C_TEST_SPEED,
+		      "controller speed is 0x%x, expected 0x%x", I2C_SPEED_GET(config),
+		      HPM_I2C_TEST_SPEED);
 }
 
 ZTEST(hpm_i2c_pair, test_10bit_write_with_stop)
@@ -435,6 +475,73 @@ ZTEST(hpm_i2c_pair, test_7bit_address_nack_and_recovery)
 	zassert_equal(atomic_get(&stop_events), 1);
 }
 
+ZTEST(hpm_i2c_pair, test_7bit_write_data_nack_and_recovery)
+{
+	static const uint8_t tx[] = {0x30, 0x5a, 0xa5, 0x13, 0x37, 0x42, 0x81, 0xfe, 0x01};
+	uint8_t retry[] = {0x32, 0x11, 0x22, 0x33};
+	int ret;
+
+	select_target(0x52, 0U);
+	/*
+	 * The first callback receives the command byte. Accept one data byte,
+	 * then return an error so the following write byte is NACKed.
+	 */
+	memory[tx[0] + 1U] = 0xcc;
+	atomic_set(&write_error_after, 2);
+	ret = i2c_write(controller, tx, sizeof(tx), target_config.address);
+	zassert_equal(ret, -EIO, "7-bit write data NACK returned %d", ret);
+	zassert_equal(atomic_get(&write_requests), 1);
+	zassert_equal(atomic_get(&received_bytes), 2);
+	zassert_equal(memory[tx[0]], tx[1]);
+	zassert_equal(memory[tx[0] + 1U], 0xcc, "rejected byte was committed");
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+	zassert_equal(atomic_get(&stop_events), 1);
+
+	select_target(0x52, 0U);
+	ret = i2c_write(controller, retry, sizeof(retry), target_config.address);
+	zassert_ok(ret, "7-bit write after data NACK returned %d", ret);
+	zassert_mem_equal(memory + retry[0], retry + 1, sizeof(retry) - 1U);
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+	zassert_equal(atomic_get(&write_requests), 1);
+	zassert_equal(atomic_get(&received_bytes), sizeof(retry));
+	zassert_equal(atomic_get(&stop_events), 1);
+}
+
+ZTEST(hpm_i2c_pair, test_7bit_read_data_nack_and_recovery)
+{
+	static const uint8_t expected[] = {0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78, 0x89};
+	uint8_t command = 0x40;
+	uint8_t received[sizeof(expected)] = {0};
+	int ret;
+
+	select_target(0x52, 0U);
+	memcpy(memory + command, expected, sizeof(expected));
+	/*
+	 * read_requested supplies the first byte. Return an error from the
+	 * first callback for a subsequent byte to terminate the read early.
+	 */
+	atomic_set(&read_processed_error_after, 0);
+	ret = i2c_write_read(controller, target_config.address, &command, sizeof(command), received,
+			     sizeof(received));
+	zassert_equal(ret, -EIO, "7-bit read data NACK returned %d", ret);
+	zassert_equal(atomic_get(&write_requests), 1);
+	zassert_equal(atomic_get(&received_bytes), 1);
+	zassert_equal(atomic_get(&read_requests), 1);
+	zassert_equal(atomic_get(&read_processed_callbacks), 1);
+
+	select_target(0x52, 0U);
+	memcpy(memory + command, expected, sizeof(expected));
+	memset(received, 0, sizeof(received));
+	ret = i2c_write_read(controller, target_config.address, &command, sizeof(command), received,
+			     sizeof(received));
+	zassert_ok(ret, "7-bit read after data NACK returned %d", ret);
+	zassert_mem_equal(received, expected, sizeof(expected));
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+	zassert_equal(atomic_get(&write_requests), 1);
+	zassert_equal(atomic_get(&read_requests), 1);
+	zassert_equal(atomic_get(&stop_events), 1);
+}
+
 ZTEST(hpm_i2c_pair, test_10bit_address_nack_and_recovery)
 {
 	static const uint8_t expected[] = {0x81, 0x72, 0x63, 0x54};
@@ -585,7 +692,9 @@ ZTEST(hpm_i2c_pair, test_bus_recovery_with_stuck_sda)
 	zassert_equal(gpio_pin_get_dt(&recovery_sda), 0, "SDA did not stay low");
 
 	ret = i2c_recover_bus(controller);
-	zassert_ok(ret, "i2c_recover_bus returned %d", ret);
+	zassert_ok(ret, "i2c_recover_bus returned %d (edges=%ld errors=%ld scl=%d sda=%d)", ret,
+		   atomic_get(&recovery_rising_edges), atomic_get(&recovery_callback_errors),
+		   gpio_pin_get_dt(&recovery_scl), gpio_pin_get_dt(&recovery_sda));
 	zassert_equal(atomic_get(&recovery_rising_edges), 9,
 		      "expected exactly 9 recovery clocks, got %ld",
 		      atomic_get(&recovery_rising_edges));
