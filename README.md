@@ -326,4 +326,6 @@ contributor complete review and DCO sign-off.
 
 ## License
 
-Apache-2.0. See `LICENSE`.
+Apache-2.0. See `LICENSE` and `NOTICE`. Individual source files retain the
+project-wide `The HPM Zephyr Module Contributors` notice, while project-level
+copyright attribution is recorded in `NOTICE`.

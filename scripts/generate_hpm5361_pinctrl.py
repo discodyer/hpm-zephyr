@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2026 The HPM Zephyr Module Contributors
+# Copyright (c) 2026 Cody Gu <gujiaqi@iscas.ac.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """Generate HPM5361 package pinctrl DTSI files from the pinned HPM SDK."""
