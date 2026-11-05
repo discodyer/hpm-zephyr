@@ -41,7 +41,8 @@ and initialization execute from RAM while XIP is active.
 Build-only validation is complete for both boards, including the Twister
 smoke test. EVK RevD XIP startup, basic polling UART echo/heartbeat,
 OpenOCD flash/verify and GDB breakpoints/single-step passed. The hardware
-acceptance profiles passed 143 tests across 31 configurations: `core` (10/10), `dma` (2/2), `crypto` (6/6),
+acceptance profiles passed 143 tests across 31 configurations: `core` (10/10),
+`dma` (2/2), `crypto` (6/6),
 `flash` (1/1), `watchdog` (4/4), `can` (2/2), `ptpc` (4/4), `motor` (5/5),
 `gpio` (4/4), `uart` (6/6), `uart_address` (1/1), `uart_rs485` (1/1),
 `lin` (6/6), `i2c`/`i2c_fast`/`i2c_fast_plus` (16/16 each), `spi` (6/6), `analog` (6/6),
@@ -78,9 +79,10 @@ covers synchronous SDP known-answer tests; async completion and stress remain
 open. USB Device enumeration, the endpoint matrix and Host boot/report keyboard
 paths are covered by the USB profiles; multi-level/non-TT hubs, non-boot HID,
 isochronous traffic, power management and suspend/resume/remote wakeup remain
-unvalidated. SPI
-acceptance is limited to MOSI/MISO loopback; external slave
-timing, native CS behavior and electrical measurements remain open.
+unvalidated. SPI acceptance covers the single-jumper MOSI/MISO loopback. The
+functional native-CS path and GPIO CS hold/release passed, but measured CS
+waveforms/setup-hold timing, external-slave compatibility, half-duplex,
+dual/quad, `SPI_LOCK_ON` and error recovery remain open.
 Analog acceptance covers the DAC0.OUT-to-ADC0.IN13 loopback and the OPAMP0/ACMP1
 front-end fixture. Accuracy, noise, linearity, external waveform timing and
 other instances remain unvalidated.
@@ -146,7 +148,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | LIN | UART-based controller | `lin` | UART1/UART2 TTL commander and responder paths hardware-tested | Commander/responder framing, classic/enhanced checksum, PID filtering, receive timeout and GPIO break/wakeup generation passed twice after independent resets. TX completion uses slot-interrupt streaming and TX-idle detection. Board transceiver timing, external LIN peers, auto-sync and conflict detection remain unvalidated or unsupported |
 | GPIO | GPIOA/B enabled by default; GPIOX/Y, FGPIOA/B/X/Y, PGPIO disabled | `gpio` | PB04/PB05 loopback hardware-tested | Raw levels, set/clear/masked/toggle, rising/falling/both-edge IRQs and disable/rearm passed; level IRQs, other ports and electrical characteristics remain unvalidated; FGPIO has no interrupt output |
 | I2C | 4 | `i2c` | 100 kHz, 400 kHz and 1 MHz 16-case matrices hardware-tested | Controller/target, 7/10-bit addressing, standard/fast/fast-plus, multi-message transfers, DMA, bus recovery and SMBus helpers; paired DMA/repeated START, 10-bit single read/write and write/restart/read, SCL held-low rejection, nine-clock stuck-SDA recovery, byte/word/block transfers, valid/corrupt PEC, malformed/zero-count recovery, block process call and address/data-phase NACK recovery passed; timeout/fault injection and external timing remain unvalidated |
-| SPI | 4 | `spi` | SPI1 GPIO/native-CS and wide-frame linked DMA hardware-tested | Four Motorola modes passed 8-bit synchronous scatter/gather and asynchronous linked-block DMA; 16/24/32-bit synchronous transfers, 16/32-bit linked DMA, GPIO `SPI_HOLD_ON_CS`, native CS and unsupported-width rejection passed on two resets. Native-CS electrical timing, half-duplex, dual/quad, `SPI_LOCK_ON`, external slave timing and electrical measurements remain unvalidated |
+| SPI | 4 | `spi` | SPI1 GPIO/native-CS and wide-frame linked DMA hardware-tested | Four Motorola modes passed 8-bit synchronous scatter/gather and asynchronous linked-block DMA; 16/24/32-bit synchronous transfers, 16/32-bit linked DMA, GPIO `SPI_HOLD_ON_CS`, native CS and unsupported-width rejection passed on two independent resets. Native-CS waveform/setup-hold timing, half-duplex, dual/quad, `SPI_LOCK_ON`, external-slave timing and electrical measurements remain unvalidated |
 | XPI NOR / XIP | 1 | `flash` | Basic scratch-sector path hardware-tested | Read, write, erase and page layout through vendor ROM API; JEDEC/geometry discovery and EXIP integration are absent |
 | MCAN / CAN-FD | 4 | `can` + custom extension | MCAN0 silent internal loopback hardware-tested | Classic/FD/BRS data and TX/RX ISR checks passed; 64-bit TSU captures matched PTPC0 time bounds across eight slots and two wraps. Shared 32 KiB AHB message RAM is split into 8 KiB windows. Generic frames expose a 16-bit timestamp field; full TSU captures use the `hpm_mcan` helper. External bus behavior and MRAM concurrency remain unvalidated |
 | PWM | 2 x 8 channels | `pwm` + HPM extension | PWM0 output / PWM1 capture hardware-tested | 108 period/duty/polarity/type combinations, microsecond/nanosecond conversion, continuous 28-bit counter wrap, disable/rearm, busy rejection, timeout recovery and 0/100% GPIO levels passed; complementary/dead-zone/fault and reference outputs are implemented but not covered by this profile |
@@ -286,7 +288,8 @@ I2C0-3, SPI0-3, MCAN0-3, PWM0-1, ADC0-1, DAC0-1, ACMP, OPAMP0-1, GPTMR0-3,
 EWDG0-1, HDMA, USB0, GPIOA/B/X/Y, PGPIO, PUART, PTMR and PEWDG. Instances whose
 Zephyr drivers are not implemented yet remain disabled. Their bindings define
 the hardware contract but do not imply driver support. The DTS inventory is not
-yet complete for special-function blocks. HPM5300/HPM5361 has no independent RTC; wall-clock time requires a board-level external RTC.
+yet complete for special-function blocks. HPM5300/HPM5361 has no independent
+RTC; wall-clock time requires a board-level external RTC.
 
 The workspace-level agent notes record the maintenance assessment, the
 per-SoC capability matrix, board interfaces, all-HAL build-only coverage and
@@ -299,18 +302,18 @@ Peripheral hardware acceptance tests for HPM5300EVK are in
 Ztest profiles, wiring/fixture requirements, build/flash commands, detailed
 results and limits for the verified profiles listed above. Historical
 build-only regressions are recorded separately from hardware results. Against
-Zephyr `v4.5.0`, the current worktree rebuilt all 31 hardware configurations
-(143 tests), 17 historical EVK/ICB scenarios (26 configurations after platform
-filtering), 10 native-sim motor-math tests, and the bringup sample in both XIP
-and RAM modes. These were build-only checks; they did not repeat hardware
-acceptance. The latest hardware matrix report is
-`build/twister-hardware-spi-extended-final/twister.json`. The compatibility scenarios use
-semicolon-separated configuration
-lists so the common `peripherals.conf` is not overwritten by a later
-`EXTRA_CONF_FILE` argument.
-Unvalidated RDC, SEI, and USB suspend/wakeup drafts are kept out
-of the worktree in feature-scoped local stashes. The hardware test record
-contains their stable stash SHA values and recovery commands.
+Zephyr `v4.5.0`, the latest full build-only regression rebuilt all 31 hardware
+configurations (143 tests), 17 historical EVK/ICB scenarios (26 configurations
+after platform filtering), 10 native-sim motor-math tests, and the bringup
+sample in both XIP and RAM modes. These checks did not repeat hardware
+acceptance. The latest hardware-profile build-only report is
+`build/twister-hardware-spi-extended-final/twister.json`. Compatibility
+scenarios use semicolon-separated configuration lists so the common
+`peripherals.conf` is not overwritten by a later `EXTRA_CONF_FILE` argument.
+The SPI extension is now integrated and its feature-scoped stash has been
+removed. Unvalidated RDC, SEI, and USB suspend/wakeup drafts remain outside the
+worktree in feature-scoped local stashes. The hardware test record contains
+their stable stash SHA values and recovery commands.
 The original `tests/hpm5300evk` suite remains for build-only coverage.
 
 Use Zephyr's upstream `<subsystem>: <summary>` format for local development:
