@@ -316,6 +316,10 @@ static int hpm_smbus_block_read_impl(const struct device *dev, uint16_t addr, ui
 		return -EIO;
 	}
 
+	if (received_count == 0U) {
+		return -ENODATA;
+	}
+
 	memcpy(buf, node_buffer, received_count);
 	*count = received_count;
 
@@ -353,6 +357,10 @@ static int hpm_smbus_block_pcall_impl(const struct device *dev, uint16_t addr, u
 	    (pec != hpm_smbus_pec_for_read(addr, tx_buf, send_count + 2U, &received_count,
 					   node_buffer, received_count))) {
 		return -EIO;
+	}
+
+	if (received_count == 0U) {
+		return -ENODATA;
 	}
 
 	memcpy(recv_buf, node_buffer, received_count);

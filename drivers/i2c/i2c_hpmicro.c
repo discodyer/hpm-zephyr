@@ -545,10 +545,16 @@ static int hpm_i2c_smbus_block_transfer_impl(const struct device *dev, uint16_t 
 			status = i2c_master_seq_receive(config->base, addr, block, 1U,
 							i2c_last_frame);
 		} else {
-			i2c_clear_status(config->base, I2C_STATUS_CMPL_MASK);
-			i2c_master_enable_stop_phase(config->base);
-			i2c_master_issue_data_transmission(config->base);
-			status = status_success;
+			/*
+			 * The controller cannot stop between the ACKed count byte
+			 * and the next data byte. Clock one discard byte with NACK
+			 * to terminate the invalid transfer and release the bus.
+			 */
+			status = i2c_master_seq_receive(config->base, addr, &discard,
+							sizeof(discard), i2c_last_frame);
+			if (status == status_success) {
+				status = status_invalid_argument;
+			}
 		}
 	} else {
 		status = i2c_master_seq_receive(config->base, addr, block, *count,
