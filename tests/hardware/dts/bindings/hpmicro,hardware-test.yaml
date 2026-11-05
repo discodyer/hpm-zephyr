@@ -14,3 +14,7 @@ properties:
     type: phandle-array
   z-gpios:
     type: phandle-array
+  scl-gpios:
+    type: phandle-array
+  sda-gpios:
+    type: phandle-array

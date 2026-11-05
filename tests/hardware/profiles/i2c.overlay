@@ -1,5 +1,34 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+/ {
+	i2c_recovery: i2c-recovery {
+		compatible = "hpmicro,hardware-test";
+		pinctrl-0 = <&pb07_gpio_b_07 &pb06_gpio_b_06>;
+		pinctrl-names = "default";
+		scl-gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>;
+		sda-gpios = <&gpiob 6 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&gpiob {
+	status = "okay";
+};
+
+&pb07_gpio_b_07 {
+	group0 {
+		bias-pull-up;
+		input-enable;
+	};
+};
+
+&pb06_gpio_b_06 {
+	group0 {
+		drive-open-drain;
+		bias-pull-up;
+		input-enable;
+	};
+};
+
 &pb06_i2c1_sda {
 	group0 {
 		drive-open-drain;

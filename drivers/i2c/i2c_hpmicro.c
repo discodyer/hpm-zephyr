@@ -362,11 +362,38 @@ static int hpm_i2c_transfer_frame_dma(const struct device *dev, uint16_t addr,
 }
 #endif /* CONFIG_I2C_HPMICRO_DMA */
 
+/*
+ * The SDK address phase re-sends the full 10-bit address sequence after a
+ * repeated START. A 10-bit read restart requires only the read-address header.
+ * Issue that header manually, then let the SDK sequence helper read the data.
+ */
+static hpm_stat_t hpm_i2c_read_10bit_restart(I2C_Type *base, uint16_t addr,
+					     const struct i2c_msg *msg)
+{
+	i2c_clear_status(base, I2C_EVENT_TRANSACTION_COMPLETE | I2C_EVENT_BYTE_TRANSMIT);
+	i2c_clear_fifo(base);
+	base->CTRL =
+		I2C_CTRL_PHASE_START_MASK | I2C_CTRL_PHASE_DATA_MASK | I2C_CTRL_DATACNT_SET(1U);
+	i2c_write_byte(base, 0xf1U | ((addr >> 7U) & 0x6U));
+	i2c_master_issue_data_transmission(base);
+	if (!WAIT_FOR((i2c_get_status(base) & I2C_EVENT_TRANSACTION_COMPLETE) != 0U, 10000U,
+		      k_busy_wait(1))) {
+		return status_timeout;
+	}
+	if ((i2c_get_status(base) & I2C_STATUS_ACK) == 0U) {
+		return status_i2c_no_addr_hit;
+	}
+
+	return i2c_master_seq_receive(base, addr, msg->buf, msg->len,
+				      i2c_is_stop_op(msg) ? i2c_last_frame : i2c_next_frame);
+}
+
 static int hpm_i2c_transfer_frame(const struct hpm_i2c_config *config,
 				  const struct hpm_i2c_data *data, uint16_t addr,
-				  const struct i2c_msg *msg)
+				  const struct i2c_msg *msg, bool ten_bit_restart)
 {
 	uint16_t flags = I2C_WRITE_CHECK_ACK;
+	hpm_stat_t status;
 
 	if ((msg->len == 0U) || (msg->len > I2C_SOC_TRANSFER_COUNT_MAX)) {
 		return -EINVAL;
@@ -382,8 +409,23 @@ static int hpm_i2c_transfer_frame(const struct hpm_i2c_config *config,
 		flags |= I2C_ADDR_10BIT;
 	}
 
-	return hpm_i2c_status_to_errno(
-		i2c_master_transfer(config->base, addr, msg->buf, msg->len, flags));
+	if (ten_bit_restart) {
+#if defined(CONFIG_I2C_TARGET) || defined(CONFIG_I2C_HPMICRO_DMA)
+		bool irq_was_enabled = irq_is_enabled(config->irq);
+
+		irq_disable(config->irq);
+#endif
+		status = hpm_i2c_read_10bit_restart(config->base, addr, msg);
+#if defined(CONFIG_I2C_TARGET) || defined(CONFIG_I2C_HPMICRO_DMA)
+		if (irq_was_enabled) {
+			irq_enable(config->irq);
+		}
+#endif
+	} else {
+		status = i2c_master_transfer(config->base, addr, msg->buf, msg->len, flags);
+	}
+
+	return hpm_i2c_status_to_errno(status);
 }
 
 static int hpm_i2c_smbus_quick_impl(const struct device *dev, uint16_t addr, bool read)
@@ -558,14 +600,20 @@ static int hpm_i2c_transfer(const struct device *dev, struct i2c_msg *msgs, uint
 #endif
 
 	for (uint8_t i = 0U; i < num_msgs; i++) {
+		bool ten_bit_restart = (i > 0U) && !i2c_is_stop_op(&msgs[i - 1U]) &&
+				       i2c_is_read_op(&msgs[i]) &&
+				       hpm_i2c_msg_is_10bit(data, &msgs[i - 1U]) &&
+				       hpm_i2c_msg_is_10bit(data, &msgs[i]);
+
 #ifdef CONFIG_I2C_HPMICRO_DMA
 		if ((config->dma_dev != NULL) && (num_msgs == 1U) && i2c_is_stop_op(&msgs[i]) &&
 		    !hpm_i2c_msg_is_10bit(data, &msgs[i])) {
+			i2c_enable_10bit_address_mode(config->base, false);
 			ret = hpm_i2c_transfer_frame_dma(dev, addr, &msgs[i]);
 		} else
 #endif
 		{
-			ret = hpm_i2c_transfer_frame(config, data, addr, &msgs[i]);
+			ret = hpm_i2c_transfer_frame(config, data, addr, &msgs[i], ten_bit_restart);
 		}
 		if (ret < 0) {
 			goto unlock;
@@ -603,7 +651,15 @@ static int hpm_i2c_recover_bus(const struct device *dev)
 		k_busy_wait(1000U);
 	}
 
-	ret = i2c_get_line_sda_status(config->base) ? 0 : -EBUSY;
+	if (!i2c_get_line_sda_status(config->base)) {
+		ret = -EBUSY;
+	} else {
+		/*
+		 * RESET_ON leaves the controller uninitialized after clock
+		 * generation.
+		 */
+		ret = hpm_i2c_master_reinit(dev, data->dev_config);
+	}
 
 unlock:
 	k_mutex_unlock(&data->lock);
