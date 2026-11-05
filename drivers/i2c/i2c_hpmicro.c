@@ -76,7 +76,7 @@ static int hpm_i2c_status_to_errno(hpm_stat_t status)
 	case status_timeout:
 		return -ETIMEDOUT;
 	case status_i2c_no_addr_hit:
-		return -ENXIO;
+		return -EIO;
 	case status_i2c_no_ack:
 		return -EIO;
 	case status_i2c_bus_busy:
@@ -362,6 +362,20 @@ static int hpm_i2c_transfer_frame_dma(const struct device *dev, uint16_t addr,
 }
 #endif /* CONFIG_I2C_HPMICRO_DMA */
 
+static void hpm_i2c_master_abort(const struct device *dev)
+{
+	const struct hpm_i2c_config *config = dev->config;
+	const struct hpm_i2c_data *data = dev->data;
+
+	/*
+	 * A polling transfer can stop before the controller emits STOP.
+	 * Reset the block so a failed transfer cannot poison the next one.
+	 */
+	i2c_disable_irq(config->base, I2C_EVENT_ALL_MASK);
+	i2c_reset(config->base);
+	(void)hpm_i2c_master_reinit(dev, data->dev_config);
+}
+
 /*
  * The SDK address phase re-sends the full 10-bit address sequence after a
  * repeated START. A 10-bit read restart requires only the read-address header.
@@ -371,6 +385,7 @@ static hpm_stat_t hpm_i2c_read_10bit_restart(I2C_Type *base, uint16_t addr,
 					     const struct i2c_msg *msg)
 {
 	i2c_clear_status(base, I2C_EVENT_TRANSACTION_COMPLETE | I2C_EVENT_BYTE_TRANSMIT);
+	i2c_clear_status(base, I2C_STATUS_ADDRHIT_MASK);
 	i2c_clear_fifo(base);
 	base->CTRL =
 		I2C_CTRL_PHASE_START_MASK | I2C_CTRL_PHASE_DATA_MASK | I2C_CTRL_DATACNT_SET(1U);
@@ -378,7 +393,7 @@ static hpm_stat_t hpm_i2c_read_10bit_restart(I2C_Type *base, uint16_t addr,
 	i2c_master_issue_data_transmission(base);
 	if (!WAIT_FOR((i2c_get_status(base) & I2C_EVENT_TRANSACTION_COMPLETE) != 0U, 10000U,
 		      k_busy_wait(1))) {
-		return status_timeout;
+		return i2c_is_addrhit(base) ? status_timeout : status_i2c_no_addr_hit;
 	}
 	if ((i2c_get_status(base) & I2C_STATUS_ACK) == 0U) {
 		return status_i2c_no_addr_hit;
@@ -422,7 +437,11 @@ static int hpm_i2c_transfer_frame(const struct hpm_i2c_config *config,
 		}
 #endif
 	} else {
+		i2c_clear_status(config->base, I2C_STATUS_ADDRHIT_MASK);
 		status = i2c_master_transfer(config->base, addr, msg->buf, msg->len, flags);
+		if ((status == status_timeout) && !i2c_is_addrhit(config->base)) {
+			status = status_i2c_no_addr_hit;
+		}
 	}
 
 	return hpm_i2c_status_to_errno(status);
@@ -467,7 +486,7 @@ static int hpm_i2c_smbus_quick_impl(const struct device *dev, uint16_t addr, boo
 	retry = 0U;
 	while (!i2c_is_addrhit(config->base)) {
 		if (retry++ > 5000U) {
-			ret = -ENXIO;
+			ret = -EIO;
 			goto unlock;
 		}
 	}
@@ -622,6 +641,9 @@ static int hpm_i2c_transfer(const struct device *dev, struct i2c_msg *msgs, uint
 			ret = hpm_i2c_transfer_frame(config, data, addr, &msgs[i], ten_bit_restart);
 		}
 		if (ret < 0) {
+			if ((ret == -EIO) || (ret == -ETIMEDOUT)) {
+				hpm_i2c_master_abort(dev);
+			}
 			goto unlock;
 		}
 	}
