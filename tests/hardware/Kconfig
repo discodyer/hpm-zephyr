@@ -63,8 +63,8 @@ config HPM_TEST_I2C
 	bool "i2c"
 	help
 	  Verify I2C0 controller transfers against an I2C1 target, including
-	  7/10-bit addressing, repeated START, SMBus data/PEC and stuck-SDA
-	  bus recovery using external loopback wires.
+	  7/10-bit addressing, repeated START, SMBus data/PEC and SCL/SDA bus
+	  recovery using external loopback wires.
 
 config HPM_TEST_SPI
 	bool "spi"

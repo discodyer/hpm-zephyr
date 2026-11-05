@@ -142,6 +142,7 @@ static void i2c_after(void *fixture)
 		(void)gpio_remove_callback(recovery_scl.port, &recovery_scl_callback);
 		recovery_callback_added = false;
 	}
+	(void)gpio_pin_configure_dt(&recovery_scl, GPIO_INPUT);
 	(void)gpio_pin_configure_dt(&recovery_sda, GPIO_INPUT);
 	zassert_ok(pinctrl_apply_state(PINCTRL_DT_DEV_CONFIG_GET(DT_NODELABEL(i2c1)),
 				       PINCTRL_STATE_DEFAULT));
@@ -379,6 +380,73 @@ ZTEST(hpm_i2c_pair, test_bus_recovery_with_stuck_sda)
 	select_target(0x52, 0U);
 	zassert_ok(i2c_write(controller, sent, sizeof(sent), target_config.address),
 		   "transfer after bus recovery failed");
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+	zassert_mem_equal(memory + sent[0], sent + 1, sizeof(sent) - 1U);
+}
+
+ZTEST(hpm_i2c_pair, test_bus_recovery_with_stuck_scl)
+{
+	uint8_t sent[] = {0x24, 0xa5, 0x5a};
+	int ret;
+
+	if (registered) {
+		zassert_ok(i2c_target_unregister(target, &target_config));
+		registered = false;
+	}
+
+	zassert_ok(pinctrl_apply_state(PINCTRL_DT_DEV_CONFIG_GET(DT_NODELABEL(i2c_recovery)),
+				       PINCTRL_STATE_DEFAULT));
+	zassert_ok(gpio_pin_configure_dt(&recovery_scl, GPIO_OUTPUT_HIGH));
+	zassert_ok(gpio_pin_configure_dt(&recovery_sda, GPIO_OUTPUT_HIGH));
+	zassert_equal(gpio_pin_get_dt(&recovery_scl), 1, "SCL must idle high");
+	zassert_equal(gpio_pin_get_dt(&recovery_sda), 1, "SDA must idle high");
+
+	atomic_clear(&recovery_rising_edges);
+	atomic_clear(&recovery_callback_errors);
+	gpio_init_callback(&recovery_scl_callback, recovery_scl_rising_edge, BIT(recovery_scl.pin));
+	zassert_ok(gpio_add_callback(recovery_scl.port, &recovery_scl_callback));
+	recovery_callback_added = true;
+	zassert_ok(gpio_pin_interrupt_configure_dt(&recovery_scl, GPIO_INT_EDGE_RISING));
+
+	zassert_ok(gpio_pin_set_dt(&recovery_scl, 0));
+	zassert_ok(gpio_pin_set_dt(&recovery_sda, 0));
+	k_busy_wait(10);
+	zassert_equal(gpio_pin_get_dt(&recovery_scl), 0, "SCL did not stay low");
+	zassert_equal(gpio_pin_get_dt(&recovery_sda), 0, "SDA did not stay low");
+
+	ret = i2c_recover_bus(controller);
+	zassert_equal(ret, -EBUSY, "stuck SCL recovery returned %d", ret);
+	zassert_equal(atomic_get(&recovery_rising_edges), 0,
+		      "recovery generated clocks while SCL was held low");
+
+	zassert_ok(gpio_pin_set_dt(&recovery_scl, 1));
+	k_busy_wait(10);
+	zassert_equal(gpio_pin_get_dt(&recovery_scl), 1, "SCL did not release high");
+	zassert_equal(gpio_pin_get_dt(&recovery_sda), 0, "SDA should still be held low");
+
+	atomic_clear(&recovery_rising_edges);
+	atomic_clear(&recovery_callback_errors);
+	ret = i2c_recover_bus(controller);
+	zassert_ok(ret, "recovery after releasing SCL returned %d", ret);
+	zassert_equal(atomic_get(&recovery_rising_edges), 9,
+		      "expected exactly 9 recovery clocks, got %ld",
+		      atomic_get(&recovery_rising_edges));
+	zassert_equal(atomic_get(&recovery_callback_errors), 0,
+		      "invalid recovery callback context/source");
+	zassert_equal(gpio_pin_get_dt(&recovery_scl), 1, "SCL did not return high");
+	zassert_equal(gpio_pin_get_dt(&recovery_sda), 1, "SDA did not return high");
+
+	zassert_ok(gpio_pin_interrupt_configure_dt(&recovery_scl, GPIO_INT_DISABLE));
+	zassert_ok(gpio_remove_callback(recovery_scl.port, &recovery_scl_callback));
+	recovery_callback_added = false;
+	zassert_ok(gpio_pin_configure_dt(&recovery_scl, GPIO_INPUT));
+	zassert_ok(gpio_pin_configure_dt(&recovery_sda, GPIO_INPUT));
+	zassert_ok(pinctrl_apply_state(PINCTRL_DT_DEV_CONFIG_GET(DT_NODELABEL(i2c1)),
+				       PINCTRL_STATE_DEFAULT));
+
+	select_target(0x52, 0U);
+	zassert_ok(i2c_write(controller, sent, sizeof(sent), target_config.address),
+		   "transfer after SCL recovery failed");
 	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
 	zassert_mem_equal(memory + sent[0], sent + 1, sizeof(sent) - 1U);
 }
