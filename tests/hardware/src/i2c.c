@@ -333,6 +333,60 @@ ZTEST(hpm_i2c_pair, test_smbus_block_pec_and_invalid_count)
 	zassert_mem_equal(received, sent, count);
 }
 
+ZTEST(hpm_i2c_pair, test_smbus_block_process_call)
+{
+	const struct device *smbus = DEVICE_DT_GET(DT_NODELABEL(smbus0));
+	static const uint8_t sent[] = {0x10, 0x21, 0x32, 0x43, 0x54, 0x65, 0x76, 0x87};
+	static const uint8_t response[] = {0x81, 0x72, 0x63, 0x54, 0x45, 0x36};
+	const uint8_t command = 0xa0;
+	uint8_t received[SMBUS_BLOCK_BYTES_MAX] = {0};
+	uint8_t count = 0U;
+	int ret;
+
+	zassert_true(device_is_ready(smbus));
+	zassert_ok(smbus_configure(smbus, SMBUS_MODE_CONTROLLER | SMBUS_MODE_PEC));
+
+	/*
+	 * The target stores the send count and data starting at the command
+	 * byte. Its response count therefore starts immediately after them.
+	 */
+	memory[command + 1U + ARRAY_SIZE(sent)] = ARRAY_SIZE(response);
+	memcpy(&memory[command + 2U + ARRAY_SIZE(sent)], response, sizeof(response));
+	/* CRC-8/SMBus of the complete block process call, including 0xa5. */
+	memory[command + 2U + ARRAY_SIZE(sent) + ARRAY_SIZE(response)] = 0x6e;
+
+	ret = smbus_block_pcall(smbus, 0x52, command, ARRAY_SIZE(sent), (uint8_t *)sent, &count,
+				received);
+	zassert_ok(ret, "SMBus block process call returned %d", ret);
+	zassert_equal(count, ARRAY_SIZE(response));
+	zassert_mem_equal(received, response, sizeof(response));
+	zassert_equal(memory[command], ARRAY_SIZE(sent));
+	zassert_mem_equal(&memory[command + 1U], sent, sizeof(sent));
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+	zassert_equal(atomic_get(&write_requests), 1);
+	zassert_equal(atomic_get(&received_bytes), ARRAY_SIZE(sent) + 2U);
+	zassert_equal(atomic_get(&read_requests), 1);
+	zassert_equal(atomic_get(&stop_events), 1);
+
+	select_target(0x52, 0U);
+	memory[command + 2U + ARRAY_SIZE(sent) + ARRAY_SIZE(response)] ^= 1U;
+	count = 0U;
+	ret = smbus_block_pcall(smbus, 0x52, command, ARRAY_SIZE(sent), (uint8_t *)sent, &count,
+				received);
+	zassert_equal(ret, -EIO, "SMBus block process call accepted corrupt PEC: %d", ret);
+	zassert_equal(count, 0U);
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+	zassert_equal(atomic_get(&stop_events), 1);
+
+	select_target(0x52, 0U);
+	memory[command + 2U + ARRAY_SIZE(sent) + ARRAY_SIZE(response)] ^= 1U;
+	ret = smbus_block_pcall(smbus, 0x52, command, ARRAY_SIZE(sent), (uint8_t *)sent, &count,
+				received);
+	zassert_ok(ret, "SMBus block process call after PEC recovery returned %d", ret);
+	zassert_equal(count, ARRAY_SIZE(response));
+	zassert_mem_equal(received, response, sizeof(response));
+}
+
 ZTEST(hpm_i2c_pair, test_bus_recovery_with_stuck_sda)
 {
 	uint8_t sent[] = {0x22, 0x5a, 0xa5};
