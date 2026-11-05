@@ -23,15 +23,17 @@ commit-message hook or commit-lint workflow is required at this stage.
 
 ## Copyright notices
 
-Individual source files use the project-wide
-`The HPM Zephyr Module Contributors` notice. Project-level copyright
-attribution is recorded in `NOTICE`. Preserve copyright notices from HPMicro,
-Zephyr, Linaro and other upstream sources.
+Project-owned files use the default copyright line
+`Copyright (c) 2026 The HPM Zephyr Module Contributors`. Preserve copyright
+notices only in files directly copied, imported, or derived from HPMicro,
+Zephyr, Linaro, or another upstream source. Do not add vendor copyright lines
+to normally developed project code. When adding original code or an original
+project modification, add the personal notice
+`Copyright (c) 2026 Cody Gu <gujiaqi@iscas.ac.cn>` after the project-wide line.
+Project-level attribution is also recorded in `NOTICE`.
 
-An additional personal copyright notice is appropriate only for substantial
-original work whose copyright is held by that individual. DCO sign-off, when
-required, uses the human contributor's legal name and real email and does not
-replace file-level copyright attribution.
+DCO sign-off, when required, uses the human contributor's legal name and real
+email and does not replace file-level copyright attribution.
 
 ## Initial-development policy
 
