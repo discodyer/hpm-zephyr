@@ -331,12 +331,22 @@ static int hpm_i2c_transfer_frame_dma(const struct device *dev, uint16_t addr,
 		return hpm_i2c_status_to_errno(status);
 	}
 
-	if (k_sem_take(&data->dma_done, K_MSEC(CONFIG_I2C_HPMICRO_DMA_TIMEOUT_MS)) < 0) {
+	if (k_sem_take(&data->i2c_done, K_MSEC(CONFIG_I2C_HPMICRO_DMA_TIMEOUT_MS)) < 0) {
 		data->dma_transfer_active = false;
 		hpm_i2c_dma_abort(dev, read);
 		return -ETIMEDOUT;
 	}
-	if (k_sem_take(&data->i2c_done, K_MSEC(CONFIG_I2C_HPMICRO_DMA_TIMEOUT_MS)) < 0) {
+	/*
+	 * A target data-phase NACK completes the I2C transfer but does not
+	 * necessarily complete the DMA request. Check ACK before waiting for
+	 * DMA so a NACK is reported as -EIO instead of a DMA timeout.
+	 */
+	if (!read && !I2C_STATUS_ACK_GET(i2c_get_status(config->base))) {
+		data->dma_transfer_active = false;
+		hpm_i2c_dma_abort(dev, read);
+		return -EIO;
+	}
+	if (k_sem_take(&data->dma_done, K_MSEC(CONFIG_I2C_HPMICRO_DMA_TIMEOUT_MS)) < 0) {
 		data->dma_transfer_active = false;
 		hpm_i2c_dma_abort(dev, read);
 		return -ETIMEDOUT;
@@ -347,11 +357,6 @@ static int hpm_i2c_transfer_frame_dma(const struct device *dev, uint16_t addr,
 		hpm_i2c_dma_abort(dev, read);
 		return -EIO;
 	}
-	if (!read && !I2C_STATUS_ACK_GET(i2c_get_status(config->base))) {
-		hpm_i2c_dma_abort(dev, read);
-		return -EIO;
-	}
-
 	i2c_clear_status(config->base, I2C_STATUS_CMPL_MASK);
 	i2c_dma_disable(config->base);
 
@@ -675,6 +680,18 @@ static int hpm_i2c_recover_bus(const struct device *dev)
 	}
 
 	if (!i2c_get_line_sda_status(config->base)) {
+		/*
+		 * Recovery clocks do not need to run at the configured bus
+		 * speed. Use standard mode so a GPIO/ISR-based SDA release has
+		 * enough time to complete before the ninth clock.
+		 */
+		uint32_t recovery_config =
+			(data->dev_config & ~I2C_SPEED_MASK) | I2C_SPEED_SET(I2C_SPEED_STANDARD);
+
+		ret = hpm_i2c_master_reinit(dev, recovery_config);
+		if (ret < 0) {
+			goto unlock;
+		}
 		i2c_gen_reset_signal(config->base, 9U);
 		k_busy_wait(1000U);
 	}
@@ -740,34 +757,36 @@ static void hpm_i2c_target_reset_state(struct hpm_i2c_data *data)
 	hpm_i2c_target_end_transfer(data);
 }
 
-static void hpm_i2c_target_drain_rx(const struct device *dev)
-{
-	const struct hpm_i2c_config *config = dev->config;
-	struct hpm_i2c_data *data = dev->data;
-
-	if (!data->target_write_active) {
-		return;
-	}
-
-	while (!i2c_fifo_is_empty(config->base)) {
-		uint8_t value = i2c_read_byte(config->base);
-
-		if (data->target_write_active && (data->target != NULL) &&
-		    (data->target->callbacks->write_received != NULL)) {
-			(void)data->target->callbacks->write_received(data->target, value);
-		}
-	}
-}
-
 static void hpm_i2c_target_complete(const struct device *dev)
 {
 	const struct hpm_i2c_config *config = dev->config;
 	struct hpm_i2c_data *data = dev->data;
 
-	hpm_i2c_target_drain_rx(dev);
-
-	i2c_disable_irq(config->base, I2C_EVENT_FIFO_FULL | I2C_EVENT_FIFO_EMPTY);
+	i2c_disable_irq(config->base, I2C_EVENT_BYTE_RECEIVED | I2C_EVENT_FIFO_EMPTY);
 	hpm_i2c_target_end_transfer(data);
+}
+
+static void hpm_i2c_target_receive_pending(const struct device *dev)
+{
+	const struct hpm_i2c_config *config = dev->config;
+	struct hpm_i2c_data *data = dev->data;
+
+	i2c_clear_status(config->base, I2C_EVENT_BYTE_RECEIVED);
+	while (data->target_write_active && (data->target != NULL) &&
+	       !i2c_fifo_is_empty(config->base)) {
+		uint8_t value = i2c_read_byte(config->base);
+		int ret = data->target->callbacks->write_received != NULL
+				  ? data->target->callbacks->write_received(data->target, value)
+				  : -EINVAL;
+
+		if (ret < 0) {
+			i2c_respond_Nack(config->base);
+			i2c_disable_irq(config->base, I2C_EVENT_BYTE_RECEIVED);
+			data->target_write_active = false;
+		} else {
+			i2c_respond_ack(config->base);
+		}
+	}
 }
 
 static void hpm_i2c_target_isr(const struct device *dev)
@@ -791,11 +810,19 @@ static void hpm_i2c_target_isr(const struct device *dev)
 		uint8_t direction = i2c_get_direction(config->base);
 		int ret;
 
-		i2c_clear_status(config->base, I2C_EVENT_ADDRESS_HIT);
-		/* Completion/STOP are latched across a repeated START on this block. */
-		i2c_clear_status(config->base, I2C_EVENT_TRANSACTION_COMPLETE |
-						       I2C_EVENT_START_CONDITION |
-						       I2C_EVENT_STOP_CONDITION);
+		/*
+		 * CMPL and START are latched across a repeated START. Clear them
+		 * before processing this address phase, and ignore their stale
+		 * values from the status snapshot. Keep STOP pending because a
+		 * quick command can coalesce ADDRHIT and STOP in one interrupt.
+		 * Preserve BYTERECV so a FIFO byte coalesced with ADDRHIT is
+		 * still drained in this ISR.
+		 */
+		i2c_clear_status(config->base, I2C_EVENT_ADDRESS_HIT |
+						       I2C_EVENT_TRANSACTION_COMPLETE |
+						       I2C_EVENT_START_CONDITION);
+		status &= ~(I2C_EVENT_TRANSACTION_COMPLETE | I2C_EVENT_START_CONDITION);
+		i2c_disable_irq(config->base, I2C_EVENT_BYTE_RECEIVED | I2C_EVENT_FIFO_EMPTY);
 		if (data->target == NULL) {
 			return;
 		}
@@ -812,7 +839,11 @@ static void hpm_i2c_target_isr(const struct device *dev)
 				i2c_respond_Nack(config->base);
 				hpm_i2c_target_reset_state(data);
 			} else {
-				i2c_enable_irq(config->base, I2C_EVENT_FIFO_FULL);
+				/*
+				 * Enabling byte-receive disables auto-ACK. The
+				 * handler must ACK or NACK each received byte.
+				 */
+				i2c_enable_irq(config->base, I2C_EVENT_BYTE_RECEIVED);
 			}
 		} else {
 			/* The master reads from this target. */
@@ -831,22 +862,10 @@ static void hpm_i2c_target_isr(const struct device *dev)
 				i2c_enable_irq(config->base, I2C_EVENT_FIFO_EMPTY);
 			}
 		}
-		return;
 	}
 
-	if ((status & I2C_EVENT_FIFO_FULL) != 0U) {
-		while (!i2c_fifo_is_empty(config->base)) {
-			uint8_t value = i2c_read_byte(config->base);
-
-			if ((data->target != NULL) &&
-			    (data->target->callbacks->write_received != NULL) &&
-			    (data->target->callbacks->write_received(data->target, value) < 0)) {
-				i2c_respond_Nack(config->base);
-				i2c_disable_irq(config->base, I2C_EVENT_FIFO_FULL);
-				data->target_write_active = false;
-				break;
-			}
-		}
+	if ((status & I2C_EVENT_BYTE_RECEIVED) != 0U) {
+		hpm_i2c_target_receive_pending(dev);
 	}
 
 	if ((status & I2C_EVENT_FIFO_EMPTY) != 0U) {
@@ -870,28 +889,29 @@ static void hpm_i2c_target_isr(const struct device *dev)
 
 	if ((status & I2C_EVENT_TRANSACTION_COMPLETE) != 0U) {
 		i2c_clear_status(config->base, I2C_EVENT_TRANSACTION_COMPLETE);
-		if (!stop) {
-			hpm_i2c_target_drain_rx(dev);
-		} else {
+		if (stop) {
 			hpm_i2c_target_complete(dev);
 		}
 	}
 
 	if ((status & I2C_EVENT_STOP_CONDITION) != 0U) {
 		bool selected = data->target_selected;
+		uint32_t stop_status = i2c_get_status(config->base);
+		bool stopped = ((stop_status & I2C_EVENT_STOP_CONDITION) != 0U) &&
+			       ((stop_status & I2C_STATUS_BUS_BUSY) == 0U);
 
 		i2c_clear_status(config->base, I2C_EVENT_STOP_CONDITION);
-		if (!stop) {
+		if (!stopped) {
 			/* A stale STOP status can accompany a repeated START. */
 			i2c_clear_status(config->base, I2C_EVENT_STOP_CONDITION);
 		} else if (data->target_write_active || data->target_read_active) {
 			hpm_i2c_target_complete(dev);
 		}
-		if (stop && selected && (data->target != NULL) &&
+		if (stopped && selected && (data->target != NULL) &&
 		    (data->target->callbacks->stop != NULL)) {
 			(void)data->target->callbacks->stop(data->target);
 		}
-		if (stop) {
+		if (stopped) {
 			data->target_selected = false;
 		}
 	}
