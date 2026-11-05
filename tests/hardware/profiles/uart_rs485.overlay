@@ -1,0 +1,36 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/ {
+	hw_fixture: hardware-test {
+		compatible = "hpmicro,hardware-test";
+		pinctrl-0 = <&pb04_gpio_b_04 &pb06_gpio_b_06>;
+		pinctrl-names = "default";
+		de-gpios = <&gpiob 4 GPIO_ACTIVE_HIGH>;
+		tx-gpios = <&gpiob 6 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&uart1 {
+	status = "okay";
+	current-speed = <115200>;
+	pinctrl-0 = <&pb07_uart1_txd &pb06_uart1_rxd>;
+	pinctrl-1 = <&pb05_uart1_rts &pb04_uart1_cts>;
+	pinctrl-2 = <&pb05_uart1_de>;
+	pinctrl-names = "default", "flow_control", "rs485";
+};
+
+&gpiob {
+	status = "okay";
+};
+
+&pb04_gpio_b_04 {
+	group0 {
+		input-enable;
+	};
+};
+
+&pb06_gpio_b_06 {
+	group0 {
+		input-enable;
+	};
+};

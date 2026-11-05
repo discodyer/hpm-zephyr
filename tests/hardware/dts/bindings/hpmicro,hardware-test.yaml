@@ -14,6 +14,10 @@ properties:
     type: phandle-array
   z-gpios:
     type: phandle-array
+  de-gpios:
+    type: phandle-array
+  tx-gpios:
+    type: phandle-array
   scl-gpios:
     type: phandle-array
   sda-gpios:

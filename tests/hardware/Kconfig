@@ -66,6 +66,18 @@ config HPM_TEST_LIN
 	  modes, header filtering, receive timeout and wakeup generation.
 	  The fixture connects UART1 and UART2 directly at TTL level.
 
+config HPM_TEST_UART_ADDRESS
+	bool "UART address matching"
+	help
+	  Verify HPM UART nine-bit address matching using cross-connected
+	  UART1 and UART2, including rejection of non-matching addresses.
+
+config HPM_TEST_UART_RS485
+	bool "UART RS-485 DE timing"
+	help
+	  Verify that the UART1 auto-DE output surrounds a complete TX burst and
+	  returns low after the final stop bit.
+
 config HPM_TEST_I2C
 	bool "i2c"
 	help

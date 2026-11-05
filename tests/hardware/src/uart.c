@@ -18,6 +18,7 @@
 static const struct device *const uart = DEVICE_DT_GET(DT_NODELABEL(uart1));
 static uint8_t tx[UART_TEST_LENGTH] __aligned(32);
 static uint8_t rx[UART_RX_LENGTH] __aligned(32);
+static uint8_t rx_second[UART_RX_LENGTH] __aligned(32);
 static uint8_t received[UART_RX_LENGTH] __aligned(32);
 
 enum uart_test_event {
@@ -38,6 +39,10 @@ struct uart_test_state {
 	size_t tx_len;
 	uint8_t *rx_buf;
 	size_t rx_capacity;
+	size_t rx_consumed;
+	uint8_t *rx_second_buf;
+	size_t rx_second_capacity;
+	size_t rx_second_consumed;
 	size_t received_len;
 	size_t tx_done_count;
 	size_t tx_aborted_count;
@@ -97,18 +102,31 @@ static void uart_event(const struct device *dev, struct uart_event *event, void 
 		uart_set_callback_error_locked(-ECANCELED);
 		break;
 	case UART_RX_RDY: {
+		size_t *consumed;
+		size_t capacity;
 		size_t end = event->data.rx.offset + event->data.rx.len;
 
+		if (event->data.rx.buf == state.rx_buf) {
+			consumed = &state.rx_consumed;
+			capacity = state.rx_capacity;
+		} else if (event->data.rx.buf == state.rx_second_buf) {
+			consumed = &state.rx_second_consumed;
+			capacity = state.rx_second_capacity;
+		} else {
+			consumed = NULL;
+			capacity = 0U;
+		}
+
 		uart_log_event_locked(UART_TEST_RX_RDY);
-		if ((event->data.rx.buf != state.rx_buf) ||
-		    (event->data.rx.offset != state.received_len) ||
-		    (end < event->data.rx.offset) || (end > state.rx_capacity) ||
+		if ((consumed == NULL) || (event->data.rx.offset != *consumed) ||
+		    (end < event->data.rx.offset) || (end > capacity) ||
 		    (event->data.rx.len > sizeof(received) - state.received_len)) {
 			uart_set_callback_error_locked(-EPROTO);
 		} else {
 			memcpy(&received[state.received_len],
 			       &event->data.rx.buf[event->data.rx.offset], event->data.rx.len);
 			state.received_len += event->data.rx.len;
+			*consumed = end;
 		}
 		state.rx_ready_count++;
 		if (state.first_rx_ready_time == 0) {
@@ -122,7 +140,8 @@ static void uart_event(const struct device *dev, struct uart_event *event, void 
 		break;
 	case UART_RX_BUF_RELEASED:
 		uart_log_event_locked(UART_TEST_RX_RELEASED);
-		if ((event->data.rx_buf.buf != state.rx_buf) ||
+		if (((event->data.rx_buf.buf != state.rx_buf) &&
+		     (event->data.rx_buf.buf != state.rx_second_buf)) ||
 		    ((state.received_len != 0U) &&
 		     ((state.event_log_len < 2U) ||
 		      (state.event_log[state.event_log_len - 2U] != UART_TEST_RX_RDY)))) {
@@ -163,6 +182,10 @@ static void uart_reset_state(void)
 	state.tx_len = 0U;
 	state.rx_buf = rx;
 	state.rx_capacity = sizeof(rx);
+	state.rx_consumed = 0U;
+	state.rx_second_buf = NULL;
+	state.rx_second_capacity = 0U;
+	state.rx_second_consumed = 0U;
 	state.received_len = 0U;
 	state.tx_done_count = 0U;
 	state.tx_aborted_count = 0U;
@@ -340,10 +363,32 @@ static void uart_configure_flow(enum uart_config_flow_control flow_ctrl)
 
 static void uart_start_rx(void)
 {
+	k_spinlock_key_t key = k_spin_lock(&state.lock);
+
+	state.rx_capacity = sizeof(rx);
+	state.rx_consumed = 0U;
+	state.rx_second_buf = NULL;
+	state.rx_second_capacity = 0U;
+	state.rx_second_consumed = 0U;
+	k_spin_unlock(&state.lock, key);
+
 	memset(rx, 0xa5, sizeof(rx));
 	zassert_ok(uart_rx_enable(uart, rx, sizeof(rx), UART_IDLE_TIMEOUT_US));
 	zassert_true(uart_rx_request_count() != 0U);
 	zassert_equal(uart_callback_error(), 0);
+}
+
+static void uart_prepare_second_rx(size_t first_length, size_t second_length)
+{
+	k_spinlock_key_t key = k_spin_lock(&state.lock);
+
+	state.rx_capacity = first_length;
+	state.rx_second_buf = rx_second;
+	state.rx_second_capacity = second_length;
+	state.rx_second_consumed = 0U;
+	k_spin_unlock(&state.lock, key);
+	memset(rx, 0xa5, sizeof(rx));
+	memset(rx_second, 0x5a, sizeof(rx_second));
 }
 
 static void uart_send(const uint8_t *buffer, size_t length)
@@ -435,6 +480,30 @@ ZTEST(hpm_uart_loop, test_async_dma_segmented_offsets)
 	zassert_equal(uart_callback_error(), 0);
 }
 
+ZTEST(hpm_uart_loop, test_async_dma_second_buffer)
+{
+	const size_t first_length = 97U;
+	size_t released_target;
+
+	uart_configure_flow(UART_CFG_FLOW_CTRL_NONE);
+	uart_fill_tx(0x47U);
+	uart_prepare_second_rx(first_length, sizeof(rx_second));
+	zassert_ok(uart_rx_enable(uart, rx, first_length, UART_IDLE_TIMEOUT_US));
+	zassert_true(uart_rx_request_count() != 0U);
+	zassert_ok(uart_rx_buf_rsp(uart, rx_second, sizeof(rx_second)));
+	uart_send(tx, sizeof(tx));
+	zassert_ok(uart_wait_for_tx(1U), "dual-buffer UART TX_DONE timeout");
+	zassert_ok(uart_wait_for_received(sizeof(tx)), "dual-buffer UART RX timeout");
+	zassert_ok(uart_wait_for_rx_events(2U), "second RX buffer was not used");
+	zassert_equal(uart_callback_error(), 0);
+	zassert_equal(uart_received_len(), sizeof(tx));
+	zassert_mem_equal(received, tx, sizeof(tx));
+	released_target = uart_rx_released_count() + 1U;
+	uart_stop_rx();
+	zassert_true(uart_rx_released_count() >= released_target);
+	zassert_equal(uart_callback_error(), 0);
+}
+
 ZTEST(hpm_uart_loop, test_async_dma_rts_cts)
 {
 	struct uart_config readback;
@@ -451,6 +520,41 @@ ZTEST(hpm_uart_loop, test_async_dma_rts_cts)
 	zassert_equal(uart_callback_error(), 0);
 	zassert_mem_equal(received, tx, sizeof(tx));
 	uart_stop_rx();
+	zassert_equal(uart_callback_error(), 0);
+}
+
+ZTEST(hpm_uart_loop, test_async_tx_cts_backpressure)
+{
+	unsigned char value;
+	size_t received_count = 0U;
+	int64_t deadline;
+	int errors;
+
+	uart_configure_flow(UART_CFG_FLOW_CTRL_RTS_CTS);
+	uart_fill_tx(0xc5U);
+	uart_set_tx_expectation(tx, sizeof(tx));
+	zassert_ok(uart_tx(uart, tx, sizeof(tx), 1000000));
+
+	/* At 115200 baud, 257 bytes complete in about 22 ms without backpressure. */
+	k_sleep(K_MSEC(40));
+	zassert_equal(uart_tx_done_count(), 0U,
+		      "UART TX completed despite full RX FIFO and CTS backpressure");
+
+	deadline = k_uptime_get() + UART_WAIT_TIMEOUT_MS;
+	while ((received_count < sizeof(tx)) && (k_uptime_get() < deadline)) {
+		if (uart_poll_in(uart, &value) == 0) {
+			zassert_equal(value, tx[received_count],
+				      "CTS-backpressure data mismatch at %u", received_count);
+			received_count++;
+		} else {
+			k_busy_wait(5);
+		}
+	}
+
+	zassert_equal(received_count, sizeof(tx), "CTS-backpressure RX timeout");
+	zassert_ok(uart_wait_for_tx(1U), "CTS-backpressure TX_DONE timeout");
+	errors = uart_err_check(uart);
+	zassert_equal(errors, 0, "UART errors after CTS backpressure: 0x%x", errors);
 	zassert_equal(uart_callback_error(), 0);
 }
 

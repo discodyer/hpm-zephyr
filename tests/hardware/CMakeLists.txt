@@ -15,6 +15,8 @@ foreach(profile core dma flash watchdog can ptpc motor gpio uart lin i2c spi ana
   target_sources_ifdef(CONFIG_HPM_TEST_${symbol} app PRIVATE src/${profile}.c)
 endforeach()
 
+target_sources_ifdef(CONFIG_HPM_TEST_UART_ADDRESS app PRIVATE src/uart_address.c)
+target_sources_ifdef(CONFIG_HPM_TEST_UART_RS485 app PRIVATE src/uart_rs485.c)
 target_sources_ifdef(CONFIG_HPM_TEST_QEI_PD app PRIVATE src/qei_pd.c)
 target_sources_ifdef(CONFIG_HPM_TEST_QEI_UD app PRIVATE src/qei_ud.c)
 target_sources_ifdef(CONFIG_HPM_TEST_QEI_SINGLE app PRIVATE src/qei_single.c)

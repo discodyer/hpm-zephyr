@@ -72,6 +72,20 @@ tests:
       - DTC_OVERLAY_FILE=profiles/uart.overlay
     harness_config:
       fixture: hpm_uart_loop
+  hpmicro.hardware.uart_rs485:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/uart_rs485.conf
+      - DTC_OVERLAY_FILE=profiles/uart_rs485.overlay
+    harness_config:
+      fixture: hpm_uart_rs485_de
+
+  hpmicro.hardware.uart_address:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/uart_address.conf
+      - DTC_OVERLAY_FILE=profiles/uart_address.overlay
+    harness_config:
+      fixture: hpm_uart_address_pair
+
   hpmicro.hardware.lin:
     extra_args:
       - EXTRA_CONF_FILE=profiles/lin.conf
