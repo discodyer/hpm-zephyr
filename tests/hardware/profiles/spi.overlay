@@ -1,4 +1,8 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * Copyright (c) 2026 The HPM Zephyr Module Contributors
+ * Copyright (c) 2026 Cody Gu <gujiaqi@iscas.ac.cn>
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 &pb04_gpio_b_04 {
 	group0 {
@@ -8,7 +12,11 @@
 
 &spi1 {
 	cs-gpios = <&gpiob 4 GPIO_ACTIVE_LOW>;
-	pinctrl-0 = <&pa27_spi1_sclk &pa28_spi1_miso &pa29_spi1_mosi &pb04_gpio_b_04>;
+	pinctrl-0 = <&pa26_spi1_cs_0
+		     &pa27_spi1_sclk
+		     &pa28_spi1_miso
+		     &pa29_spi1_mosi
+		     &pb04_gpio_b_04>;
 };
 
 &pa27_spi1_sclk {

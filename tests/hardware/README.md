@@ -11,7 +11,7 @@ API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK m
 `i2c_fast_plus`、`spi`、
 `analog`、`front_end`、`pwm`、`qei`、`qei_pd`、`qei_ud`、`qei_single`、
 `qei_uvw`、`usb_device`、`usb_endpoints`、`usb_endpoints_fs`、`usb_host`、
-`usb_host_hub` 和 `usb_host_hid_report`，共 138 项测试。三个 I2C 配置各
+`usb_host_hub` 和 `usb_host_hid_report`，共 143 项测试。三个 I2C 配置各
 16/16，分别在 100 kHz、400 kHz 和 1 MHz 下通过；其余配置沿用各自记录中的
 上板验收结果。两个 endpoint 配置共用同一份
 测试源码。历史候选 profile 的 build-only 记录保留在下文，不代表这些候选已纳入
@@ -163,6 +163,29 @@ checkpatch 均无问题。
 linked-DMA 回环。`west flash --verify` 成功。有效日志为
 `build/hw-spi-zephyr-4.5.0-fixedwire-run{1,2,3,4}*.uart.log`；接线错误时的
 日志只保留作诊断，不计入验收。
+
+2026-11-05 将 `spi` 扩展为 6 项。最终固件经 `west flash --verify` 后完成
+两次独立复位，均为 6/6、0 fail/skip，每次耗时 0.027 s，并以
+`PROJECT EXECUTION SUCCESSFUL` 结束。接线仍只需 PA29/MOSI（P1-19）↔
+PA28/MISO（P1-21）；PA27/SCLK（P1-23）、PA26/native CS0（P1-24）和
+PB04/GPIO CS（P1-31）均不需跳线。新增覆盖包括 16/24/32-bit 同步传输、
+16/32-bit 双块异步链接 DMA、`SPI_HOLD_ON_CS` 保持与释放、native CS 传输、
+4/12/40-bit 位宽拒绝及拒绝后的 8-bit 恢复。
+
+首轮上板发现两个驱动缺陷：宽字位双块异步传输被限制为 workqueue 回退，违反
+测试对 DMA ISR 完成路径的断言；native CS 使用临时 `spi_config` 后，
+`spi_release()` 通过上下文中的旧指针强制释放 GPIO CS，访问了已失效的栈对象
+并触发 load access fault。驱动现允许 8/16/32-bit 链接 DMA，并让 release 使用
+调用者传入的有效配置。失败证据保留为 `build/hw-spi-extended-run1.uart.log`
+和 `build/hw-spi-extended-run1.reset.log`，不计入验收；正式 build-only 报告为
+`build/twister-spi-extended-fix1-20261105/twister.json`，烧录记录为
+`build/hw-spi-extended-fix1.flash.log`，UART/reset 证据为
+`build/hw-spi-extended-fix1-run{2,3}.{uart,reset}.log`。扩展后的完整
+31 配置 build-only 回归发现 143 项测试，0 失败/错误/告警：
+`build/twister-hardware-spi-extended-final/twister.json`。
+
+本轮没有逻辑分析仪波形，因此 native CS 的电气时序、setup/hold 精度和外部从设备
+兼容性仍不在验收范围内；半双工、双/四线以及 `SPI_LOCK_ON` 也未覆盖。
 
 2026-10-29 已在 Zephyr v4.5.0 上用 J7-20/PB08 DAC0.OUT 到
 P1-32/PB05 ADC0.IN13 复测 `analog`。烧录首轮和两次独立复位均 6/6 通过
@@ -671,7 +694,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `i2c` | `hpm_i2c_pair` | PB02 SCL ↔ PB07 SCL（RevC P1-28 ↔ P1-5）；PB03 SDA ↔ PB06 SDA（P1-27 ↔ P1-3）；按 RevD 丝印核对，板载已有 10 kΩ 上拉 | 100 kHz 标准速率完整 16 项：I2C0 controller → I2C1 target 的 7-bit DMA、重复 START、10-bit、地址/数据阶段 NACK、SCL/SDA 恢复、SMBus byte/word/block/PEC/process call/零计数及故障后恢复 |
 | `i2c_fast` | `hpm_i2c_pair` | 与 `i2c` 完全相同，无需改线 | 400 kHz Fast 模式运行同一套 16 项，控制器和目标端均配置为 Fast timing |
 | `i2c_fast_plus` | `hpm_i2c_pair` | 与 `i2c` 完全相同，无需改线 | 1 MHz Fast Plus 模式运行同一套 16 项，控制器和目标端均配置为 Fast Plus timing；覆盖 ADDRESS_HIT/BYTERECV 与 ADDRESS_HIT/STOP 合并事件 |
-| `spi` | `hpm_spi_loop` | PA29/MOSI ↔ PA28/MISO（P1-19 ↔ P1-21）；保留 PA27/SCLK（P1-23），GPIO PB04/P1-31 CS 由固件控制；按 RevD 丝印核对 | SPI1 1 MHz，Motorola mode 0-3；每种模式 256 B sync 与 async linked-block DMA 回环，TX/RX 各两块不同分割；全量比较、ISR completion 和 CS inactive 检查 |
+| `spi` | `hpm_spi_loop` | PA29/MOSI ↔ PA28/MISO（P1-19 ↔ P1-21）；PA27/SCLK（P1-23）、PA26/native CS0（P1-24）和 PB04/GPIO CS（P1-31）不接跳线；按 RevD 丝印核对 | SPI1 1 MHz，Motorola mode 0-3 的 8-bit sync/async 链接 DMA；16/24/32-bit sync；16/32-bit 双块 async 链接 DMA；GPIO CS hold/release；native CS；4/12/40-bit 拒绝及 8-bit 恢复 |
 | `analog` | `hpm_analog_loop` | PB08/DAC0.OUT（J7-20）→ PB05/ADC0.IN13（P1-32）；按 RevD 丝印核对 | ADC 同步/异步、双通道、抢占 DMA、TRGM 上升沿触发；DAC direct/step/buffer 输出由 ADC 回读 |
 | `front_end` | `hpm_front_end_loop` | J7-20/PB08 → P1-31/PB04；P1-8/PB08 → P1-40/PB11，见下文 | OPAMP0 follower 四电平回读；ACMP1 单/双边沿精确次数及 ISR 来源、禁用/重装、pending 读清及同步 callback 派发 |
 | `pwm` | `hpm_pwm_loop` | P1-31/PB04 → J7-20/PB08；P1-8/PB08 → P1-40/PB11，复用前端接线 | PWM0.P4 输出、PWM1.P4 捕获；108 组周期/占空比/极性/类型，单位换算、连续回绕、停用/恢复、busy/timeout，以及 GPIO 恒定电平 |
@@ -948,7 +971,6 @@ git stash apply <完整 SHA>
 
 | 项目 | 本地 stash（完整 SHA） | 草稿/待验证范围 | 暂缓原因与恢复条件 |
 |---|---|---|---|
-| SPI 扩展 | `50f03c27b1051175c401bde62f1bfe9dd226a2a9`<br>`wip: spi extended word sizes and CS coverage` | `spi.overlay`、`src/spi.c`；16/24/32-bit 同步、16/32-bit 异步 DMA、GPIO CS hold、native CS 和不支持位宽拒绝 | 仅完成 build-only；需要确认外部回环波形、native CS 引脚和异常位宽路径后进行上板验收 |
 | RDC | `ea832bda7b355fccca0dd707b84004299c588d54`<br>`wip: rdc resolver hardware fixture` | `rdc.conf`、`rdc.overlay`、`src/rdc.c`；激励、I/Q ADC 流、ACC IRQ 和角度 | 用户当前没有与 PA28 激励同步的旋变信号模拟器；具备可提供 I/Q 反馈的 resolver simulator 后恢复 |
 | SEI SSI 及其他协议 | `872680374c91ac9c8f8ab16c75a0dc0a13fafe77`<br>`wip: sei encoder protocol fixtures` | `sei*.conf`、`sei.overlay`、`src/sei.c`、`src/sei_protocol.c`；SSI、Tamagawa、BiSS-C、EnDat、Nikon consumer 和协议 fixture | 缺少对应编码器或协议模拟器及 CRC/时序验证条件；取得真实或可编程模拟器后恢复 |
 | USB suspend/wakeup | `7037b39b2edbb3488b0d3b41f0773f29f2f85074`<br>`wip: usb suspend and remote wake acceptance` | `usb_power` 草稿、peer 脚本和 FPR 驱动改动 | 当前 WSL2 + Docker 通过 USB/IP/`vhci_hcd` 接入，不能传播物理 suspend/resume；迁移到原生 Linux 主机或 Linux SBC 后恢复 |
@@ -988,7 +1010,7 @@ OTP 驱动按项目约束永久只读，只读取 UUID words 88–91 两次，�
 | UART | 外部 RS-485 收发器电气、总线冲突和远端 DE/RTS 时序仍需独立验收 |
 | LIN | 板载 LIN 收发器、J9-5 外部 peer、真实总线边沿/唤醒脉冲时序、自动同步及冲突检测仍需独立验收 |
 | I2C/SMBus | timeout/故障注入、外部器件兼容及重复 START 电气时序 |
-| SPI | 16/24/32-bit 同步、16/32-bit DMA、native CS、hold-on-CS、异常位宽拒绝、半双工/双四线、外部从设备时序及电气测量仍待验收；扩展草稿已 stash |
+| SPI | native CS 波形/setup-hold 电气测量、外部从设备时序、半双工、双/四线及 `SPI_LOCK_ON` 仍待验收 |
 | DMA | 错误 IRQ、暂停边界竞争、压力/并发；循环完成 IRQ 密集度也需记录 |
 | Watchdog | SoC reset、窗口模式、睡眠/调试暂停、挂起 IRQ 与停用的竞争、其他实例 |
 | CAN/PTPC | 实体收发器和总线、bus-off、共享 MRAM 并发；TSU 与外部绝对时间关联、PPS 引脚电气/占空比、PPS 控制值 5–14 及最大值 IRQ 压力 |
