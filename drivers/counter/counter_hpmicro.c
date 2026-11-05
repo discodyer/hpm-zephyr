@@ -163,7 +163,13 @@ static int hpm_gptmr_set_value(const struct device *dev, uint32_t ticks)
 	}
 
 	for (channel = 0U; channel < HPM_GPTMR_CHANNELS; channel++) {
-		gptmr_channel_update_count(config->base, channel, ticks);
+		/*
+		 * The SDK helper decrements non-extreme values before writing
+		 * CNTUPTVAL.
+		 */
+		config->base->CHANNEL[channel].CNTUPTVAL =
+			GPTMR_CHANNEL_CNTUPTVAL_CNTUPTVAL_SET(ticks);
+		config->base->CHANNEL[channel].CR |= GPTMR_CHANNEL_CR_CNTUPT_MASK;
 	}
 
 	return 0;
