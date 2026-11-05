@@ -5,19 +5,68 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 27 个 profile 配置：`core`、`dma`、`crypto`、`flash`、
-`watchdog`、`can`、`ptpc`、`motor`、`gpio`、`uart`、`lin`、`i2c`、`spi`、`analog`、
-`front_end`、`pwm`、`qei`、`qei_pd`、`qei_ud`、`qei_single`、`qei_uvw`、
-`usb_device`、`usb_endpoints`、`usb_endpoints_fs`、`usb_host`、`usb_host_hub`
-和 `usb_host_hid_report`，分别通过 8/8、2/2、6/6、1/1、4/4、2/2、4/4、5/5、4/4、
-4/4、6/6、3/3、1/1、6/6、3/3、3/3、5/5、4/4、4/4、3/3、3/3、1/1、1/1、1/1、1/1、
-1/1 和 1/1 项，共 87 项测试。两个 endpoint 配置共用同一份测试源码。
-历史候选 profile 的 build-only 记录保留在下文，
-不代表这些候选已纳入本轮提交或通过硬件验收。
+本轮已在 HPM5300EVK RevD 上验证 29 个 profile 实现形成的 31 个测试配置：
+`core`、`dma`、`crypto`、`flash`、`watchdog`、`can`、`ptpc`、`motor`、`gpio`、
+`uart`、`uart_address`、`uart_rs485`、`lin`、`i2c`、`i2c_fast`、
+`i2c_fast_plus`、`spi`、
+`analog`、`front_end`、`pwm`、`qei`、`qei_pd`、`qei_ud`、`qei_single`、
+`qei_uvw`、`usb_device`、`usb_endpoints`、`usb_endpoints_fs`、`usb_host`、
+`usb_host_hub` 和 `usb_host_hid_report`，共 138 项测试。三个 I2C 配置各
+16/16，分别在 100 kHz、400 kHz 和 1 MHz 下通过；其余配置沿用各自记录中的
+上板验收结果。两个 endpoint 配置共用同一份
+测试源码。历史候选 profile 的 build-only 记录保留在下文，不代表这些候选已纳入
+本轮提交或通过硬件验收。
 
 2026-10-27 `core` 运行耗时 0.923 s。UART 完整日志位于工作区
 `build/hw-core-gptmr-fix-uart.log`，最终结果为 `PROJECT EXECUTION SUCCESSFUL`。
 日志中的重复启动横幅来自烧录/校验复位；温度阈值测试及其余测试最终均通过。
+2026-11-04 `uart` 扩展为 5 项，新增连续双 buffer DMA RX。首缓冲区设置为 97 B，
+回调在 `UART_RX_BUF_REQUEST` 后提交第二块 320 B 缓冲区；257 B 自回环数据跨两个
+buffer 连续接收，逐事件校验各 buffer 的 RX_RDY offset、累计内容、释放顺序和
+`UART_RX_DISABLED`。正式固件两次独立复位均 5/5 通过，每次耗时 0.119 s。
+首轮诊断中新用例已通过，但既有 RX disable/re-enable 用例因测试未重置新增的
+per-buffer consumed 计数而失败；修正测试状态后全部通过。失败日志保留为
+`build/hw-uart-dual-rx-run1.uart.log`。正式 build/flash 为
+`build/hw-uart-dual-rx-final-build.log`、`build/hw-uart-dual-rx-fix2.flash.log`；
+UART/reset 证据为 `build/hw-uart-dual-rx-fix2-run{1,2}.{uart,reset}.log`。
+
+2026-11-04 `uart` 随后扩展为 6 项，新增 CTS 硬件背压。测试不启用 RX DMA，
+发送 257 B 后等待 40 ms，确认异步 TX 未完成；随后通过 `uart_poll_in()` 排空
+接收 FIFO，验证 TX 自动恢复、257 B 顺序完整、TX_DONE 到达且无 overrun/framing
+错误。该路径真实经过 PB05 RTS → PB04 CTS 回环和 auto-RTS/auto-CTS。两次独立复位
+均为 6/6，每次耗时 0.182 s。build/flash 为
+`build/hw-uart-cts-final-build.log`、`build/hw-uart-cts-flash.log`，UART/reset
+证据为 `build/hw-uart-cts-run{1,2}.{uart,reset}.log`。
+
+2026-11-04 新增独立 `uart_rs485` profile，验证自动 DE 时序。UART1 配置为
+`UART_CFG_FLOW_CTRL_RS485` 后连续发送 64 B；PB05 DE 输出回环到 PB04 GPIO，
+PB07 TX 输出回环到 PB06 GPIO，两个边沿均由 `k_cycle_get_32()` 打时间戳。测试
+确认 64 B 突发只有一次 DE 上升/下降、DE 在 TX 首边沿前拉高、在 TX 末边沿后释放、
+DE 脉冲覆盖完整 TX 突发，释放延迟不超过 500 µs；TX 突发约 5.56 ms。正式固件
+两次独立复位均 1/1 通过，每次耗时 0.006 s。build/flash 为
+`build/hw-uart-rs485-build.log`、`build/hw-uart-rs485-flash.log`，UART/reset
+证据为 `build/hw-uart-rs485-run{1,2}.{uart,reset}.log`。
+
+2026-11-04 新增独立 `uart_address` profile，验证 UART 九位地址匹配。UART1
+配置 address0 `0x55` 和 address1 `0x77`，UART2 通过 TXEN_9BIT 发送地址标记帧；
+错误地址 `0x66` 被接收端硬件过滤，两个正确地址均产生 address-match 和
+address-match-idle 事件，并完整接收地址字节与 8 B 数据。测试同时验证标志
+读后清除、非法配置返回 `-EINVAL`、地址匹配关闭路径及无 UART 错误。正式固件
+两次独立复位均 1/1 通过，每次耗时 0.019 s。build/flash 为
+`build/hw-uart-address-build.log`、`build/hw-uart-address-flash.log`，UART/reset
+证据为 `build/hw-uart-address-run{1,2}.{uart,reset}.log`。
+
+2026-11-04 `core` 扩展为 10 项，新增 GPTMR top/reload/flags 与 32-bit wrap。
+正式固件在烧录后两次独立复位均 10/10 通过，每次耗时 0.897 s，单次启动 banner
+且以 `PROJECT EXECUTION SUCCESSFUL` 结束。top 测试验证 2 ms 周期 callback、
+`COUNTER_TOP_CFG_DONT_RESET` 保留计数值、`RESET_WHEN_LATE` 复位、活跃 alarm
+时返回 `-EBUSY`、`set_value(top+1)` 返回 `-EINVAL`，以及 `set_value()` 精确读回。
+wrap 测试将计数器置于 `UINT32_MAX` 前约 5 ms 并实测跨零。首轮诊断同时发现
+`counter_set_value()` 调用 SDK helper 后读回少 1，驱动改为直接写 `CNTUPTVAL`。
+根因修复前日志为 `build/hw-core-counter-top-run1.uart.log`；正式 build/flash 为
+`build/hw-core-counter-top-final-build.log`、`build/hw-core-counter-top-fix3.flash.log`，
+正式 UART/reset 为 `build/hw-core-counter-top-fix3-run{1,2}.{uart,reset}.log`。
+
 具体覆盖和限制见[硬件记录](../../../docs/agent/hardware-bringup.md#core-profile-hardware-result-2026-10-27)。
 
 2026-10-29 已在 Zephyr v4.5.0 上重新执行七个无需接线的 profile：
@@ -37,18 +86,76 @@ P1-31/PB04 CTS↔P1-32/PB05 RTS，以及 P1-5/PB07 TX↔P1-3/PB06 RX。
 烧录首轮和三次独立复位均 4/4 通过（每次 0.094 s），`west flash --verify`
 成功。日志为 `build/hw-uart-zephyr-4.5.0-run{1,2,3,4}*.uart.log`。
 
-2026-11-04 新增 `lin` profile，将 UART1 和 UART2 分别实例化为 LIN
-commander 与 responder，并验证标准 Zephyr `lin` API。正式固件在烧录后两次
-独立复位均为 6/6 通过（每次 0.143 s），覆盖 commander 写/读、
-classic/enhanced checksum、responder read/response、PID 过滤、接收超时、
-wakeup 生成及 configure/start/stop 错误语义。build/flash 证据为
-`build/hw-lin-final-build.log`、`build/hw-lin-final-flash.log`，UART/reset
-证据为 `build/hw-lin-final-run{1,2}.{uart,reset}.log`。
-
 2026-10-29 已在 Zephyr v4.5.0 上用两根跳线复测 `i2c`：
 P1-28/PB02 SCL↔P1-5/PB07 SCL，P1-27/PB03 SDA↔P1-3/PB06 SDA。
 烧录首轮和两次独立复位均 3/3 通过（每次 0.037 s），`west flash --verify`
 成功。日志为 `build/hw-i2c-zephyr-4.5.0-run{1,2,3}*.uart.log`。
+
+2026-11-05 先将 `i2c` 扩展到 7 项。沿用上述两根跳线，以 I2C1 target 地址
+`0x155` 验证 10-bit 单写、单读和写后 repeated START 读，并增加卡死 SDA
+总线恢复：测试先注销 I2C1 target，将 PB07 切为 GPIO 上升沿监测、PB06 切为
+开漏输出并拉低 SDA；I2C0 的 `i2c_recover_bus()` 产生 9 个 SCL 时钟，回调在
+第 9 个上升沿释放 SDA。测试精确断言 9 个边沿、回调来源/上下文、两条线回高，
+随后恢复 I2C1 pinctrl 和目标并完成普通写，证明控制器已重新初始化。
+
+10-bit repeated START 的首个实现暴露 SDK 地址阶段会重新发送完整 10-bit 地址，
+target 因此拒绝。驱动改为手工发送短读地址头，再调用 SDK sequence receive
+读取数据；恢复路径在 `RESET_ON` 后重新调用 `i2c_init_master()`。最终源码
+重新构建并经 `west flash --verify` 后，三次独立复位均为 7/7（每次 0.045 s）。
+证据为 `build/hw-i2c-recovery-final.build.log`、
+`build/hw-i2c-recovery-final.flash.log` 和
+`build/hw-i2c-recovery-final-run{1,2,3}.{uart,reset}.log`。
+
+随后将 `i2c` 扩展到 8 项，增加 SCL 被持续拉低的恢复拒绝路径。测试同时拉低
+PB07/SCL 和 PB06/SDA，确认 `i2c_recover_bus()` 立即返回 `-EBUSY` 且不产生
+恢复时钟；释放 SCL 后再次调用恢复，验证第 9 个上升沿释放 SDA、两条线回高，
+随后完成普通 target 写入。最终镜像经 `west flash --verify` 后，三次独立复位
+均为 8/8（每次 0.047 s）。证据为
+`build/hw-i2c-scl-recovery-final.{build,flash}.log` 和
+`build/hw-i2c-scl-recovery-final-run{1,2,3}.{uart,reset}.log`；全量
+build-only 报告为 `build/twister-i2c-scl-full-final/twister.json`。
+
+随后将 `i2c` 扩展到 9 项，增加 SMBus Block Process Call。测试以命令 `0xa0`
+发送 8 B，并在目标端返回 6 B 响应和 PEC `0x6e`；校验目标写入、读回调和 STOP，
+再破坏响应 PEC 确认返回 `-EIO` 且不发布接收长度，恢复 PEC 后重试成功。最终镜像
+经 `west flash --verify` 后，三次独立复位均为 9/9（每次 0.053 s）。证据为
+`build/hw-i2c-block-pcall-final.{build,flash}.log` 和
+`build/hw-i2c-block-pcall-final-run{1,2,3}.{uart,reset}.log`；全量
+build-only 报告为 `build/twister-i2c-block-pcall-final/twister.json`，共
+29 个配置、99 项测试，0 失败/错误/告警。
+
+随后将 `i2c` 扩展到 10 项，增加零计数响应。无 PEC block read、PEC block read
+和 PEC Block Process Call 均验证返回 `-ENODATA` 且不发布输出长度，随后立即执行
+有效读或 process call 证明总线已恢复。诊断发现旧驱动会把空块当作成功；修复后
+又发现无 PEC 分支只发出 STOP 却未等待完成并超时。由于 HPM 控制器不能在 ACK
+count 字节后直接停止，无 PEC 路径现读取 1 个丢弃字节并 NACK/STOP 释放总线。
+最终镜像经 `west flash --verify` 后，三次独立复位均为 10/10（每次 0.057 s）。
+证据为 `build/hw-i2c-zero-count-final5.{build,flash}.log` 和
+`build/hw-i2c-zero-count-final5-run{1,2,3}.{uart,reset}.log`；全量
+build-only 报告为 `build/twister-i2c-zero-count-final/twister.json`，共
+29 个配置、100 项测试，0 失败/错误/告警。
+
+2026-11-05 将同一套 I2C 用例扩展为 16 项，并新增 400 kHz Fast 与 1 MHz
+Fast Plus 配置；原有 100 kHz 配置作为标准速率回归。三个配置均显式设置控制器
+和目标端时序，各经 `west flash --verify` 后完成三次独立复位，均为 16/16：
+标准模式每次 0.087-0.089 s，Fast 每次 0.050 s，Fast Plus 每次
+0.042-0.044 s。证据为
+`build/hw-i2c-{standard,fast,fast-plus}-isrfinal.{build,flash}.log` 和
+`build/hw-i2c-{standard,fast,fast-plus}-isrfinal-run{1,2,3}.{uart,reset}.log`。
+
+速率矩阵发现两个真实的目标模式 ISR 缺陷。100 kHz 下，仅因 ADDRESS_HIT
+置位就排空 RX FIFO 会在 BYTERECV 尚未置位时读到幻影 `0x00`，污染命令 cursor
+和块长度；现在只有本轮状态快照包含 BYTERECV 时才排空，Fast Plus 中
+ADDRESS_HIT/BYTERECV 合并的场景仍由同一个 ISR 后续分支处理。Fast Plus
+quick 命令还可能把 ADDRESS_HIT 与真实 STOP 合并在一次中断中；ISR 现保留地址
+命中的 STOP 锁存，并在分派 target stop 回调前重新检查 `BUS_BUSY`，只丢弃
+repeated START 带来的陈旧 STOP。总线恢复临时以 100 kHz 产生时钟，结束后恢复
+配置速率。
+
+最终全量 build-only 回归构建 31 个配置、发现 138 项测试，0 失败/错误/告警：
+`build/twister-i2c-fast-isrfinal/twister.json`。其中 `i2c`、`i2c_fast`、
+`i2c_fast_plus` 各 16 项。Zephyr 100 列 clang-format、`git diff --check` 和
+checkpatch 均无问题。
 
 2026-10-29 已在 Zephyr v4.5.0 上复测 `spi`。第一次接错线时同步 mode 0
 首字节为 `tx=5a rx=00`；按 P1-19/PA29 MOSI↔P1-21/PA28 MISO 更正后，
@@ -207,8 +314,9 @@ JSON 中合计 80 项测试，0 失败/错误，无编译器或 Twister 汇总�
 构建成功，JSON 中合计 81 项测试，0 失败/错误，无编译器或 Twister 汇总警告；
 报告为 `build/twister-usb-host-hub-registered/twister.json`。
 
-当前 26 个注册配置均已在 v4.5.0 上构建通过，共注册 81 项测试，现已全部通过
-硬件验收（81/81）。Host 验收仍需操作者按键；RDC、SEI 协议和 USB
+截至该轮扩展，当时 26 个注册配置均已在 v4.5.0 上构建通过，共注册 81 项测试，
+均已通过硬件验收（81/81）；当前 31 个配置的后续结果以上文汇总为准。Host 验收
+仍需操作者按键；RDC、SEI 协议和 USB
 suspend/remote wakeup 验收现由用户暂缓，详见下文。PWM 接线可拆除，Host
 测试可保留 OTG 适配器和有线 boot keyboard。
 
@@ -493,7 +601,7 @@ Twister 记录位于 `build/twister-hardware-post-core/twister.log`，报告位�
 该历史记录基线为 Zephyr `f78c4deb4523`、SDK
 `ccc5ec467a047f3ea85cd2fa4565e91db7135a38`；当前 Zephyr 4.5.0 的重编译
 记录见工作区 `build/twister-zephyr-4.5.0-recheck-hardware/twister.json`。
-该历史矩阵包含尚未纳入提交的候选文件，不能用当前 15-profile 范围直接复现。
+该历史矩阵包含尚未纳入提交的候选文件，不能用当前 31 个配置的矩阵直接复现。
 
 ## 构建与运行
 
@@ -545,20 +653,24 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 27 个已上板验收 profile 配置，具体范围及限制见前述运行记录。
+下表列出 29 个 profile 实现形成的 31 个已上板验收配置，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
 
 | Profile | fixture | 接线/设备 | 自动断言与输出 |
 |---|---|---|---|
-| `core` | `hpm5300evk` | 无外接线 | GPTMR 20 ms alarm IRQ、时钟 off/on 恢复；RNG 自检/非重复数据/真实 ISR 非阻塞预算；CRC32 分段已知答案；TSNS 温度及阈值 IRQ；MBX A/B 双向各 32 字；OTP UUID 区重复只读；PTPC 比较 IRQ 与 TRGM 内部捕获 |
+| `core` | `hpm5300evk` | 无外接线 | GPTMR 20 ms alarm IRQ、时钟 off/on 恢复、2 ms top 周期 callback、`DONT_RESET`/`RESET_WHEN_LATE`、活跃 alarm 拒绝、精确 `set_value` 和跨 `UINT32_MAX` 回绕；RNG 自检/非重复数据/真实 ISR 非阻塞预算；CRC32 分段已知答案；TSNS 温度及阈值 IRQ；MBX A/B 双向各 32 字；OTP UUID 区重复只读；PTPC 比较 IRQ 与 TRGM 内部捕获 |
 | `dma` | `hpm5300evk` | 无 | 3×256 B 链式拷贝、前后 32 B 哨兵、完成 IRQ；单块循环 DMA 暂停后 IRQ 静止、恢复后继续、数据一致 |
 | `crypto` | `hpm5300evk` | 无 | 复用已知答案向量：AES-128/256 ECB/CBC/CTR、SHA-1/SHA-256/SM3、CRC32、SM4 ECB/CBC/CTR、CCM 加解密及错误 tag 拒绝 |
 | `gpio` | `hpm_gpio_loop` | PB04 → PB05，P1-31 ↔ P1-32；按 RevD 丝印核对 | 四项通过：电平及 raw set/clear/mask/toggle；上升/下降沿各 20 次，反向不触发；双边沿 20 次及 masked 写入 2 次边沿、同值无额外回调；停用时 20 次无回调、重装恢复，核 ISR/来源/次数 |
-| `uart` | `hpm_uart_loop` | PB07 TX → PB06 RX（P1-5 ↔ P1-3）；PB05 RTS → PB04 CTS（P1-32 ↔ P1-31） | 257 B 无流控 DMA、97 B + 160 B 分段 offset、RTS/CTS 回环与配置读回、RX disable/re-enable；校验 TX/RX 事件、buffer、offset/length 和数据 |
+| `uart` | `hpm_uart_loop` | PB07 TX → PB06 RX（P1-5 ↔ P1-3）；PB05 RTS → PB04 CTS（P1-32 ↔ P1-31） | 257 B 无流控 DMA、97 B + 160 B 分段 offset、连续双 buffer、RTS/CTS 回环、真实 RX FIFO/auto-RTS CTS 背压、RX disable/re-enable；校验 TX/RX 事件、buffer、offset/length、数据、释放顺序及排空后的自动恢复 |
+| `uart_address` | `hpm_uart_address_pair` | UART1 PB07 TX/P1-5 → UART2 PB09 RX/P1-10；UART2 PB08 TX/P1-8 → UART1 PB06 RX/P1-3；另接 GND | HPM UART 9-bit 地址匹配：address0 `0x55`、address1 `0x77`、非匹配 `0x66` 抑制、address-match/match-idle 标志读清、地址与 8 B 数据完整性和 UART 错误检查；两次独立复位均 1/1 |
+| `uart_rs485` | `hpm_uart_rs485_de` | UART1 PB05 DE/P1-32 → PB04/P1-31 GPIO；PB07 TX/P1-5 → PB06/P1-3 GPIO | 64 B 连续发送期间自动 DE 仅上升/下降一次；DE 上升不晚于 TX 首边沿、下降不早于 TX 末边沿、覆盖完整突发，释放延迟 ≤500 µs；两次独立复位均 1/1 |
 | `lin` | `hpm_lin_uart_pair` | UART1 PB07 TX/P1-5 ↔ UART2 PB09 RX/P1-10；UART1 PB06 RX/P1-3 ↔ UART2 PB08 TX/P1-8；另接 GND | 标准 `lin` API 的 commander 写/读、classic/enhanced checksum、responder read/response、PID 过滤、接收超时、wakeup、configure/start/stop 错误语义；两次独立复位均 6/6 |
-| `i2c` | `hpm_i2c_pair` | PB02 SCL ↔ PB07 SCL（RevC P1-28 ↔ P1-5）；PB03 SDA ↔ PB06 SDA（P1-27 ↔ P1-3）；按 RevD 丝印核对，板载已有 10 kΩ 上拉 | I2C0 DMA controller → I2C1 target `0x52`；65 B 写、重复 START 后 64 B 读、STOP 回调；SMBus byte/word、32 B block、1/32 B block PEC、错误 PEC 拒绝、count=33 拒绝及后续恢复 |
+| `i2c` | `hpm_i2c_pair` | PB02 SCL ↔ PB07 SCL（RevC P1-28 ↔ P1-5）；PB03 SDA ↔ PB06 SDA（P1-27 ↔ P1-3）；按 RevD 丝印核对，板载已有 10 kΩ 上拉 | 100 kHz 标准速率完整 16 项：I2C0 controller → I2C1 target 的 7-bit DMA、重复 START、10-bit、地址/数据阶段 NACK、SCL/SDA 恢复、SMBus byte/word/block/PEC/process call/零计数及故障后恢复 |
+| `i2c_fast` | `hpm_i2c_pair` | 与 `i2c` 完全相同，无需改线 | 400 kHz Fast 模式运行同一套 16 项，控制器和目标端均配置为 Fast timing |
+| `i2c_fast_plus` | `hpm_i2c_pair` | 与 `i2c` 完全相同，无需改线 | 1 MHz Fast Plus 模式运行同一套 16 项，控制器和目标端均配置为 Fast Plus timing；覆盖 ADDRESS_HIT/BYTERECV 与 ADDRESS_HIT/STOP 合并事件 |
 | `spi` | `hpm_spi_loop` | PA29/MOSI ↔ PA28/MISO（P1-19 ↔ P1-21）；保留 PA27/SCLK（P1-23），GPIO PB04/P1-31 CS 由固件控制；按 RevD 丝印核对 | SPI1 1 MHz，Motorola mode 0-3；每种模式 256 B sync 与 async linked-block DMA 回环，TX/RX 各两块不同分割；全量比较、ISR completion 和 CS inactive 检查 |
 | `analog` | `hpm_analog_loop` | PB08/DAC0.OUT（J7-20）→ PB05/ADC0.IN13（P1-32）；按 RevD 丝印核对 | ADC 同步/异步、双通道、抢占 DMA、TRGM 上升沿触发；DAC direct/step/buffer 输出由 ADC 回读 |
 | `front_end` | `hpm_front_end_loop` | J7-20/PB08 → P1-31/PB04；P1-8/PB08 → P1-40/PB11，见下文 | OPAMP0 follower 四电平回读；ACMP1 单/双边沿精确次数及 ISR 来源、禁用/重装、pending 读清及同步 callback 派发 |
@@ -581,32 +693,6 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 PA24 是 LIN 12 V 电源使能，未引到 P1。GPIO profile 仅驱动 PB04；motor profile
 只切换 PA24 的输入可见性，不配置该引脚输出。
-
-### LIN UART 双节点接线与结果
-
-`lin` profile 使用标准 Zephyr `lin` API，将 UART1 和 UART2 分别实例化为
-commander 与 responder，并在 TTL 侧交叉接线：
-
-| UART1 信号 | 连接到 | UART2 信号 |
-|---|---|---|
-| PB07 / TX，P1-5 | ↔ | PB09 / RX，P1-10 |
-| PB06 / RX，P1-3 | ↔ | PB08 / TX，P1-8 |
-
-同一块 EVK 上还需连接任一 GND，例如 P1-30 或 P1-34。不得连接 3.3 V。
-固件在发送 break 或 wakeup 时临时将 PB07/PB08 切为 GPIO，随后恢复 UART
-mux。测试覆盖 classic/enhanced checksum、commander 写/读、responder
-read/response、PID 过滤、接收超时、wakeup 生成以及 configure/start/stop
-错误语义。
-
-首版诊断发现 `lin_response()` 在 ISR 中无法把 9 字节帧一次性写入 UART
-FIFO；驱动改为 TX-slot 中断逐字节入队，并在最后一字节后启用 TX-idle 完成
-检测。失败日志保留为 `build/hw-lin-run1.uart.log` 和
-`build/hw-lin-diag{1,2}.uart.log`，不计入验收。
-
-该 TTL 回环只验证 UART 实现的 LIN 帧状态机，不验证板载 12 V LIN 收发器、
-总线电气特性或外部 LIN 节点。板载 J9-5 LIN 接口需要在另一项 fixture 中
-启用 `lin-transceiver-gpio`、PA13/PA24 控制及 `rx-header-echo` 后单独验收。
-自动波特率同步和 bus conflict detection 当前明确不支持。
 
 ### 模拟前端回环接线
 
@@ -643,6 +729,35 @@ block 在本次启动中配置过任何输出（含 0%）、参考或 fault 输�
 被重装。被测周期必须小于 `2^28 / pwm_get_cycles_per_sec()`，不支持区分多个回绕。
 0.5/1/2 ms 的测试不覆盖高速捕获、长时间屏蔽 IRQ 或硬件无 FIFO 时的覆盖丢样。
 互补输出、死区、fault、参考输出以及外部示波器测量仍需独立验收。
+
+### LIN UART 双节点接线与结果
+
+`lin` profile 使用标准 Zephyr `lin` API，将 UART1 和 UART2 分别实例化为
+commander 与 responder，并在 TTL 侧交叉接线：
+
+| UART1 信号 | 连接到 | UART2 信号 |
+|---|---|---|
+| PB07 / TX，P1-5 | ↔ | PB09 / RX，P1-10 |
+| PB06 / RX，P1-3 | ↔ | PB08 / TX，P1-8 |
+
+两板同一块 EVK，因此再连接任一 GND，例如 P1-30 或 P1-34。不得连接 3.3 V。
+固件在发送 break 时临时将 PB07/PB08 切为 GPIO，随后恢复 UART mux。该测试覆盖
+classic/enhanced checksum、commander 写/读、responder read/response、PID 过滤、
+接收超时、wakeup 生成以及 configure/start/stop 错误语义。
+
+2026-11-04 正式固件在烧录后两次独立复位均为 6/6 通过（每次 0.143 s），
+覆盖 commander 写/读、classic/enhanced checksum、responder read/response、
+PID 过滤、接收超时、wakeup 生成及 configure/start/stop 错误语义。首版诊断发现
+`lin_response()` 在 ISR 中无法把 9 字节帧一次性写入 UART FIFO；驱动改为
+TX-slot 中断逐字节入队，并在最后一字节后启用 TX-idle 完成检测。失败日志保留为
+`build/hw-lin-run1.uart.log` 和 `build/hw-lin-diag{1,2}.uart.log`，不计入验收。
+正式证据为 `build/hw-lin-final-build.log`、`build/hw-lin-final-flash.log`、
+`build/hw-lin-final-run{1,2}.uart.log` 和对应 `.reset.log`。
+
+该 TTL 回环只验证 UART 实现的 LIN 帧状态机，不验证板载 12 V LIN 收发器、
+总线电气特性或外部 LIN 节点。板载 J9-5 LIN 接口需要在另一项 fixture 中启用
+`lin-transceiver-gpio`、PA13/PA24 控制及 `rx-header-echo` 后单独验收。
+自动波特率同步和 bus conflict detection 当前明确不支持。
 
 ## QEI 数字回环
 
@@ -815,19 +930,28 @@ guest 设备节点已删除。
 suspend/resume，guest 中看到的 suspend 是虚拟端口状态。待其他硬件测试完成后，
 使用原生 Linux 主机或 Linux SBC 直接连接 J1 再继续，不能通过 WSL2、VMware
 或 USB/IP 结果声明 suspend、host resume 或 remote wakeup 通过。Power 测试及
-远程唤醒驱动改动继续作为未验收草稿。
+远程唤醒驱动改动继续作为未验收草稿，并保存在独立 stash 中。
 
 ## 暂缓的硬件验收
 
 以下草稿和待验证项不计入注册 profile，也不声明通过或失败。待具备对应设备后，
 再注册 Twister fixture、补充接线记录并执行烧录和独立复位。
 
-| 项目 | 草稿/待验证范围 | 暂缓原因与恢复条件 |
-|---|---|---|
-| RDC | `rdc.conf`、`rdc.overlay`、`src/rdc.c`；激励、I/Q ADC 流、ACC IRQ 和角度 | 用户当前没有与 PA28 激励同步的旋变信号模拟器；具备可提供 I/Q 反馈的 resolver simulator 后恢复 |
-| SEI SSI | `sei.conf`、`sei.overlay`、`src/sei.c`；1 Mbit/s SSI、帧解码和 SYNT 时间戳 | 缺少 SSI 编码器或协议模拟器；能提供固定 `0x536abc` 参考帧及时钟/DE 信号后恢复 |
-| 其他 SEI 协议 | Tamagawa、BiSS-C、EnDat、Nikon 等 consumer 及协议 fixture | 缺少对应编码器/主站模拟器和 CRC/时序验证条件；取得真实或可编程模拟器后恢复 |
-| USB suspend/wakeup | `usb_power` 草稿、peer 脚本和 FPR 改动 | 当前 WSL2 + Docker 通过 USB/IP/`vhci_hcd` 接入，不能传播物理 suspend/resume；迁移到原生 Linux 主机或 Linux SBC 后恢复 |
+这些草稿按功能分别保存在本地 stash，不污染当前工作树。恢复和检查时使用完整
+SHA，不要依赖会随 stash 增减而变化的 `stash@{n}`：
+
+```sh
+git stash list --format='%gd %H %gs'
+git stash show --include-untracked --stat <完整 SHA>
+git stash apply <完整 SHA>
+```
+
+| 项目 | 本地 stash（完整 SHA） | 草稿/待验证范围 | 暂缓原因与恢复条件 |
+|---|---|---|---|
+| SPI 扩展 | `50f03c27b1051175c401bde62f1bfe9dd226a2a9`<br>`wip: spi extended word sizes and CS coverage` | `spi.overlay`、`src/spi.c`；16/24/32-bit 同步、16/32-bit 异步 DMA、GPIO CS hold、native CS 和不支持位宽拒绝 | 仅完成 build-only；需要确认外部回环波形、native CS 引脚和异常位宽路径后进行上板验收 |
+| RDC | `ea832bda7b355fccca0dd707b84004299c588d54`<br>`wip: rdc resolver hardware fixture` | `rdc.conf`、`rdc.overlay`、`src/rdc.c`；激励、I/Q ADC 流、ACC IRQ 和角度 | 用户当前没有与 PA28 激励同步的旋变信号模拟器；具备可提供 I/Q 反馈的 resolver simulator 后恢复 |
+| SEI SSI 及其他协议 | `872680374c91ac9c8f8ab16c75a0dc0a13fafe77`<br>`wip: sei encoder protocol fixtures` | `sei*.conf`、`sei.overlay`、`src/sei.c`、`src/sei_protocol.c`；SSI、Tamagawa、BiSS-C、EnDat、Nikon consumer 和协议 fixture | 缺少对应编码器或协议模拟器及 CRC/时序验证条件；取得真实或可编程模拟器后恢复 |
+| USB suspend/wakeup | `7037b39b2edbb3488b0d3b41f0773f29f2f85074`<br>`wip: usb suspend and remote wake acceptance` | `usb_power` 草稿、peer 脚本和 FPR 驱动改动 | 当前 WSL2 + Docker 通过 USB/IP/`vhci_hcd` 接入，不能传播物理 suspend/resume；迁移到原生 Linux 主机或 Linux SBC 后恢复 |
 
 ## Flash、cache 与验收边界
 
@@ -860,20 +984,21 @@ OTP 驱动按项目约束永久只读，只读取 UUID words 88–91 两次，�
 
 | 模块 | 本轮尚未覆盖的硬件验收 |
 |---|---|
-| clock/pinctrl/GPIO/counter | 全时钟树、PIOC/PY、上拉/开漏电气特性、独立基准频率、counter top/wrap |
-| UART | CTS 阻塞/背压、双 buffer 连续 RX、RS-485 DE 时序及地址匹配 |
-| LIN | 板载 LIN 收发器、J9-5 外部 peer、真实总线边沿/唤醒脉冲时序、自动同步及冲突检测 |
-| I2C/SMBus | 10-bit、zero-count response、block process call、timeout/故障注入、总线恢复及重复 START 电气时序 |
+| clock/pinctrl/GPIO/counter | 全时钟树、PIOC/PY、上拉/开漏电气特性、独立基准频率、GPTMR input capture/output compare 与其他通道 |
+| UART | 外部 RS-485 收发器电气、总线冲突和远端 DE/RTS 时序仍需独立验收 |
+| LIN | 板载 LIN 收发器、J9-5 外部 peer、真实总线边沿/唤醒脉冲时序、自动同步及冲突检测仍需独立验收 |
+| I2C/SMBus | timeout/故障注入、外部器件兼容及重复 START 电气时序 |
+| SPI | 16/24/32-bit 同步、16/32-bit DMA、native CS、hold-on-CS、异常位宽拒绝、半双工/双四线、外部从设备时序及电气测量仍待验收；扩展草稿已 stash |
 | DMA | 错误 IRQ、暂停边界竞争、压力/并发；循环完成 IRQ 密集度也需记录 |
 | Watchdog | SoC reset、窗口模式、睡眠/调试暂停、挂起 IRQ 与停用的竞争、其他实例 |
 | CAN/PTPC | 实体收发器和总线、bus-off、共享 MRAM 并发；TSU 与外部绝对时间关联、PPS 引脚电气/占空比、PPS 控制值 5–14 及最大值 IRQ 压力 |
 | MBX/GPIOM | 跨核通信/FIFO、跨控制器访问、锁定持久性 |
 | QEO/MMC/PLB/SYNT/TRGM | QEO 外部 PWM/ABZ 及波形、闭环 MMC、独立 predictor 停止、PLB filter、SYNT comparator/debug-stop、外部电机路由和中断 |
-| RDC/SEI | RDC resolver simulator 和 SEI SSI/Tamagawa/BiSS-C/EnDat/Nikon 编码器 fixture；当前由用户暂缓，不能以 build-only 记为硬件通过 |
+| RDC/SEI | RDC resolver simulator 和 SEI SSI/Tamagawa/BiSS-C/EnDat/Nikon 编码器 fixture；草稿已按功能 stash，当前由用户暂缓，不能以 build-only 记为硬件通过 |
 | SDP/RNG/CRC/TSNS | cache/并发/故障注入压力、随机源统计质量、CRC 多项式矩阵、温度校准 |
 | OPAMP/ACMP | OPAMP1、其他拓扑和增益矩阵、校准精度/噪声；ACMP0、双通道并发、阈值精度、滤波/迟滞、反相、输出脚及传播延迟 |
 | QEIV2 | sincos、UVW 外部高速/非法相态/滤波、PD/UD 外部高速/毛刺/滤波、外部 Z 脉宽/时序、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
-| USB | 其他类、并发/STALL/取消/在途 reset、suspend/resume、remote wakeup、多层/非 TT Host Hub、非 boot HID、等时传输/PM、VBUS/ID/OC/PWR 策略及运行时 OTG 切换 |
+| USB | 其他类、并发/STALL/取消/在途 reset、suspend/resume、remote wakeup、多层/非 TT Host Hub、非 boot HID、等时传输/PM、VBUS/ID/OC/PWR 策略及运行时 OTG 切换；suspend/wakeup 草稿已 stash |
 | PWM | 其他输出/捕获实例组合、绝对频率精度、互补/死区/fault、参考输出、超长周期及高速/长 IRQ 延迟下的丢样 |
 | flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 的 program/lock/region 在当前范围明确不实现 |
 
