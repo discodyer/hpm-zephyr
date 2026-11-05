@@ -610,11 +610,6 @@ static bool hpm_spi_async_dma_supported(const struct device *dev, const struct s
 				  ((rx_bufs->count != 0U) && (rx_bufs->buffers == NULL)))) {
 		return false;
 	}
-	if ((((tx_bufs != NULL) && (tx_bufs->count > 1U)) ||
-	     ((rx_bufs != NULL) && (rx_bufs->count > 1U))) &&
-	    (word_size != 8U)) {
-		return false;
-	}
 	if ((tx_bufs != NULL) && (tx_bufs->count != 0U) &&
 	    (config->tx_dma_channel == HPM_SPI_DMA_NO_CHANNEL)) {
 		return false;
@@ -903,7 +898,12 @@ static int hpm_spi_release(const struct device *dev, const struct spi_config *sp
 {
 	struct hpm_spi_data *data = dev->data;
 
-	ARG_UNUSED(spi_cfg);
+	/*
+	 * spi_release() may be called after the caller's transfer config has
+	 * gone out of scope.  Use the explicitly supplied config so forced CS
+	 * deassertion never dereferences a stale context pointer.
+	 */
+	data->ctx.config = spi_cfg;
 
 	spi_context_unlock_unconditionally(&data->ctx);
 
