@@ -393,6 +393,115 @@ ZTEST(hpm_i2c_pair, test_smbus_zero_count_response)
 	zassert_equal(received[0], 0x3cU);
 }
 
+ZTEST(hpm_i2c_pair, test_7bit_address_nack_and_recovery)
+{
+	static const uint8_t expected[] = {0x12, 0x34, 0x56};
+	uint8_t command = 0x30;
+	uint8_t tx[] = {command, 0x5a, 0xa5};
+	uint8_t rx[sizeof(expected)] = {0};
+	int ret;
+
+	select_target(0x52, 0U);
+	ret = i2c_write(controller, tx, sizeof(tx), 0x53);
+	zassert_equal(ret, -EIO, "7-bit DMA address NACK returned %d", ret);
+	zassert_equal(atomic_get(&write_requests), 0);
+	zassert_equal(atomic_get(&received_bytes), 0);
+	zassert_equal(atomic_get(&stop_events), 0);
+
+	ret = i2c_write(controller, tx, sizeof(tx), 0x52);
+	zassert_ok(ret, "7-bit write after address NACK returned %d", ret);
+	zassert_mem_equal(memory + command, tx + 1, sizeof(tx) - 1U);
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+	zassert_equal(atomic_get(&write_requests), 1);
+	zassert_equal(atomic_get(&received_bytes), sizeof(tx));
+	zassert_equal(atomic_get(&stop_events), 1);
+
+	select_target(0x52, 0U);
+	memcpy(memory + command, expected, sizeof(expected));
+	ret = i2c_write_read(controller, 0x53, &command, sizeof(command), rx, sizeof(rx));
+	zassert_equal(ret, -EIO, "7-bit restart address NACK returned %d", ret);
+	zassert_equal(atomic_get(&write_requests), 0);
+	zassert_equal(atomic_get(&received_bytes), 0);
+	zassert_equal(atomic_get(&read_requests), 0);
+	zassert_equal(atomic_get(&stop_events), 0);
+
+	ret = i2c_write_read(controller, 0x52, &command, sizeof(command), rx, sizeof(rx));
+	zassert_ok(ret, "7-bit restart after address NACK returned %d", ret);
+	zassert_mem_equal(rx, expected, sizeof(expected));
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+	zassert_equal(atomic_get(&write_requests), 1);
+	zassert_equal(atomic_get(&received_bytes), 1);
+	zassert_equal(atomic_get(&read_requests), 1);
+	zassert_equal(atomic_get(&stop_events), 1);
+}
+
+ZTEST(hpm_i2c_pair, test_10bit_address_nack_and_recovery)
+{
+	static const uint8_t expected[] = {0x81, 0x72, 0x63, 0x54};
+	uint8_t tx[] = {0x40, 0xa5, 0x5a};
+	uint8_t rx[sizeof(expected)] = {0};
+	struct i2c_msg write_msg = {
+		.buf = tx,
+		.len = sizeof(tx),
+		.flags = I2C_MSG_ADDR_10_BITS | I2C_MSG_STOP,
+	};
+	struct i2c_msg read_msg = {
+		.buf = rx,
+		.len = sizeof(rx),
+		.flags = I2C_MSG_ADDR_10_BITS | I2C_MSG_READ | I2C_MSG_STOP,
+	};
+	int ret;
+
+	select_target(0x155, I2C_TARGET_FLAGS_ADDR_10_BITS);
+	ret = i2c_transfer(controller, &write_msg, 1U, 0x156);
+	zassert_equal(ret, -EIO, "10-bit write address NACK returned %d", ret);
+	zassert_equal(atomic_get(&write_requests), 0);
+	zassert_equal(atomic_get(&received_bytes), 0);
+	zassert_equal(atomic_get(&stop_events), 0);
+
+	ret = i2c_transfer(controller, &write_msg, 1U, 0x155);
+	zassert_ok(ret, "10-bit write after address NACK returned %d", ret);
+	zassert_mem_equal(memory + tx[0], tx + 1, sizeof(tx) - 1U);
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+
+	select_target(0x155, I2C_TARGET_FLAGS_ADDR_10_BITS);
+	ret = i2c_transfer(controller, &read_msg, 1U, 0x156);
+	zassert_equal(ret, -EIO, "10-bit read address NACK returned %d", ret);
+	zassert_equal(atomic_get(&read_requests), 0);
+	zassert_equal(atomic_get(&stop_events), 0);
+
+	cursor = 0x60;
+	memcpy(memory + cursor, expected, sizeof(expected));
+	ret = i2c_transfer(controller, &read_msg, 1U, 0x155);
+	zassert_ok(ret, "10-bit read after address NACK returned %d", ret);
+	zassert_mem_equal(rx, expected, sizeof(expected));
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+	zassert_equal(atomic_get(&stop_events), 1);
+}
+
+ZTEST(hpm_i2c_pair, test_smbus_quick_address_nack_and_recovery)
+{
+	const struct device *smbus = DEVICE_DT_GET(DT_NODELABEL(smbus0));
+	int ret;
+
+	zassert_true(device_is_ready(smbus));
+	zassert_ok(smbus_configure(smbus, SMBUS_MODE_CONTROLLER));
+
+	select_target(0x52, 0U);
+	ret = smbus_quick(smbus, 0x53, SMBUS_MSG_WRITE);
+	zassert_equal(ret, -EIO, "SMBus quick address NACK returned %d", ret);
+	zassert_equal(atomic_get(&write_requests), 0);
+	zassert_equal(atomic_get(&received_bytes), 0);
+	zassert_equal(atomic_get(&stop_events), 0);
+
+	ret = smbus_quick(smbus, 0x52, SMBUS_MSG_WRITE);
+	zassert_ok(ret, "SMBus quick after address NACK returned %d", ret);
+	zassert_ok(k_sem_take(&stopped, K_SECONDS(1)));
+	zassert_equal(atomic_get(&write_requests), 1);
+	zassert_equal(atomic_get(&received_bytes), 0);
+	zassert_equal(atomic_get(&stop_events), 1);
+}
+
 ZTEST(hpm_i2c_pair, test_smbus_block_process_call)
 {
 	const struct device *smbus = DEVICE_DT_GET(DT_NODELABEL(smbus0));
