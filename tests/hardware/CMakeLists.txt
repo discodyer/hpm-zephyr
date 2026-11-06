@@ -10,8 +10,8 @@ endif()
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(hpm5361_hardware_acceptance)
 target_sources(app PRIVATE src/main.c)
-foreach(profile core counter_capture dma flash watchdog can ptpc motor gpio uart lin i2c spi analog
-		front_end pwm qei)
+foreach(profile core counter_capture reset_hwinfo dma flash watchdog can ptpc motor gpio uart lin i2c spi
+		analog front_end pwm qei)
   string(TOUPPER ${profile} symbol)
   target_sources_ifdef(CONFIG_HPM_TEST_${symbol} app PRIVATE src/${profile}.c)
 endforeach()

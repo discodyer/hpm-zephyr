@@ -19,7 +19,7 @@ modules/hpm_sdk/             HPM SDK integration glue
 
 | Board | Target | Console | Build status | Hardware status |
 |---|---|---|---|---|
-| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and 32 hardware configurations (150 tests) pass |
+| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and 33 hardware configurations (153 tests) pass |
 | HPM5361ICB | `hpm5361icb/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | Not validated |
 
 Both targets currently provide interrupt routing, machine timer, clock/PLL and
@@ -41,15 +41,15 @@ and initialization execute from RAM while XIP is active.
 Build-only validation is complete for both boards, including the Twister
 smoke test. EVK RevD XIP startup, basic polling UART echo/heartbeat,
 OpenOCD flash/verify and GDB breakpoints/single-step passed. The hardware
-acceptance profiles passed 150 tests across 32 configurations: `core` (10/10),
+acceptance profiles passed 153 tests across 33 configurations: `core` (10/10),
 `counter_capture` (7/7), `dma` (2/2), `crypto` (6/6),
 `flash` (1/1), `watchdog` (4/4), `can` (2/2), `ptpc` (4/4), `motor` (5/5),
 `gpio` (4/4), `uart` (6/6), `uart_address` (1/1), `uart_rs485` (1/1),
 `lin` (6/6), `i2c`/`i2c_fast`/`i2c_fast_plus` (16/16 each), `spi` (6/6), `analog` (6/6),
 `front_end` (3/3), `pwm` (3/3), `qei` (5/5), `qei_pd` (4/4), `qei_ud` (4/4),
 `qei_single` (3/3), `qei_uvw` (3/3), `usb_device` (1/1), `usb_endpoints`
-(1/1), `usb_endpoints_fs` (1/1), `usb_host` (1/1), `usb_host_hub` (1/1) and
-`usb_host_hid_report` (1/1).
+(1/1), `usb_endpoints_fs` (1/1), `usb_host` (1/1), `usb_host_hub` (1/1),
+`usb_host_hid_report` (1/1) and `reset_hwinfo` (3/3).
 Capture coverage includes rising, falling and both-edge continuous/single-shot
 GPTMR0 input capture with PB07-to-PB06 loopback. Coverage also includes
 internal CAN/TSU loopback, motor-block math and routing,
@@ -161,6 +161,8 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | OPAMP | 2 | `opamp` | OPAMP0 follower hardware-tested | Four DAC0 levels passed ADC0.IN15 follower readback; other modes, gain settings, OPAMP1 and calibrated accuracy remain unvalidated; no differential mode |
 | GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Alarm, top/reload flags, 32-bit wrap and GPTMR0_CAPT_0 input capture hardware-tested | GPTMR alarm IRQ, clock recovery, periodic top callback, `DONT_RESET`/`RESET_WHEN_LATE`, active-alarm rejection, exact `set_value` and 32-bit wrap across `UINT32_MAX` passed twice after independent resets. Rising, falling and both-edge continuous/single-shot capture passed on GPTMR0 channel 0 twice. The hardware has one CAPF flag and no event FIFO, so multiple both-edge transitions coalesced before the ISR cannot be reconstructed. Output compare, other capture channels/instances and 64-bit capture remain unvalidated |
 | Watchdog | EWDG0-1, PEWDG | `watchdog` | EWDG0 IRQ-only paths hardware-tested | Thread/ISR feeding, delayed feeding, repeated timeout, disable/reinstall and 500 ms to 2500 ms reconfiguration passed; SoC reset, window mode and sleep/debug pause remain unvalidated; CPU-core-only reset and multistage watchdog are unsupported |
+| Reset controller | SYSCTL SoC/CPU0 | `reset` | Status and argument validation hardware-tested | `reset_status()` maps both SYSCTL HOLD bits, and invalid IDs or a null output are rejected. Valid assert/deassert/toggle targets are intentionally not executed because either domain immediately reboots the running core; no vendor-private reset API is exposed |
+| HWINFO | PPOR + OTP UUID | `hwinfo` | Device ID and software reset cause hardware-tested | Reads the factory 128-bit UUID without enabling or programming OTP, translates PPOR hard-reset causes, and clears them through W1C. External RESETN is a global reset and does not populate PPOR, so the test explicitly generates a software reset; PIN and POR causes are not falsely reported |
 | RTC | None | N/A | Not applicable | HPM5300/HPM5361 has no independent RTC block; use a board-level external RTC if wall-clock time is required |
 | USB HS OTG | 1 | UDC/UHC | Device HS/FS and Host boot/report/keyboard-plus-hub paths hardware-tested | Zephyr UDC reuses the unmodified SDK qTD/qDHD engine; HS CDC enumeration, EP1-15 IN/OUT bulk traffic and the address-before-status path passed, as did forced FS. Zephyr UHC passed boot- and report-protocol wired-keyboard enumeration, HID control and one HS Single-TT hub with an LS keyboard. qHD/qTD storage is in HPM5361 fixed uncached DLM. Multi-level/non-TT hubs, non-boot HID, isochronous traffic, Host PM, suspend/resume/remote wakeup and runtime OTG role switching remain unvalidated; CherryUSB/TinyUSB are not adopted |
 | MBX | MBX0A/B | `mbox` | Core path hardware-tested | Bidirectional message ordering passed in the core profile; separate 4-word FIFO, signalling-only mode and cross-core shared-memory IPC remain unvalidated |
@@ -287,7 +289,8 @@ workspace to pass silently.
 
 The SoC DTSI describes the major HPM5361 instance set, including UART0-7,
 I2C0-3, SPI0-3, MCAN0-3, PWM0-1, ADC0-1, DAC0-1, ACMP, OPAMP0-1, GPTMR0-3,
-EWDG0-1, HDMA, USB0, GPIOA/B/X/Y, PGPIO, PUART, PTMR and PEWDG. Instances whose
+EWDG0-1, HDMA, USB0, GPIOA/B/X/Y, PGPIO, PUART, PTMR, PEWDG, SYSCTL,
+PPOR/hwinfo and OTP. Instances whose
 Zephyr drivers are not implemented yet remain disabled. Their bindings define
 the hardware contract but do not imply driver support. The DTS inventory is not
 yet complete for special-function blocks. HPM5300/HPM5361 has no independent
@@ -304,12 +307,12 @@ Peripheral hardware acceptance tests for HPM5300EVK are in
 Ztest profiles, wiring/fixture requirements, build/flash commands, detailed
 results and limits for the verified profiles listed above. Historical
 build-only regressions are recorded separately from hardware results. Against
-Zephyr `v4.5.0`, the latest full build-only regression rebuilt all 32 hardware
-configurations (150 tests), 17 historical EVK/ICB scenarios (26 configurations
+Zephyr `v4.5.0`, the latest full build-only regression rebuilt all 33 hardware
+configurations (153 tests), 17 historical EVK/ICB scenarios (26 configurations
 after platform filtering), 10 native-sim motor-math tests, and the bringup
 sample in both XIP and RAM modes. These checks did not repeat hardware
 acceptance. The latest hardware-profile build-only report is
-`build/twister-hardware-counter-capture-final/twister.json`. Compatibility
+`build/twister-hardware-reset-hwinfo/twister.json`. Compatibility
 scenarios use semicolon-separated configuration lists so the common
 `peripherals.conf` is not overwritten by a later `EXTRA_CONF_FILE` argument.
 The SPI extension is now integrated and its feature-scoped stash has been

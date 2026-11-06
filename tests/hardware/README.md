@@ -5,13 +5,13 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 30 个 profile 实现形成的 32 个测试配置：
-`core`、`counter_capture`、`dma`、`crypto`、`flash`、`watchdog`、`can`、`ptpc`、
+本轮已在 HPM5300EVK RevD 上验证 31 个 profile 实现形成的 33 个测试配置：
+`core`、`counter_capture`、`reset_hwinfo`、`dma`、`crypto`、`flash`、`watchdog`、`can`、`ptpc`、
 `motor`、`gpio`、`uart`、`uart_address`、`uart_rs485`、`lin`、`i2c`、
 `i2c_fast`、`i2c_fast_plus`、`spi`、
 `analog`、`front_end`、`pwm`、`qei`、`qei_pd`、`qei_ud`、`qei_single`、
 `qei_uvw`、`usb_device`、`usb_endpoints`、`usb_endpoints_fs`、`usb_host`、
-`usb_host_hub` 和 `usb_host_hid_report`，共 150 项测试。三个 I2C 配置各
+`usb_host_hub` 和 `usb_host_hid_report`，共 153 项测试。三个 I2C 配置各
 16/16，分别在 100 kHz、400 kHz 和 1 MHz 下通过；其余配置沿用各自记录中的
 上板验收结果。两个 endpoint 配置共用同一份
 测试源码。历史候选 profile 的 build-only 记录保留在下文，不代表这些候选已纳入
@@ -90,8 +90,23 @@ GPIO 输出；这与既有 GPIO/QEI 夹具的初始化方式不一致。测试�
 `build/hw-gptmr-capture-run1.uart.log` 保留但不计入验收。GPTMR 双边沿只有一个
 共享 CAPF 标志且没有事件 FIFO；若多个边沿在 ISR 执行前合并，驱动只能依据
 `CAPPOS`/`CAPNEG` 变化报告单个可恢复事件。其他捕获通道/实例、输出比较、
-64-bit 捕获和 IRQ 延迟压力仍未验证。当前 32 配置/150 项的 build-only 报告为
-`build/twister-hardware-counter-capture-final/twister.json`。
+64-bit 捕获和 IRQ 延迟压力仍未验证。
+
+2026-11-06 新增独立 `reset_hwinfo` profile，无需外部接线。三个用例分别验证
+SYSCTL SoC/CPU0 的 `reset_status()` 映射及参数拒绝、PPOR 提供的 128-bit OTP
+UUID 长度/前缀/重复性/非全 0/FF，以及 PPOR 软件复位的 cause 读取、重复读取和
+W1C 清除。手册中的外部 RESETN 属于全局复位，不属于 `PPOR.RESET_FLAG` 记录的
+硬复位来源，因此测试不会错误要求外部复位后 cause 非零；测试自身写入
+`SOFTWARE_RESET`，并用 `.noinit` 标记跨重启继续验收。有效 SYSCTL
+assert/deassert/toggle 会立即重启当前核心，故仅验证状态与非法参数，不执行这些
+破坏性路径。
+
+最终源码经 `west flash --openocd /usr/local/bin/openocd --verify` 烧录校验，
+两次独立复位均 3/3、0 fail/skip，均以 `PROJECT EXECUTION SUCCESSFUL` 结束。
+证据为 `build/hw-reset-hwinfo.{build,flash}.log`、
+`build/hw-reset-hwinfo-final-run{1,2}.{uart,reset}.log` 和
+`build/hw-reset-hwinfo-final-run{1,2}.capture.log`。当前 33 配置/153 项的
+build-only 报告为 `build/twister-hardware-reset-hwinfo/twister.json`。
 
 2026-10-29 已在 Zephyr v4.5.0 上重新执行七个无需接线的 profile：
 `core` 8/8、`dma` 2/2、`crypto` 6/6、`flash` 1/1、`watchdog` 4/4、
@@ -700,7 +715,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 30 个 profile 实现形成的 32 个已上板验收配置，具体范围及限制见前述运行记录。
+下表列出 31 个 profile 实现形成的 33 个已上板验收配置，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -709,6 +724,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 |---|---|---|---|
 | `core` | `hpm5300evk` | 无外接线 | GPTMR 20 ms alarm IRQ、时钟 off/on 恢复、2 ms top 周期 callback、`DONT_RESET`/`RESET_WHEN_LATE`、活跃 alarm 拒绝、精确 `set_value` 和跨 `UINT32_MAX` 回绕；RNG 自检/非重复数据/真实 ISR 非阻塞预算；CRC32 分段已知答案；TSNS 温度及阈值 IRQ；MBX A/B 双向各 32 字；OTP UUID 区重复只读；PTPC 比较 IRQ 与 TRGM 内部捕获 |
 | `counter_capture` | `hpm_gptmr_capture` | PB07 GPIO/P1-5 → PB06 GPTMR0_CAPT_0/P1-3；一根跳线，无需电源/地 | 参数及状态错误拒绝；rising/falling/both-edge continuous 与 single-shot；tick 区间、设备/通道/flags/callback 上下文、无重复回调、disable 后不再捕获；两次独立复位均 7/7 |
+| `reset_hwinfo` | `hpm5300evk` | 无外接线；测试内部触发一次 PPOR 软件复位 | SYSCTL SoC/CPU0 状态映射及非法参数；128-bit OTP UUID 长度/前缀/重复性/非全 0/FF；PPOR `RESET_SOFTWARE` 读取、稳定重复读取、W1C 清除；两次独立复位均 3/3，有效 SYSCTL assert/toggle 不执行 |
 | `dma` | `hpm5300evk` | 无 | 3×256 B 链式拷贝、前后 32 B 哨兵、完成 IRQ；单块循环 DMA 暂停后 IRQ 静止、恢复后继续、数据一致 |
 | `crypto` | `hpm5300evk` | 无 | 复用已知答案向量：AES-128/256 ECB/CBC/CTR、SHA-1/SHA-256/SM3、CRC32、SM4 ECB/CBC/CTR、CCM 加解密及错误 tag 拒绝 |
 | `gpio` | `hpm_gpio_loop` | PB04 → PB05，P1-31 ↔ P1-32；按 RevD 丝印核对 | 四项通过：电平及 raw set/clear/mask/toggle；上升/下降沿各 20 次，反向不触发；双边沿 20 次及 masked 写入 2 次边沿、同值无额外回调；停用时 20 次无回调、重装恢复，核 ISR/来源/次数 |

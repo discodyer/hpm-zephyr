@@ -16,6 +16,13 @@ config HPM_TEST_COUNTER_CAPTURE
 	  GPIO PB07 drives GPTMR0_CAPT_0 on PB06 with rising, falling,
 	  both-edge, continuous and single-shot cases.
 
+config HPM_TEST_RESET_HWINFO
+	bool "reset controller and hwinfo"
+	help
+	  Verify SYSCTL reset-domain status and argument validation together
+	  with the standard hwinfo device-ID and reset-cause APIs. The profile
+	  does not execute destructive reset-controller operations.
+
 config HPM_TEST_DMA
 	bool "dma"
 
