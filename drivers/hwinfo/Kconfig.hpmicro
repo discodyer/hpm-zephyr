@@ -1,0 +1,17 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_HWINFO := hpmicro,hpm-hwinfo
+
+config HWINFO_HPMICRO
+	bool "HPMicro hardware information driver"
+	default y
+	depends on HWINFO
+	depends on DT_HAS_HPMICRO_HPM_HWINFO_ENABLED
+	depends on HAS_HPMSDK_PPOR
+	depends on HAS_HPMSDK_OTP
+	select HWINFO_HAS_DRIVER
+	help
+	  Enable HPMicro hardware information reporting. PPOR supplies the
+	  reset-cause flags and the factory-programmed OTP UUID supplies the
+	  128-bit device identifier. The driver never programs or locks OTP.

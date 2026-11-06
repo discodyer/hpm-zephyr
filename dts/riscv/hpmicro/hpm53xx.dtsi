@@ -813,6 +813,13 @@
 			status = "disabled";
 		};
 
+		hwinfo: hwinfo@f4100000 {
+			compatible = "hpmicro,hpm-hwinfo";
+			reg = <0xf4100000 0x20>;
+			hpmicro,otp = <&otp>;
+			status = "okay";
+		};
+
 		keym: keym@f3054000 {
 			compatible = "hpmicro,hpm-keym";
 			reg = <0xf3054000 0x1000>;

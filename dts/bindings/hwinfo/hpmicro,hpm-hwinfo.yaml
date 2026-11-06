@@ -1,0 +1,22 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  HPMicro platform hardware information source.
+
+  The PPOR block records the reset causes and the OTP controller provides the
+  factory-programmed 128-bit UUID. This driver exposes both through the
+  standard Zephyr hwinfo API and never changes OTP contents.
+
+compatible: "hpmicro,hpm-hwinfo"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+  hpmicro,otp:
+    type: phandle
+    required: true
+    description: OTP controller that contains the factory UUID.
