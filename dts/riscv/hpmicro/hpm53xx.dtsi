@@ -6,6 +6,7 @@
 /dts-v1/;
 #include <zephyr/dt-bindings/gpio/gpio.h>
 #include <dt-bindings/comparator/hpmicro-acmp.h>
+#include <dt-bindings/reset/hpmicro-hpm5300-reset.h>
 #include <mem.h>
 #include <freq.h>
 
@@ -47,6 +48,13 @@
 			clock-frequency = <DT_FREQ_M(960)>;
 			reg-names = "clk";
 			#clock-cells = <3>;
+			status = "okay";
+		};
+
+		sysctl: system-controller@f4000000 {
+			compatible = "hpmicro,hpm-sysctl";
+			reg = <0xf4000000 0x40000>;
+			#reset-cells = <1>;
 			status = "okay";
 		};
 

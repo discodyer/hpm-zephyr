@@ -1,0 +1,15 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_SYSCTL := hpmicro,hpm-sysctl
+
+config RESET_HPMICRO
+	bool "HPMicro SYSCTL reset controller"
+	default y
+	depends on RESET
+	depends on DT_HAS_HPMICRO_HPM_SYSCTL_ENABLED
+	depends on HAS_HPMSDK_SYSCTL
+	help
+	  Enable the HPMicro SYSCTL reset controller. Only the SoC and CPU0
+	  reset domains exposed by SYSCTL are supported. Asserting either domain
+	  resets the running system and must not be used from ordinary tests.
