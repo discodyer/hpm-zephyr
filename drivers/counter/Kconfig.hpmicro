@@ -10,5 +10,7 @@ config COUNTER_HPMICRO
 	depends on DT_HAS_HPMICRO_HPM_GPTMR_ENABLED
 	depends on HAS_HPMSDK_GPTMR
 	select USE_HPMSDK_GPTMR
+	select COUNTER_SUPPORTS_CAPTURE
+	select PINCTRL if COUNTER_CAPTURE
 	help
 	  Enable the HPMicro general-purpose and power timer counter driver.
