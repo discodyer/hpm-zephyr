@@ -5,13 +5,13 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 29 个 profile 实现形成的 31 个测试配置：
-`core`、`dma`、`crypto`、`flash`、`watchdog`、`can`、`ptpc`、`motor`、`gpio`、
-`uart`、`uart_address`、`uart_rs485`、`lin`、`i2c`、`i2c_fast`、
-`i2c_fast_plus`、`spi`、
+本轮已在 HPM5300EVK RevD 上验证 30 个 profile 实现形成的 32 个测试配置：
+`core`、`counter_capture`、`dma`、`crypto`、`flash`、`watchdog`、`can`、`ptpc`、
+`motor`、`gpio`、`uart`、`uart_address`、`uart_rs485`、`lin`、`i2c`、
+`i2c_fast`、`i2c_fast_plus`、`spi`、
 `analog`、`front_end`、`pwm`、`qei`、`qei_pd`、`qei_ud`、`qei_single`、
 `qei_uvw`、`usb_device`、`usb_endpoints`、`usb_endpoints_fs`、`usb_host`、
-`usb_host_hub` 和 `usb_host_hid_report`，共 143 项测试。三个 I2C 配置各
+`usb_host_hub` 和 `usb_host_hid_report`，共 150 项测试。三个 I2C 配置各
 16/16，分别在 100 kHz、400 kHz 和 1 MHz 下通过；其余配置沿用各自记录中的
 上板验收结果。两个 endpoint 配置共用同一份
 测试源码。历史候选 profile 的 build-only 记录保留在下文，不代表这些候选已纳入
@@ -68,6 +68,30 @@ wrap 测试将计数器置于 `UINT32_MAX` 前约 5 ms 并实测跨零。首轮�
 正式 UART/reset 为 `build/hw-core-counter-top-fix3-run{1,2}.{uart,reset}.log`。
 
 具体覆盖和限制见[硬件记录](../../../docs/agent/hardware-bringup.md#core-profile-hardware-result-2026-10-27)。
+
+2026-11-06 新增独立 `counter_capture` profile，使用 Zephyr 标准
+`counter_capture_configure()`、`counter_enable_capture()` 和
+`counter_disable_capture()` API。唯一跳线为 PB07/P1-5 GPIO 输出 →
+PB06/P1-3 GPTMR0_CAPT_0 输入，无需电源或地。七个用例覆盖参数/状态拒绝、
+rising/falling/both-edge continuous、rising/falling/both-edge single-shot、
+捕获 tick 区间、设备/通道/flags/callback 上下文、无重复回调以及禁用后不再捕获。
+
+首次上板仅 API 校验用例通过，6 个功能用例均等待 CAPF 超时。检查确认
+`hw_fixture` 没有驱动实例，`pinctrl-0` 不会自动应用，测试也未把 PB07 配置为
+GPIO 输出；这与既有 GPIO/QEI 夹具的初始化方式不一致。测试补充
+`pinctrl_apply_state()` 和 `gpio_pin_configure_dt(GPIO_OUTPUT_INACTIVE)` 后，
+最终源码经 `west flash --openocd /usr/local/bin/openocd --verify` 烧录校验，
+两次独立复位均为 7/7、0 fail/skip，每次 0.258 s，并均以
+`PROJECT EXECUTION SUCCESSFUL` 结束。
+
+构建/烧录证据为 `build/hw-gptmr-capture-final.{build,flash}.log`、
+`build/hw-gptmr-capture-twister-final.log`，UART/reset 证据为
+`build/hw-gptmr-capture-final-run{1,2}.{uart,reset}.log`；首轮 1/7 诊断日志
+`build/hw-gptmr-capture-run1.uart.log` 保留但不计入验收。GPTMR 双边沿只有一个
+共享 CAPF 标志且没有事件 FIFO；若多个边沿在 ISR 执行前合并，驱动只能依据
+`CAPPOS`/`CAPNEG` 变化报告单个可恢复事件。其他捕获通道/实例、输出比较、
+64-bit 捕获和 IRQ 延迟压力仍未验证。当前 32 配置/150 项的 build-only 报告为
+`build/twister-hardware-counter-capture-final/twister.json`。
 
 2026-10-29 已在 Zephyr v4.5.0 上重新执行七个无需接线的 profile：
 `core` 8/8、`dma` 2/2、`crypto` 6/6、`flash` 1/1、`watchdog` 4/4、
@@ -338,7 +362,7 @@ JSON 中合计 80 项测试，0 失败/错误，无编译器或 Twister 汇总�
 报告为 `build/twister-usb-host-hub-registered/twister.json`。
 
 截至该轮扩展，当时 26 个注册配置均已在 v4.5.0 上构建通过，共注册 81 项测试，
-均已通过硬件验收（81/81）；当前 31 个配置的后续结果以上文汇总为准。Host 验收
+均已通过硬件验收（81/81）；当前 32 个配置的后续结果以上文汇总为准。Host 验收
 仍需操作者按键；RDC、SEI 协议和 USB
 suspend/remote wakeup 验收现由用户暂缓，详见下文。PWM 接线可拆除，Host
 测试可保留 OTG 适配器和有线 boot keyboard。
@@ -624,7 +648,7 @@ Twister 记录位于 `build/twister-hardware-post-core/twister.log`，报告位�
 该历史记录基线为 Zephyr `f78c4deb4523`、SDK
 `ccc5ec467a047f3ea85cd2fa4565e91db7135a38`；当前 Zephyr 4.5.0 的重编译
 记录见工作区 `build/twister-zephyr-4.5.0-recheck-hardware/twister.json`。
-该历史矩阵包含尚未纳入提交的候选文件，不能用当前 31 个配置的矩阵直接复现。
+该历史矩阵包含尚未纳入提交的候选文件，不能用当前 32 个配置的矩阵直接复现。
 
 ## 构建与运行
 
@@ -676,7 +700,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 29 个 profile 实现形成的 31 个已上板验收配置，具体范围及限制见前述运行记录。
+下表列出 30 个 profile 实现形成的 32 个已上板验收配置，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -684,6 +708,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | Profile | fixture | 接线/设备 | 自动断言与输出 |
 |---|---|---|---|
 | `core` | `hpm5300evk` | 无外接线 | GPTMR 20 ms alarm IRQ、时钟 off/on 恢复、2 ms top 周期 callback、`DONT_RESET`/`RESET_WHEN_LATE`、活跃 alarm 拒绝、精确 `set_value` 和跨 `UINT32_MAX` 回绕；RNG 自检/非重复数据/真实 ISR 非阻塞预算；CRC32 分段已知答案；TSNS 温度及阈值 IRQ；MBX A/B 双向各 32 字；OTP UUID 区重复只读；PTPC 比较 IRQ 与 TRGM 内部捕获 |
+| `counter_capture` | `hpm_gptmr_capture` | PB07 GPIO/P1-5 → PB06 GPTMR0_CAPT_0/P1-3；一根跳线，无需电源/地 | 参数及状态错误拒绝；rising/falling/both-edge continuous 与 single-shot；tick 区间、设备/通道/flags/callback 上下文、无重复回调、disable 后不再捕获；两次独立复位均 7/7 |
 | `dma` | `hpm5300evk` | 无 | 3×256 B 链式拷贝、前后 32 B 哨兵、完成 IRQ；单块循环 DMA 暂停后 IRQ 静止、恢复后继续、数据一致 |
 | `crypto` | `hpm5300evk` | 无 | 复用已知答案向量：AES-128/256 ECB/CBC/CTR、SHA-1/SHA-256/SM3、CRC32、SM4 ECB/CBC/CTR、CCM 加解密及错误 tag 拒绝 |
 | `gpio` | `hpm_gpio_loop` | PB04 → PB05，P1-31 ↔ P1-32；按 RevD 丝印核对 | 四项通过：电平及 raw set/clear/mask/toggle；上升/下降沿各 20 次，反向不触发；双边沿 20 次及 masked 写入 2 次边沿、同值无额外回调；停用时 20 次无回调、重装恢复，核 ISR/来源/次数 |
@@ -1006,7 +1031,7 @@ OTP 驱动按项目约束永久只读，只读取 UUID words 88–91 两次，�
 
 | 模块 | 本轮尚未覆盖的硬件验收 |
 |---|---|
-| clock/pinctrl/GPIO/counter | 全时钟树、PIOC/PY、上拉/开漏电气特性、独立基准频率、GPTMR input capture/output compare 与其他通道 |
+| clock/pinctrl/GPIO/counter | 全时钟树、PIOC/PY、上拉/开漏电气特性、独立基准频率、GPTMR output compare、其他 capture 通道/实例、64-bit capture 和双边沿高延迟压力 |
 | UART | 外部 RS-485 收发器电气、总线冲突和远端 DE/RTS 时序仍需独立验收 |
 | LIN | 板载 LIN 收发器、J9-5 外部 peer、真实总线边沿/唤醒脉冲时序、自动同步及冲突检测仍需独立验收 |
 | I2C/SMBus | timeout/故障注入、外部器件兼容及重复 START 电气时序 |

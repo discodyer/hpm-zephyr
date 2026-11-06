@@ -17,6 +17,12 @@ tests:
       - DTC_OVERLAY_FILE=profiles/core.overlay
     harness_config:
       fixture: hpm5300evk
+  hpmicro.hardware.counter_capture:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/counter_capture.conf
+      - DTC_OVERLAY_FILE=profiles/counter_capture.overlay
+    harness_config:
+      fixture: hpm_gptmr_capture
   hpmicro.hardware.dma:
     extra_args:
       - EXTRA_CONF_FILE=profiles/dma.conf

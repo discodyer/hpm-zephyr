@@ -19,7 +19,7 @@ modules/hpm_sdk/             HPM SDK integration glue
 
 | Board | Target | Console | Build status | Hardware status |
 |---|---|---|---|---|
-| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and 31 hardware configurations (143 tests) pass |
+| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and 32 hardware configurations (150 tests) pass |
 | HPM5361ICB | `hpm5361icb/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | Not validated |
 
 Both targets currently provide interrupt routing, machine timer, clock/PLL and
@@ -41,8 +41,8 @@ and initialization execute from RAM while XIP is active.
 Build-only validation is complete for both boards, including the Twister
 smoke test. EVK RevD XIP startup, basic polling UART echo/heartbeat,
 OpenOCD flash/verify and GDB breakpoints/single-step passed. The hardware
-acceptance profiles passed 143 tests across 31 configurations: `core` (10/10),
-`dma` (2/2), `crypto` (6/6),
+acceptance profiles passed 150 tests across 32 configurations: `core` (10/10),
+`counter_capture` (7/7), `dma` (2/2), `crypto` (6/6),
 `flash` (1/1), `watchdog` (4/4), `can` (2/2), `ptpc` (4/4), `motor` (5/5),
 `gpio` (4/4), `uart` (6/6), `uart_address` (1/1), `uart_rs485` (1/1),
 `lin` (6/6), `i2c`/`i2c_fast`/`i2c_fast_plus` (16/16 each), `spi` (6/6), `analog` (6/6),
@@ -50,7 +50,9 @@ acceptance profiles passed 143 tests across 31 configurations: `core` (10/10),
 `qei_single` (3/3), `qei_uvw` (3/3), `usb_device` (1/1), `usb_endpoints`
 (1/1), `usb_endpoints_fs` (1/1), `usb_host` (1/1), `usb_host_hub` (1/1) and
 `usb_host_hid_report` (1/1).
-Coverage includes internal CAN/TSU loopback, motor-block math and routing,
+Capture coverage includes rising, falling and both-edge continuous/single-shot
+GPTMR0 input capture with PB07-to-PB06 loopback. Coverage also includes
+internal CAN/TSU loopback, motor-block math and routing,
 GPIO edge interrupts, UART1 DMA/RTS/CTS,
 paired I2C DMA/repeated START/SMBus block/PEC transfers at 100 kHz, 400 kHz
 and 1 MHz, 10-bit transfers with repeated START, SCL held-low rejection,
@@ -157,7 +159,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | DAC12 | 2 | `dac` | DAC0 direct, step and buffer paths hardware-tested | 12-bit direct output, step endpoint and internal buffer measured through ADC0; hardware trigger, waveform timing and other instances remain unvalidated |
 | ACMP | 1 block, 2 comparators | `comparator` | ACMP1 edge/callback paths hardware-tested | Single/both edges, callback identity/count/context, disable/rearm and pending read/clear/rebind passed with the internal DAC threshold; ACMP0, filtering, hysteresis, precision, latency and concurrency remain unvalidated; live output level is unavailable |
 | OPAMP | 2 | `opamp` | OPAMP0 follower hardware-tested | Four DAC0 levels passed ADC0.IN15 follower readback; other modes, gain settings, OPAMP1 and calibrated accuracy remain unvalidated; no differential mode |
-| GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Alarm, top/reload flags and 32-bit wrap hardware-tested | GPTMR alarm IRQ, clock recovery, periodic top callback, `DONT_RESET`/`RESET_WHEN_LATE`, active-alarm rejection, exact `set_value` and 32-bit wrap across `UINT32_MAX` passed twice after independent resets. Other timer channels and input-capture/output-compare consumers remain unvalidated |
+| GPTMR / PTMR | GPTMR0-3, PTMR | `counter` | Alarm, top/reload flags, 32-bit wrap and GPTMR0_CAPT_0 input capture hardware-tested | GPTMR alarm IRQ, clock recovery, periodic top callback, `DONT_RESET`/`RESET_WHEN_LATE`, active-alarm rejection, exact `set_value` and 32-bit wrap across `UINT32_MAX` passed twice after independent resets. Rising, falling and both-edge continuous/single-shot capture passed on GPTMR0 channel 0 twice. The hardware has one CAPF flag and no event FIFO, so multiple both-edge transitions coalesced before the ISR cannot be reconstructed. Output compare, other capture channels/instances and 64-bit capture remain unvalidated |
 | Watchdog | EWDG0-1, PEWDG | `watchdog` | EWDG0 IRQ-only paths hardware-tested | Thread/ISR feeding, delayed feeding, repeated timeout, disable/reinstall and 500 ms to 2500 ms reconfiguration passed; SoC reset, window mode and sleep/debug pause remain unvalidated; CPU-core-only reset and multistage watchdog are unsupported |
 | RTC | None | N/A | Not applicable | HPM5300/HPM5361 has no independent RTC block; use a board-level external RTC if wall-clock time is required |
 | USB HS OTG | 1 | UDC/UHC | Device HS/FS and Host boot/report/keyboard-plus-hub paths hardware-tested | Zephyr UDC reuses the unmodified SDK qTD/qDHD engine; HS CDC enumeration, EP1-15 IN/OUT bulk traffic and the address-before-status path passed, as did forced FS. Zephyr UHC passed boot- and report-protocol wired-keyboard enumeration, HID control and one HS Single-TT hub with an LS keyboard. qHD/qTD storage is in HPM5361 fixed uncached DLM. Multi-level/non-TT hubs, non-boot HID, isochronous traffic, Host PM, suspend/resume/remote wakeup and runtime OTG role switching remain unvalidated; CherryUSB/TinyUSB are not adopted |
@@ -302,12 +304,12 @@ Peripheral hardware acceptance tests for HPM5300EVK are in
 Ztest profiles, wiring/fixture requirements, build/flash commands, detailed
 results and limits for the verified profiles listed above. Historical
 build-only regressions are recorded separately from hardware results. Against
-Zephyr `v4.5.0`, the latest full build-only regression rebuilt all 31 hardware
-configurations (143 tests), 17 historical EVK/ICB scenarios (26 configurations
+Zephyr `v4.5.0`, the latest full build-only regression rebuilt all 32 hardware
+configurations (150 tests), 17 historical EVK/ICB scenarios (26 configurations
 after platform filtering), 10 native-sim motor-math tests, and the bringup
 sample in both XIP and RAM modes. These checks did not repeat hardware
 acceptance. The latest hardware-profile build-only report is
-`build/twister-hardware-spi-extended-final/twister.json`. Compatibility
+`build/twister-hardware-counter-capture-final/twister.json`. Compatibility
 scenarios use semicolon-separated configuration lists so the common
 `peripherals.conf` is not overwritten by a later `EXTRA_CONF_FILE` argument.
 The SPI extension is now integrated and its feature-scoped stash has been

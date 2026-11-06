@@ -1,0 +1,32 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/ {
+	hw_fixture: hardware-test {
+		compatible = "hpmicro,hardware-test";
+		pinctrl-0 = <&pb07_gpio_b_07>;
+		pinctrl-names = "default";
+		out-gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>;
+	};
+};
+
+&gptmr0 {
+	status = "okay";
+	pinctrl-0 = <&pb06_gptmr0_capt_0>;
+	pinctrl-names = "default";
+};
+
+&gpiob {
+	status = "okay";
+};
+
+&pb06_gptmr0_capt_0 {
+	group0 {
+		input-enable;
+	};
+};
+
+&pb07_gpio_b_07 {
+	group0 {
+		input-enable;
+	};
+};

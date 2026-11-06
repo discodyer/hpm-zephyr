@@ -9,6 +9,13 @@ choice HPM_TEST_PROFILE
 config HPM_TEST_CORE
 	bool "core"
 
+config HPM_TEST_COUNTER_CAPTURE
+	bool "GPTMR input capture"
+	help
+	  Verify the standard counter capture API using GPTMR0 channel 0.
+	  GPIO PB07 drives GPTMR0_CAPT_0 on PB06 with rising, falling,
+	  both-edge, continuous and single-shot cases.
+
 config HPM_TEST_DMA
 	bool "dma"
 
