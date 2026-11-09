@@ -1,0 +1,33 @@
+/*
+ * Copyright (c) 2026 The HPM Zephyr Module Contributors
+ * Copyright (c) 2026 Cody Gu <gujiaqi@iscas.ac.cn>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <dt-bindings/power/hpmicro-hpm5300-power.h>
+
+/ {
+	power_domain_test: hpm-power-domain {
+		compatible = "hpmicro,hpm-power-domain", "power-domain";
+		hpmicro,controller = <&sysctl>;
+		hpmicro,resource-id = <HPMICRO_POWER_DOMAIN_CRC0>;
+		#power-domain-cells = <0>;
+		zephyr,pm-device-runtime-auto;
+	};
+
+	power_domain_test_consumer_a: power-domain-test-consumer-a {
+		compatible = "hpmicro,power-domain-test-consumer";
+		power-domains = <&power_domain_test>;
+		zephyr,pm-device-runtime-auto;
+	};
+
+	power_domain_test_consumer_b: power-domain-test-consumer-b {
+		compatible = "hpmicro,power-domain-test-consumer";
+		power-domains = <&power_domain_test>;
+		zephyr,pm-device-runtime-auto;
+	};
+};
+
+&crc0 {
+	status = "okay";
+};

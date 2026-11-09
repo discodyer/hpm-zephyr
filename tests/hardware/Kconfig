@@ -23,6 +23,14 @@ config HPM_TEST_RESET_HWINFO
 	  with the standard hwinfo device-ID and reset-cause APIs. The profile
 	  does not execute destructive reset-controller operations.
 
+config HPM_TEST_POWER_DOMAIN
+	bool "power domain"
+	help
+	  Verify the standard device power-domain and runtime-PM APIs using
+	  CRC0 as a recoverable SYSCTL resource. Two test consumers validate
+	  child notifications, reference counting, state transitions and
+	  force-on/force-off readback without external wiring.
+
 config HPM_TEST_DMA
 	bool "dma"
 

@@ -29,6 +29,12 @@ tests:
       - DTC_OVERLAY_FILE=profiles/reset_hwinfo.overlay
     harness_config:
       fixture: hpm5300evk
+  hpmicro.hardware.power_domain:
+    extra_args:
+      - EXTRA_CONF_FILE=profiles/power_domain.conf
+      - DTC_OVERLAY_FILE=profiles/power_domain.overlay
+    harness_config:
+      fixture: hpm5300evk
   hpmicro.hardware.dma:
     extra_args:
       - EXTRA_CONF_FILE=profiles/dma.conf

@@ -1,0 +1,9 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# Copyright (c) 2026 Cody Gu <gujiaqi@iscas.ac.cn>
+# SPDX-License-Identifier: Apache-2.0
+
+description: HPMicro power-domain API test consumer.
+
+compatible: "hpmicro,power-domain-test-consumer"
+
+include: base.yaml
