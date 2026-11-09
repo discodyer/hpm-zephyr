@@ -22,7 +22,15 @@
 #include <hpm_common.h>
 #include <hpm_romapi.h>
 
-#define HPM_FLASH_WRITE_CHUNK 128U
+#define HPM_FLASH_WRITE_CHUNK       128U
+#define HPM_FLASH_CMD_READ_ID       0x9fU
+#define HPM_FLASH_CMD_READ_SFDP     0x5aU
+#define HPM_FLASH_READ_ID_LEN       3U
+#define HPM_FLASH_SFDP_DUMMY_CYCLES 8U
+#define HPM_FLASH_SFDP_IO_SIZE      32U
+#define HPM_FLASH_SFDP_ADDR_BITS    24U
+#define HPM_FLASH_SFDP_SIZE         (1U << HPM_FLASH_SFDP_ADDR_BITS)
+#define HPM_FLASH_XPI_SEQ_IDX       xpi_std_nor_seq_idx_page_program
 
 #define HPM_FLASH_NODE(n) DT_INST_CHILD_BY_UNIT_ADDR_INT(n, 2147483648)
 
@@ -232,6 +240,113 @@ static int hpm_flash_get_size(const struct device *dev, uint64_t *size)
 	return 0;
 }
 
+#if defined(CONFIG_FLASH_JESD216_API)
+static hpm_stat_t hpm_flash_xpi_read(const struct device *dev, uint8_t command, bool addressed,
+				     uint32_t address, void *data, size_t size)
+{
+	const struct hpm_flash_config *config = dev->config;
+	struct hpm_flash_data *dev_data = dev->data;
+	xpi_instr_seq_t sequence = {0};
+	xpi_instr_seq_t saved;
+	xpi_xfer_ctx_t transfer = {
+		.addr = address,
+		.channel = xpi_xfer_channel_auto,
+		.cmd_type = xpi_apb_xfer_type_read,
+		.seq_idx = HPM_FLASH_XPI_SEQ_IDX,
+		.seq_num = 1U,
+		.buf = data,
+		.xfer_size = size,
+	};
+	uint16_t *phase = (uint16_t *)sequence.entry;
+	size_t phase_index = 0U;
+	hpm_stat_t restore_status;
+	hpm_stat_t status;
+	k_spinlock_key_t key;
+
+	phase[phase_index++] = SUB_INSTR(XPI_PHASE_CMD_SDR, XPI_1PAD, command);
+	if (addressed) {
+		phase[phase_index++] =
+			SUB_INSTR(XPI_PHASE_RADDR_SDR, XPI_1PAD, HPM_FLASH_SFDP_ADDR_BITS);
+		phase[phase_index++] =
+			SUB_INSTR(XPI_PHASE_DUMMY_SDR, XPI_1PAD, HPM_FLASH_SFDP_DUMMY_CYCLES);
+	}
+	phase[phase_index] = SUB_INSTR(XPI_PHASE_READ_SDR, XPI_1PAD, 4U);
+
+	key = k_spin_lock(&dev_data->lock);
+	saved = dev_data->nor_cfg.instr_set[HPM_FLASH_XPI_SEQ_IDX];
+	status = ROM_API_TABLE_ROOT->xpi_driver_if->update_instr_table(config->xpi, sequence.entry,
+								       HPM_FLASH_XPI_SEQ_IDX, 1U);
+	if (status == status_success) {
+		status = ROM_API_TABLE_ROOT->xpi_driver_if->transfer_blocking(config->xpi,
+									      &transfer);
+	}
+	restore_status = ROM_API_TABLE_ROOT->xpi_driver_if->update_instr_table(
+		config->xpi, saved.entry, HPM_FLASH_XPI_SEQ_IDX, 1U);
+	fencei();
+	k_spin_unlock(&dev_data->lock, key);
+
+	if (status != status_success) {
+		return status;
+	}
+
+	return restore_status;
+}
+
+static int hpm_flash_read_jedec_id(const struct device *dev, uint8_t *id)
+{
+	uint32_t id_data = 0U;
+	hpm_stat_t status;
+
+	if (id == NULL) {
+		return -EINVAL;
+	}
+
+	status = hpm_flash_xpi_read(dev, HPM_FLASH_CMD_READ_ID, false, 0U, &id_data,
+				    HPM_FLASH_READ_ID_LEN);
+	if (status != status_success) {
+		return hpm_flash_status_to_errno(status);
+	}
+
+	memcpy(id, &id_data, HPM_FLASH_READ_ID_LEN);
+
+	return 0;
+}
+
+static int hpm_flash_sfdp_read(const struct device *dev, off_t offset, void *data, size_t size)
+{
+	uint32_t buffer[HPM_FLASH_SFDP_IO_SIZE / sizeof(uint32_t)];
+	uint8_t *destination = data;
+	uint64_t end;
+
+	if (size == 0U) {
+		return 0;
+	}
+
+	end = (uint64_t)offset + size;
+	if ((data == NULL) || (offset < 0) || (end > HPM_FLASH_SFDP_SIZE)) {
+		return -EINVAL;
+	}
+
+	while (size > 0U) {
+		size_t chunk_size = MIN(size, sizeof(buffer));
+		hpm_stat_t status;
+
+		status = hpm_flash_xpi_read(dev, HPM_FLASH_CMD_READ_SFDP, true, (uint32_t)offset,
+					    buffer, chunk_size);
+		if (status != status_success) {
+			return hpm_flash_status_to_errno(status);
+		}
+
+		memcpy(destination, buffer, chunk_size);
+		destination += chunk_size;
+		offset += chunk_size;
+		size -= chunk_size;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_FLASH_JESD216_API */
+
 BUILD_ASSERT(DT_PROP(HPM_FLASH_NODE(0), write_block_size) == sizeof(uint32_t),
 	     "HPM XPI ROM programming requires a 4-byte write block size");
 
@@ -319,6 +434,10 @@ static DEVICE_API(flash, hpm_flash_api) = {
 	.get_size = hpm_flash_get_size,
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
 	.page_layout = hpm_flash_page_layout,
+#endif
+#if defined(CONFIG_FLASH_JESD216_API)
+	.sfdp_read = hpm_flash_sfdp_read,
+	.read_jedec_id = hpm_flash_read_jedec_id,
 #endif
 };
 

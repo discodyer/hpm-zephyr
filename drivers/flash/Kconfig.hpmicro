@@ -11,6 +11,7 @@ config FLASH_HPMICRO
 	depends on HAS_HPMSDK_XPI
 	select FLASH_HAS_DRIVER_ENABLED
 	select FLASH_HAS_EXPLICIT_ERASE
+	select FLASH_JESD216
 	select FLASH_HAS_PAGE_LAYOUT
 	help
 	  Enable the HPMicro XPI NOR flash driver backed by the HPM SDK ROM APIs.
