@@ -16,14 +16,15 @@ Build from the workspace root:
    west build -b hpm5300evk/hpm5361 -d build/hpm5300evk-bringup-xip \
      hpm-zephyr/samples/bringup
 
-Use HPMicro's OpenOCD fork, which provides the ``hpm_xpi`` flash driver:
+Use the workspace-local ``openocd-zephyr`` backport, which provides the
+``hpm_xpi`` flash driver. ``west openocd-setup`` configures the runner paths:
 
 .. code-block:: sh
 
-   west flash -d build/hpm5300evk-bringup-xip \
-     --openocd /usr/local/bin/openocd --verify
-   west debug -d build/hpm5300evk-bringup-xip \
-     --openocd /usr/local/bin/openocd --no-load
+   west openocd-setup --check
+   west build -d build/hpm5300evk-bringup-xip --cmake-only
+   west flash -d build/hpm5300evk-bringup-xip --verify
+   west debug -d build/hpm5300evk-bringup-xip --no-load
 
 Flash first, then use ``--no-load`` to debug the programmed XIP image with its
 matching ELF. The local wrapper resets and halts on GDB attach so the XPI
@@ -35,7 +36,8 @@ To restart an already programmed EVK when hart examination fails:
 
 .. code-block:: sh
 
-   /usr/local/bin/openocd -s /usr/local/share/openocd/scripts \
+   .tools/openocd-hpm/bin/openocd \
+     -s .tools/openocd-hpm/share/openocd/scripts \
      -s hpm_sdk/boards/openocd \
      -f hpm-zephyr/boards/hpmicro/hpm5300evk/support/reset.cfg \
      -c 'adapter speed 500; init; hpm5300evk_reset; shutdown'

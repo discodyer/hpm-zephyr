@@ -5,13 +5,13 @@
 本应用对应工作区 `docs/agent/driver-review.md` 的硬件验收矩阵，面向
 `hpm5300evk/hpm5361`。各 profile 单独生成一个 Ztest 固件。优先调用 Zephyr 标准
 API；TRGM 和内部电机模块使用模块的 HPM 扩展 API，不引入 SDK middleware。
-本轮已在 HPM5300EVK RevD 上验证 31 个 profile 实现形成的 33 个测试配置：
-`core`、`counter_capture`、`reset_hwinfo`、`dma`、`crypto`、`flash`、`watchdog`、`can`、`ptpc`、
+本轮已在 HPM5300EVK RevD 上验证 32 个 profile 实现形成的 34 个测试配置：
+`core`、`counter_capture`、`reset_hwinfo`、`power_domain`、`dma`、`crypto`、`flash`、`watchdog`、`can`、`ptpc`、
 `motor`、`gpio`、`uart`、`uart_address`、`uart_rs485`、`lin`、`i2c`、
 `i2c_fast`、`i2c_fast_plus`、`spi`、
 `analog`、`front_end`、`pwm`、`qei`、`qei_pd`、`qei_ud`、`qei_single`、
 `qei_uvw`、`usb_device`、`usb_endpoints`、`usb_endpoints_fs`、`usb_host`、
-`usb_host_hub` 和 `usb_host_hid_report`，共 153 项测试。三个 I2C 配置各
+`usb_host_hub` 和 `usb_host_hid_report`，共 157 项测试。三个 I2C 配置各
 16/16，分别在 100 kHz、400 kHz 和 1 MHz 下通过；其余配置沿用各自记录中的
 上板验收结果。两个 endpoint 配置共用同一份
 测试源码。历史候选 profile 的 build-only 记录保留在下文，不代表这些候选已纳入
@@ -80,7 +80,7 @@ rising/falling/both-edge continuous、rising/falling/both-edge single-shot、
 `hw_fixture` 没有驱动实例，`pinctrl-0` 不会自动应用，测试也未把 PB07 配置为
 GPIO 输出；这与既有 GPIO/QEI 夹具的初始化方式不一致。测试补充
 `pinctrl_apply_state()` 和 `gpio_pin_configure_dt(GPIO_OUTPUT_INACTIVE)` 后，
-最终源码经 `west flash --openocd /usr/local/bin/openocd --verify` 烧录校验，
+最终源码经 `west flash --verify` 烧录校验，
 两次独立复位均为 7/7、0 fail/skip，每次 0.258 s，并均以
 `PROJECT EXECUTION SUCCESSFUL` 结束。
 
@@ -101,12 +101,41 @@ W1C 清除。手册中的外部 RESETN 属于全局复位，不属于 `PPOR.RESE
 assert/deassert/toggle 会立即重启当前核心，故仅验证状态与非法参数，不执行这些
 破坏性路径。
 
-最终源码经 `west flash --openocd /usr/local/bin/openocd --verify` 烧录校验，
+最终源码经 `west flash --verify` 烧录校验，
 两次独立复位均 3/3、0 fail/skip，均以 `PROJECT EXECUTION SUCCESSFUL` 结束。
 证据为 `build/hw-reset-hwinfo.{build,flash}.log`、
 `build/hw-reset-hwinfo-final-run{1,2}.{uart,reset}.log` 和
-`build/hw-reset-hwinfo-final-run{1,2}.capture.log`。当前 33 配置/153 项的
-build-only 报告为 `build/twister-hardware-reset-hwinfo/twister.json`。
+`build/hw-reset-hwinfo-final-run{1,2}.capture.log`。当前 34 配置/157 项的
+build-only 报告为 `build/twister-hardware-power-domain-final/twister.json`。
+
+2026-11-09 新增 `power_domain` profile，无需外部接线。它以 SYSCTL CRC0
+资源作为可恢复外设域，注册两个测试 consumer，验证 standard
+`pm_device_runtime_get/put()` 引用计数会把父域从 suspended 切换到 active、
+子设备的 `TURN_ON`/`RESUME` 和 `TURN_OFF`/`SUSPEND` 通知顺序、runtime usage
+归零后 `RESOURCE[CRC0].MODE` 从 `force_on` 回到 `force_off`，以及第二次
+force-off 后仍能恢复。每次恢复后测试都通过 Zephyr 标准 CRC API 执行
+CRC32/ISO-HDLC 已知答案事务，证明被门控的 CRC0 不只是 SYSCTL 模式读回成功，
+而是恢复后仍可实际访问。最终在测试结束时把资源恢复为 `auto` 模式。
+
+最终镜像经 workspace-local OpenOCD（commit
+`986968d99077e01f48c4dba269342bcd70669fa9`）`west flash --verify` 成功，
+写入 56320 B、校验 47738 B。随后两次独立复位均 1/1、0 fail/skip，每次
+0.001 s 并以 `PROJECT EXECUTION SUCCESSFUL` 结束。构建、烧录和 UART/reset
+证据为 `build/hw-power-domain-crc.{build,flash}.log`、
+`build/hw-power-domain-crc-run{1,2}.{uart,reset}.log`。
+
+该驱动只管理 SYSCTL 中可恢复的功能模块资源；CPU、复位、时钟源/top、内存、
+ROM、AHB、watchdog、KEYM 和 XPI 在绑定及运行时检查中排除。手册中的 PDGO
+shutdown 会关闭当前系统电源域，不能在当前核心同一次运行中作为普通 power
+domain 恢复，因此没有伪装成 device power domain。当前也未实现 SoC system
+suspend/低功耗状态。
+
+实现依据为 HPM5300 手册第 13 章
+`references/official-docs/hpm5300/sections-en/ch13-system-control-module-sysctl.md`
+的资源节点/`RESOURCE[x].MODE` 模型，以及第 8、11 章对 system power domain
+和 PDGO 低功耗状态的定义。
+该实现只依赖 Zephyr device runtime PM（`PM_DEVICE` /
+`PM_DEVICE_RUNTIME`），不要求 SoC 声明系统级 `CONFIG_PM` 能力。
 
 2026-10-29 已在 Zephyr v4.5.0 上重新执行七个无需接线的 profile：
 `core` 8/8、`dma` 2/2、`crypto` 6/6、`flash` 1/1、`watchdog` 4/4、
@@ -700,8 +729,14 @@ west twister -T hpm-zephyr/tests/hardware -p hpm5300evk/hpm5361 \
 python3 -m serial.tools.miniterm --raw --dtr 0 --rts 0 /dev/ttyHPM 115200
 ```
 
+构建目录需先通过 `west openocd-setup` 配置的本地
+`.tools/openocd-hpm/bin/openocd` 重新执行一次 `--cmake-only`。不要覆盖为
+系统 `/usr/local/bin/openocd`：
+
 ```sh
-west flash -d build/hw-uart --openocd /usr/local/bin/openocd --verify
+west openocd-setup --check
+west build -d build/hw-uart --cmake-only
+west flash -d build/hw-uart --verify
 ```
 
 RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
@@ -715,7 +750,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 
 ## Profile、接线和断言
 
-下表列出 31 个 profile 实现形成的 33 个已上板验收配置，具体范围及限制见前述运行记录。
+下表列出 32 个 profile 实现形成的 34 个已上板验收配置，具体范围及限制见前述运行记录。
 
 引脚名称是 MCU pad，不是排针序号；按实际 RevD 原理图确认连接点及板载负载。
 每次只连接当前 profile 所需线路，数字输入使用 3.3 V 电平。
@@ -725,6 +760,7 @@ RevD 当前使用 BOOT OFF/OFF、FT2232 interface 0 JTAG、interface 1 UART0。
 | `core` | `hpm5300evk` | 无外接线 | GPTMR 20 ms alarm IRQ、时钟 off/on 恢复、2 ms top 周期 callback、`DONT_RESET`/`RESET_WHEN_LATE`、活跃 alarm 拒绝、精确 `set_value` 和跨 `UINT32_MAX` 回绕；RNG 自检/非重复数据/真实 ISR 非阻塞预算；CRC32 分段已知答案；TSNS 温度及阈值 IRQ；MBX A/B 双向各 32 字；OTP UUID 区重复只读；PTPC 比较 IRQ 与 TRGM 内部捕获 |
 | `counter_capture` | `hpm_gptmr_capture` | PB07 GPIO/P1-5 → PB06 GPTMR0_CAPT_0/P1-3；一根跳线，无需电源/地 | 参数及状态错误拒绝；rising/falling/both-edge continuous 与 single-shot；tick 区间、设备/通道/flags/callback 上下文、无重复回调、disable 后不再捕获；两次独立复位均 7/7 |
 | `reset_hwinfo` | `hpm5300evk` | 无外接线；测试内部触发一次 PPOR 软件复位 | SYSCTL SoC/CPU0 状态映射及非法参数；128-bit OTP UUID 长度/前缀/重复性/非全 0/FF；PPOR `RESET_SOFTWARE` 读取、稳定重复读取、W1C 清除；两次独立复位均 3/3，有效 SYSCTL assert/toggle 不执行 |
+| `power_domain` | `hpm5300evk` | 无外接线；使用内部 CRC0 资源和两个测试 consumer | 标准 runtime PM 引用计数、父域 active/suspended、子设备 TURN_ON/TURN_OFF 与 RESUME/SUSPEND 次数和顺序；CRC0 `force_on`/`force_off` 读回、两次恢复及每次恢复后的 CRC32 已知答案；结束恢复 `auto`，两次独立复位均 1/1 |
 | `dma` | `hpm5300evk` | 无 | 3×256 B 链式拷贝、前后 32 B 哨兵、完成 IRQ；单块循环 DMA 暂停后 IRQ 静止、恢复后继续、数据一致 |
 | `crypto` | `hpm5300evk` | 无 | 复用已知答案向量：AES-128/256 ECB/CBC/CTR、SHA-1/SHA-256/SM3、CRC32、SM4 ECB/CBC/CTR、CCM 加解密及错误 tag 拒绝 |
 | `gpio` | `hpm_gpio_loop` | PB04 → PB05，P1-31 ↔ P1-32；按 RevD 丝印核对 | 四项通过：电平及 raw set/clear/mask/toggle；上升/下降沿各 20 次，反向不触发；双边沿 20 次及 masked 写入 2 次边沿、同值无额外回调；停用时 20 次无回调、重装恢复，核 ISR/来源/次数 |
@@ -1022,8 +1058,34 @@ git stash apply <完整 SHA>
 4096 B 专用分区，写入 256 B 已知数据后再次擦除。编译时检查扇区大小、对齐和与
 固件分区不重叠；运行会清除该扇区原有内容。其余 profile 不启用 flash driver。
 该 profile 已在 HPM5300EVK RevD 上通过；OpenOCD 烧录成功本身不能替代 Zephyr
-flash API 测试。当前 flash API 未提供 JEDEC-ID 查询接口，器件识别/几何信息、
-跨页边界和延迟压力仍需另外核对。
+flash API 测试。
+
+2026-11-09 将 `flash` profile 扩展为 4 项，补齐 Zephyr 标准
+`flash_read_jedec_id()` 和 `flash_sfdp_read()` 验收。最终镜像经
+`west flash --verify` 烧录校验，并在随后两次独立 SRST 复位中均以 4/4、
+0 fail/skip、`PROJECT EXECUTION SUCCESSFUL` 结束。实测 JEDEC ID 为
+`c4 60 14`；SFDP 为 v1.0、2 个参数头，BFP `0xff00` 位于偏移 `0x30`、
+长度 9 DWORD。用例覆盖：
+
+- JEDEC ID 连续读取一致性、非全 0/FF 和 NULL 参数拒绝。
+- SFDP magic、参数头、BFP 起点和长度；完整读取 36 B BFP，跨越驱动 32 B
+  分块边界。
+- SFDP 负偏移、NULL 输出、越过 24-bit 地址空间和零长度读取语义。
+- 在 JEDEC/SFDP 临时占用 XPI page-program 指令槽后，交错执行擦除、4 B
+  page program 和读回；重复 API 读取结果一致，证明指令表已恢复。
+
+build/flash 证据为 `build/hw-flash-jedec-sfdp-final.build.log` 和
+`build/hw-flash-jedec-sfdp-final-run1.flash.log`。工作区本地
+`openocd-zephyr` backport 复验记录为
+`build/hw-flash-jedec-sfdp-local-openocd.{flash,uart}.log`。UART 证据为
+`build/hw-flash-jedec-sfdp-final-run{1,2,3}.uart.log`，其中 run2/run3 的
+复位记录为同名 `.reset.log`。首轮参数头解析错误和一次无效旧固件捕获保留在
+`build/hw-flash-jedec-sfdp-run{1,2}.uart.log`，不计入验收。该阶段完整
+build-only 回归构建 33 个配置、发现 156 项测试，0 失败/错误/告警：
+`build/twister-hardware-flash-jedec-sfdp-final/twister.json`。
+
+仍待验证的是基于 SFDP 的几何字段解析、跨页/边界操作、擦写延迟和并发压力；
+本次结果不覆盖 EXiP 集成。
 
 所有 profile 保持缓存及 PMP 保护。DMA、UART、I2C、SDP 测试覆盖普通 RAM 数据，
 DMA 测试显式执行 cache flush/invalidate，避免用全局关闭 D-cache 掩盖问题。
@@ -1063,7 +1125,7 @@ OTP 驱动按项目约束永久只读，只读取 UUID words 88–91 两次，�
 | QEIV2 | sincos、UVW 外部高速/非法相态/滤波、PD/UD 外部高速/毛刺/滤波、外部 Z 脉宽/时序、HOME/FAULT/看门狗、其他实例、模拟精度及外部高速时序 |
 | USB | 其他类、并发/STALL/取消/在途 reset、suspend/resume、remote wakeup、多层/非 TT Host Hub、非 boot HID、等时传输/PM、VBUS/ID/OC/PWR 策略及运行时 OTG 切换；suspend/wakeup 草稿已 stash |
 | PWM | 其他输出/捕获实例组合、绝对频率精度、互补/死区/fault、参考输出、超长周期及高速/长 IRQ 延迟下的丢样 |
-| flash/OTP | NOR JEDEC/几何、跨页及边界/延迟压力；OTP 的 program/lock/region 在当前范围明确不实现 |
+| flash/OTP | SFDP 派生几何解析、跨页及边界/延迟压力；OTP 的 program/lock/region 在当前范围明确不实现 |
 
 generic 9-bit UART、DMA P2P、CPU-core-only/multistage watchdog、TRGM 独立事件
 回调、HPM5361 PLB ABZ 和 SDP 真正 IRQ 异步不伪造正向通过测试。

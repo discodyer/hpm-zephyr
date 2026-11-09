@@ -19,7 +19,7 @@ modules/hpm_sdk/             HPM SDK integration glue
 
 | Board | Target | Console | Build status | Hardware status |
 |---|---|---|---|---|
-| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and 33 hardware configurations (153 tests) pass |
+| HPM5300EVK | `hpm5300evk/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | RevD XIP boot, UART echo, heartbeat, flash runner/GDB and 34 hardware configurations (157 tests) pass |
 | HPM5361ICB | `hpm5361icb/hpm5361` | UART0, PA00/PA01, 115200 | RAM and XIP build pass | Not validated |
 
 Both targets currently provide interrupt routing, machine timer, clock/PLL and
@@ -41,15 +41,15 @@ and initialization execute from RAM while XIP is active.
 Build-only validation is complete for both boards, including the Twister
 smoke test. EVK RevD XIP startup, basic polling UART echo/heartbeat,
 OpenOCD flash/verify and GDB breakpoints/single-step passed. The hardware
-acceptance profiles passed 153 tests across 33 configurations: `core` (10/10),
+acceptance profiles passed 157 tests across 34 configurations: `core` (10/10),
 `counter_capture` (7/7), `dma` (2/2), `crypto` (6/6),
-`flash` (1/1), `watchdog` (4/4), `can` (2/2), `ptpc` (4/4), `motor` (5/5),
+`flash` (4/4), `watchdog` (4/4), `can` (2/2), `ptpc` (4/4), `motor` (5/5),
 `gpio` (4/4), `uart` (6/6), `uart_address` (1/1), `uart_rs485` (1/1),
 `lin` (6/6), `i2c`/`i2c_fast`/`i2c_fast_plus` (16/16 each), `spi` (6/6), `analog` (6/6),
 `front_end` (3/3), `pwm` (3/3), `qei` (5/5), `qei_pd` (4/4), `qei_ud` (4/4),
 `qei_single` (3/3), `qei_uvw` (3/3), `usb_device` (1/1), `usb_endpoints`
 (1/1), `usb_endpoints_fs` (1/1), `usb_host` (1/1), `usb_host_hub` (1/1),
-`usb_host_hid_report` (1/1) and `reset_hwinfo` (3/3).
+`usb_host_hid_report` (1/1), `reset_hwinfo` (3/3) and `power_domain` (1/1).
 Capture coverage includes rising, falling and both-edge continuous/single-shot
 GPTMR0 input capture with PB07-to-PB06 loopback. Coverage also includes
 internal CAN/TSU loopback, motor-block math and routing,
@@ -72,11 +72,18 @@ LIN uses the Zephyr standard API over an HPM UART. Its six-case UART1/UART2
 TTL fixture passed twice after independent resets; automatic baud
 synchronization and bus-conflict detection are intentionally unsupported.
 Board-level transceiver and external-peer validation remain separate.
+The power-domain profile cycles CRC0 through SYSCTL `force_off` and `force_on`
+twice, validates child notification and runtime reference-count order, and runs
+a CRC32 known-answer transaction after each recovery. PDGO shutdown and system
+suspend are intentionally outside this runtime device-domain driver.
 
 Each result covers the paths listed in the
-[hardware test record](tests/hardware/README.md). Flash coverage is limited
-to erase/program/read/cache behavior in the reserved scratch sector;
-JEDEC/geometry, boundaries and latency remain unvalidated. The crypto result
+[hardware test record](tests/hardware/README.md). Flash coverage includes
+erase/program/read/cache behavior in the reserved scratch sector, JEDEC ID
+readback, SFDP header and BFP access across the driver's 32-byte chunk boundary,
+and instruction-table restoration before normal programming. SFDP-derived
+geometry parsing, cross-page/boundary behavior and latency remain unvalidated.
+The crypto result
 covers synchronous SDP known-answer tests; async completion and stress remain
 open. USB Device enumeration, the endpoint matrix and Host boot/report keyboard
 paths are covered by the USB profiles; multi-level/non-TT hubs, non-boot HID,
@@ -100,8 +107,11 @@ at `0x30000000..0x300001ff` remains RWX while data execution prevention stays
 enabled. The wrapper resets and halts on GDB attach so the XPI probe algorithm
 can run before application PMP initialization. Use the minimal
 [`samples/bringup`](samples/bringup/README.rst) for startup/debugging checks.
-The container's HPM OpenOCD is `/usr/local/bin/openocd`; pass it explicitly to
-`west flash/debug` instead of using the Zephyr SDK's OpenOCD.
+The HPM OpenOCD is the workspace-local `openocd-zephyr` backport at
+`.tools/openocd-hpm/bin/openocd`. Verify it with `west openocd-setup --check`;
+the generated west build configuration selects this executable and its scripts
+automatically. Do not use `/usr/local/bin/openocd` or the Zephyr SDK OpenOCD
+for HPM programming.
 
 The module can be validated without adding it to the west manifest:
 
@@ -151,7 +161,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | GPIO | GPIOA/B enabled by default; GPIOX/Y, FGPIOA/B/X/Y, PGPIO disabled | `gpio` | PB04/PB05 loopback hardware-tested | Raw levels, set/clear/masked/toggle, rising/falling/both-edge IRQs and disable/rearm passed; level IRQs, other ports and electrical characteristics remain unvalidated; FGPIO has no interrupt output |
 | I2C | 4 | `i2c` | 100 kHz, 400 kHz and 1 MHz 16-case matrices hardware-tested | Controller/target, 7/10-bit addressing, standard/fast/fast-plus, multi-message transfers, DMA, bus recovery and SMBus helpers; paired DMA/repeated START, 10-bit single read/write and write/restart/read, SCL held-low rejection, nine-clock stuck-SDA recovery, byte/word/block transfers, valid/corrupt PEC, malformed/zero-count recovery, block process call and address/data-phase NACK recovery passed; timeout/fault injection and external timing remain unvalidated |
 | SPI | 4 | `spi` | SPI1 GPIO/native-CS and wide-frame linked DMA hardware-tested | Four Motorola modes passed 8-bit synchronous scatter/gather and asynchronous linked-block DMA; 16/24/32-bit synchronous transfers, 16/32-bit linked DMA, GPIO `SPI_HOLD_ON_CS`, native CS and unsupported-width rejection passed on two independent resets. Native-CS waveform/setup-hold timing, half-duplex, dual/quad, `SPI_LOCK_ON`, external-slave timing and electrical measurements remain unvalidated |
-| XPI NOR / XIP | 1 | `flash` | Basic scratch-sector path hardware-tested | Read, write, erase and page layout through vendor ROM API; JEDEC/geometry discovery and EXIP integration are absent |
+| XPI NOR / XIP | 1 | `flash` | Scratch-sector and JEDEC/SFDP paths hardware-tested | Read, write, erase, page layout, JEDEC ID and SFDP reads through vendor ROM API; SFDP-derived geometry, cross-page/boundary/latency stress and EXIP integration remain |
 | MCAN / CAN-FD | 4 | `can` + custom extension | MCAN0 silent internal loopback hardware-tested | Classic/FD/BRS data and TX/RX ISR checks passed; 64-bit TSU captures matched PTPC0 time bounds across eight slots and two wraps. Shared 32 KiB AHB message RAM is split into 8 KiB windows. Generic frames expose a 16-bit timestamp field; full TSU captures use the `hpm_mcan` helper. External bus behavior and MRAM concurrency remain unvalidated |
 | PWM | 2 x 8 channels | `pwm` + HPM extension | PWM0 output / PWM1 capture hardware-tested | 108 period/duty/polarity/type combinations, microsecond/nanosecond conversion, continuous 28-bit counter wrap, disable/rearm, busy rejection, timeout recovery and 0/100% GPIO levels passed; complementary/dead-zone/fault and reference outputs are implemented but not covered by this profile |
 | HDMA / DMAMUX | 32 channels | `dma` | Linked-block and suspend/resume paths hardware-tested | Memory-to-memory/peripheral transfers, cyclic mode, linked descriptors, DMAMUX requests, callbacks, channel allocation/release and status/attributes; peripheral-to-peripheral is unsupported by the silicon |
@@ -163,6 +173,7 @@ Zephyr driver exists. The current audit of `drivers/`, Kconfig and DTS found:
 | Watchdog | EWDG0-1, PEWDG | `watchdog` | EWDG0 IRQ-only paths hardware-tested | Thread/ISR feeding, delayed feeding, repeated timeout, disable/reinstall and 500 ms to 2500 ms reconfiguration passed; SoC reset, window mode and sleep/debug pause remain unvalidated; CPU-core-only reset and multistage watchdog are unsupported |
 | Reset controller | SYSCTL SoC/CPU0 | `reset` | Status and argument validation hardware-tested | `reset_status()` maps both SYSCTL HOLD bits, and invalid IDs or a null output are rejected. Valid assert/deassert/toggle targets are intentionally not executed because either domain immediately reboots the running core; no vendor-private reset API is exposed |
 | HWINFO | PPOR + OTP UUID | `hwinfo` | Device ID and software reset cause hardware-tested | Reads the factory 128-bit UUID without enabling or programming OTP, translates PPOR hard-reset causes, and clears them through W1C. External RESETN is a global reset and does not populate PPOR, so the test explicitly generates a software reset; PIN and POR causes are not falsely reported |
+| Power domain | SYSCTL `RESOURCE[x].MODE` | `power_domain` | Runtime provider, reference counting, child notifications and CRC0 recovery hardware-tested | One recoverable functional-module resource per provider. `RESUME` sets `force_on`, waits for `LOC_BUSY`, then notifies children; `SUSPEND` notifies children before setting `force_off`. CRC0 is cycled twice and the standard CRC API runs after each recovery. CPU, reset, clock-source/top, memory, ROM, AHB, watchdog, KEYM and XPI resources are rejected. PDGO shutdown and system-level suspend remain unsupported |
 | RTC | None | N/A | Not applicable | HPM5300/HPM5361 has no independent RTC block; use a board-level external RTC if wall-clock time is required |
 | USB HS OTG | 1 | UDC/UHC | Device HS/FS and Host boot/report/keyboard-plus-hub paths hardware-tested | Zephyr UDC reuses the unmodified SDK qTD/qDHD engine; HS CDC enumeration, EP1-15 IN/OUT bulk traffic and the address-before-status path passed, as did forced FS. Zephyr UHC passed boot- and report-protocol wired-keyboard enumeration, HID control and one HS Single-TT hub with an LS keyboard. qHD/qTD storage is in HPM5361 fixed uncached DLM. Multi-level/non-TT hubs, non-boot HID, isochronous traffic, Host PM, suspend/resume/remote wakeup and runtime OTG role switching remain unvalidated; CherryUSB/TinyUSB are not adopted |
 | MBX | MBX0A/B | `mbox` | Core path hardware-tested | Bidirectional message ordering passed in the core profile; separate 4-word FIFO, signalling-only mode and cross-core shared-memory IPC remain unvalidated |
@@ -307,12 +318,12 @@ Peripheral hardware acceptance tests for HPM5300EVK are in
 Ztest profiles, wiring/fixture requirements, build/flash commands, detailed
 results and limits for the verified profiles listed above. Historical
 build-only regressions are recorded separately from hardware results. Against
-Zephyr `v4.5.0`, the latest full build-only regression rebuilt all 33 hardware
-configurations (153 tests), 17 historical EVK/ICB scenarios (26 configurations
+Zephyr `v4.5.0`, the latest full build-only regression rebuilt all 34 hardware
+configurations (157 tests), 17 historical EVK/ICB scenarios (26 configurations
 after platform filtering), 10 native-sim motor-math tests, and the bringup
 sample in both XIP and RAM modes. These checks did not repeat hardware
 acceptance. The latest hardware-profile build-only report is
-`build/twister-hardware-reset-hwinfo/twister.json`. Compatibility
+`build/twister-hardware-power-domain-final/twister.json`. Compatibility
 scenarios use semicolon-separated configuration lists so the common
 `peripherals.conf` is not overwritten by a later `EXTRA_CONF_FILE` argument.
 The SPI extension is now integrated and its feature-scoped stash has been
