@@ -1,0 +1,38 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# Copyright (c) 2026 Cody Gu <gujiaqi@iscas.ac.cn>
+# SPDX-License-Identifier: Apache-2.0
+
+DT_COMPAT_HPM_POWER_DOMAIN := hpmicro,hpm-power-domain
+
+config POWER_DOMAIN_HPMICRO
+	bool "HPMicro SYSCTL power domain"
+	default y
+	depends on POWER_DOMAIN
+	depends on SOC_SERIES_HPM5300
+	depends on HAS_HPMSDK_SYSCTL
+	depends on DT_HAS_HPMICRO_HPM_POWER_DOMAIN_ENABLED
+	depends on PM_DEVICE
+	depends on PM_DEVICE_POWER_DOMAIN
+	select DEVICE_DEPS
+	help
+	  Enable power domains backed by HPMicro SYSCTL resources. Each domain
+	  controls one removable peripheral resource with the RESOURCE[x].MODE
+	  field. Boot-critical clocks, CPU and reset resources, XPI, watchdog
+	  and other non-recoverable resources are excluded.
+
+if POWER_DOMAIN_HPMICRO
+
+config POWER_DOMAIN_HPMICRO_INIT_PRIORITY
+	int "HPMicro SYSCTL power domain init priority"
+	default POWER_DOMAIN_INIT_PRIORITY
+	help
+	  HPMicro SYSCTL power domain initialization priority.
+
+config POWER_DOMAIN_HPMICRO_TIMEOUT_US
+	int "HPMicro SYSCTL resource transition timeout"
+	default 100000
+	range 1 1000000
+	help
+	  Maximum time to wait for a SYSCTL resource transition to complete.
+
+endif # POWER_DOMAIN_HPMICRO

@@ -1,0 +1,86 @@
+# Copyright (c) 2026 The HPM Zephyr Module Contributors
+# Copyright (c) 2026 Cody Gu <gujiaqi@iscas.ac.cn>
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  HPMicro SYSCTL resource power domain.
+
+  Each instance controls one removable peripheral through the corresponding
+  SYSCTL RESOURCE[x].MODE field. RESUME forces the resource on and waits for
+  LOC_BUSY to clear. SUSPEND notifies children, forces the resource off and
+  waits for the transition to complete.
+
+  Devicetree nodes must list both compatible strings so that the Zephyr PM
+  subsystem marks the device as a provider:
+    compatible = "hpmicro,hpm-power-domain", "power-domain";
+
+  Only recoverable peripheral module resources are accepted. CPU, reset,
+  clock source/top, memory, ROM, AHB, watchdog, key manager and XPI resources
+  are intentionally excluded. PDGO system shutdown is not a runtime power
+  domain and is not represented by this binding.
+
+compatible: "hpmicro,hpm-power-domain"
+
+include: power-domain.yaml
+
+properties:
+  hpmicro,controller:
+    type: phandle
+    required: true
+    description: HPMicro SYSCTL controller controlling the resource.
+
+  hpmicro,resource-id:
+    type: int
+    required: true
+    enum:
+      - 260 # CAN0
+      - 261 # CAN1
+      - 262 # CAN2
+      - 263 # CAN3
+      - 264 # PTPC
+      - 265 # LIN0
+      - 266 # LIN1
+      - 267 # LIN2
+      - 268 # LIN3
+      - 269 # GPTMR0
+      - 270 # GPTMR1
+      - 271 # GPTMR2
+      - 272 # GPTMR3
+      - 273 # I2C0
+      - 274 # I2C1
+      - 275 # I2C2
+      - 276 # I2C3
+      - 277 # SPI0
+      - 278 # SPI1
+      - 279 # SPI2
+      - 280 # SPI3
+      - 281 # UART0
+      - 282 # UART1
+      - 283 # UART2
+      - 284 # UART3
+      - 285 # UART4
+      - 286 # UART5
+      - 287 # UART6
+      - 288 # UART7
+      - 291 # MBX0
+      - 292 # TSNS
+      - 293 # CRC0
+      - 294 # ADC0
+      - 295 # ADC1
+      - 296 # DAC0
+      - 297 # DAC1
+      - 298 # ACMP
+      - 299 # OPAMP0
+      - 300 # OPAMP1
+      - 301 # MOT0
+      - 302 # RNG0
+      - 303 # SDP0
+      - 305 # GPIO
+      - 306 # HDMA
+      - 308 # USB0
+    description: |
+      SYSCTL resource index. Use the HPMICRO_POWER_DOMAIN_* constants from
+      dt-bindings/power/hpmicro-hpm5300-power.h.
+
+  "#power-domain-cells":
+    const: 0
